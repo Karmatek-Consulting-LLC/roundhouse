@@ -2,6 +2,7 @@ import { useServers } from "@/hooks/use-servers";
 import { useTemplates } from "@/hooks/use-templates";
 import { ServerTable } from "@/components/server-table";
 import { CreateServerDialog } from "@/components/create-server-dialog";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function App() {
   const { servers, loading, error, refresh } = useServers();
@@ -19,7 +20,10 @@ export default function App() {
               Deploy and manage MCP servers
             </p>
           </div>
-          <CreateServerDialog templates={templates} onCreated={refresh} />
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <CreateServerDialog templates={templates} onCreated={refresh} />
+          </div>
         </div>
       </header>
 
