@@ -10,9 +10,14 @@ export default defineConfig({
     },
   },
   server: {
+    host: true,
+    port: 5173,
+    watch: {
+      usePolling: true,
+    },
     proxy: {
       "/api": {
-        target: "http://localhost:3080",
+        target: "http://platform-api:9000",
         changeOrigin: true,
       },
     },
