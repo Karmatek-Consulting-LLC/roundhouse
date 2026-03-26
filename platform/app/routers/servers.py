@@ -59,6 +59,17 @@ def _redeploy(spec: ServerSpec) -> dict:
     return _build_and_deploy(spec)
 
 
+def _ensure_spec(name: str) -> ServerSpec:
+    """Load spec from store, or create a default one for legacy servers."""
+    spec = store.load(name)
+    if spec is None:
+        if not docker_mgr.get_server(name):
+            raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+        spec = ServerSpec(name=name)
+        store.save(spec)
+    return spec
+
+
 # --- Templates ---
 
 
@@ -158,9 +169,7 @@ def delete_server(name: str):
 
 @router.post("/servers/{name}/primitives", response_model=ServerResponse, status_code=201)
 def add_primitive(name: str, req: AddPrimitiveRequest):
-    spec = store.load(name)
-    if not spec:
-        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    spec = _ensure_spec(name)
 
     # Check for duplicate primitive name
     for p in spec.primitives:
@@ -182,9 +191,7 @@ def add_primitive(name: str, req: AddPrimitiveRequest):
 
 @router.put("/servers/{name}/primitives/{prim_name}", response_model=ServerResponse)
 def update_primitive(name: str, prim_name: str, req: AddPrimitiveRequest):
-    spec = store.load(name)
-    if not spec:
-        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    spec = _ensure_spec(name)
 
     idx = next(
         (i for i, p in enumerate(spec.primitives) if p.name == prim_name),
@@ -205,9 +212,7 @@ def update_primitive(name: str, prim_name: str, req: AddPrimitiveRequest):
 
 @router.delete("/servers/{name}/primitives/{prim_name}", response_model=ServerResponse)
 def delete_primitive(name: str, prim_name: str):
-    spec = store.load(name)
-    if not spec:
-        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    spec = _ensure_spec(name)
 
     original_len = len(spec.primitives)
     spec.primitives = [p for p in spec.primitives if p.name != prim_name]
@@ -225,9 +230,7 @@ def delete_primitive(name: str, prim_name: str):
 
 @router.put("/servers/{name}/packages", response_model=ServerResponse)
 def update_pip_packages(name: str, req: UpdatePipPackagesRequest):
-    spec = store.load(name)
-    if not spec:
-        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    spec = _ensure_spec(name)
 
     spec.pip_packages = req.pip_packages
 
@@ -244,9 +247,7 @@ def update_pip_packages(name: str, req: UpdatePipPackagesRequest):
 
 @router.put("/servers/{name}/env", response_model=ServerResponse)
 def update_env_vars(name: str, req: UpdateEnvVarsRequest):
-    spec = store.load(name)
-    if not spec:
-        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    spec = _ensure_spec(name)
 
     spec.env_vars = req.env_vars
 
