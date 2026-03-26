@@ -167,14 +167,14 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         <div className="rounded-lg border p-4">
           <PackageManager
             serverName={serverName}
-            packages={server.pip_packages}
+            packages={server.pip_packages ?? []}
             onUpdated={refresh}
           />
         </div>
         <div className="rounded-lg border p-4">
           <EnvVarsEditor
             serverName={serverName}
-            envVars={server.env_vars}
+            envVars={server.env_vars ?? []}
             onUpdated={refresh}
           />
         </div>

@@ -16,10 +16,10 @@ export function EnvVarsEditor({
   envVars,
   onUpdated,
 }: EnvVarsEditorProps) {
-  const [vars, setVars] = useState<EnvVar[]>(envVars);
+  const [vars, setVars] = useState<EnvVar[]>(envVars ?? []);
   const [saving, setSaving] = useState(false);
 
-  const dirty = JSON.stringify(vars) !== JSON.stringify(envVars);
+  const dirty = JSON.stringify(vars) !== JSON.stringify(envVars ?? []);
 
   function addVar() {
     setVars([...vars, { name: "", value: "" }]);
