@@ -21,6 +21,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
+import CodeMirror from "@uiw/react-codemirror";
+import { python } from "@codemirror/lang-python";
 
 type PrimitiveKind = "tool" | "resource" | "resource_template" | "prompt";
 
@@ -289,12 +291,23 @@ export function AddPrimitiveDialog({
               Function body only -- parameters are defined above.
               Use <code className="rounded bg-muted px-1">return</code> to send the result.
             </p>
-            <Textarea
-              className="font-mono text-sm min-h-[200px]"
-              placeholder={'return f"Hello, {name}!"'}
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-            />
+            <div className="rounded-md border overflow-hidden">
+              <CodeMirror
+                value={code}
+                onChange={setCode}
+                extensions={[python()]}
+                placeholder={'return f"Hello, {name}!"'}
+                minHeight="200px"
+                basicSetup={{
+                  lineNumbers: true,
+                  foldGutter: false,
+                  highlightActiveLine: true,
+                  indentOnInput: true,
+                  bracketMatching: true,
+                  autocompletion: true,
+                }}
+              />
+            </div>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
