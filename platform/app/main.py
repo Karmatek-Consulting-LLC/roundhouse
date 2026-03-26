@@ -1,10 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
 
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI
 
-from app.database import SessionLocal, engine
-from app.db_models import Base
+from app.database import SessionLocal
 from app.routers.auth import router as auth_router
 from app.routers.pypi import router as pypi_router
 from app.routers.servers import router as servers_router
@@ -13,11 +14,32 @@ from app.routers.users import router as users_router
 from app.seed import seed_admin
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def run_migrations() -> None:
+    from sqlalchemy import inspect
+    from app.database import engine
+
+    alembic_cfg = Config("/app/alembic.ini")
+    alembic_cfg.set_main_option("script_location", "/app/alembic")
+
+    # If tables exist but alembic_version doesn't, stamp to current
+    # (handles migration from create_all to alembic)
+    inspector = inspect(engine)
+    tables = inspector.get_table_names()
+    if "users" in tables and "alembic_version" not in tables:
+        logger.info("Existing tables found without alembic_version, stamping to head")
+        command.stamp(alembic_cfg, "head")
+    else:
+        command.upgrade(alembic_cfg, "head")
+
+    logger.info("Database migrations complete")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    run_migrations()
     with SessionLocal() as db:
         seed_admin(db)
     yield
