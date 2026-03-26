@@ -23,6 +23,7 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
+import { useTheme } from "@/hooks/use-theme";
 
 type PrimitiveKind = "tool" | "resource" | "resource_template" | "prompt";
 
@@ -46,6 +47,7 @@ export function AddPrimitiveDialog({
   existing,
 }: AddPrimitiveDialogProps) {
   const isEdit = !!existing;
+  const { resolvedTheme } = useTheme();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<PrimitiveKind>(existing?.kind ?? "tool");
   const [name, setName] = useState(existing?.name ?? "");
@@ -295,6 +297,7 @@ export function AddPrimitiveDialog({
               <CodeMirror
                 value={code}
                 onChange={setCode}
+                theme={resolvedTheme}
                 extensions={[python()]}
                 placeholder={'return f"Hello, {name}!"'}
                 minHeight="200px"

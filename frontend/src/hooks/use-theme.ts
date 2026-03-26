@@ -34,5 +34,7 @@ export function useTheme() {
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
 
-  return { theme, setTheme };
+  const resolvedTheme = theme === "system" ? getSystemTheme() : theme;
+
+  return { theme, resolvedTheme, setTheme };
 }
