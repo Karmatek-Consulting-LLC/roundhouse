@@ -14,7 +14,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Loader2, Rocket, Trash2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { ArrowLeft, Check, Loader2, Pencil, Rocket, Trash2 } from "lucide-react";
 
 interface ServerDetailProps {
   serverName: string;
@@ -40,6 +42,11 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Description editing
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [localDesc, setLocalDesc] = useState("");
+  const [savingDesc, setSavingDesc] = useState(false);
+
   // Local config state (not yet deployed)
   const [localPackages, setLocalPackages] = useState<string[]>([]);
   const [localEnvVars, setLocalEnvVars] = useState<EnvVar[]>([]);
@@ -50,6 +57,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
     try {
       const data = await api.getServer(serverName);
       setServer(data);
+      setLocalDesc(data.description ?? "");
       setLocalPackages(data.pip_packages ?? []);
       setLocalEnvVars(data.env_vars ?? []);
     } finally {
@@ -108,14 +116,11 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
       </div>
 
       <div className="flex items-start justify-between">
-        <div>
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-semibold tracking-tight">{server.name}</h2>
             <StatusBadge status={server.status} />
           </div>
-          {server.description && (
-            <p className="mt-1 text-sm text-muted-foreground">{server.description}</p>
-          )}
           <p className="mt-2">
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
               {server.url}
@@ -123,6 +128,55 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
           </p>
         </div>
         <AddPrimitiveDialog serverName={serverName} onAdded={refresh} />
+      </div>
+
+      <div className="rounded-lg border p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm font-medium">Server Description</Label>
+          {!editingDesc ? (
+            <Button variant="ghost" size="sm" onClick={() => setEditingDesc(true)}>
+              <Pencil className="mr-1 h-3 w-3" />
+              Edit
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              disabled={savingDesc}
+              onClick={async () => {
+                setSavingDesc(true);
+                try {
+                  await api.updateDescription(serverName, localDesc);
+                  setEditingDesc(false);
+                  refresh();
+                } finally {
+                  setSavingDesc(false);
+                }
+              }}
+            >
+              <Check className="mr-1 h-3 w-3" />
+              {savingDesc ? "Saving..." : "Save"}
+            </Button>
+          )}
+        </div>
+        {editingDesc ? (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Describe the server's purpose and capabilities. This is passed to LLMs as context.
+            </p>
+            <Textarea
+              className="min-h-[120px]"
+              placeholder="This MCP server provides tools for..."
+              value={localDesc}
+              onChange={(e) => setLocalDesc(e.target.value)}
+            />
+          </>
+        ) : localDesc ? (
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{localDesc}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            No description yet. Click Edit to add one.
+          </p>
+        )}
       </div>
 
       {server.primitives.length === 0 ? (

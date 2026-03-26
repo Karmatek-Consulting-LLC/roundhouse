@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 interface CreateServerDialogProps {
   onCreated: () => void;
@@ -77,9 +78,14 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
 
           <div className="grid gap-2">
             <Label htmlFor="server-desc">Description</Label>
-            <Input
+            <p className="text-xs text-muted-foreground">
+              Describe the server's purpose, capabilities, and intended use. This is
+              passed to LLMs as context for the entire server.
+            </p>
+            <Textarea
               id="server-desc"
-              placeholder="What this server does"
+              className="min-h-[120px]"
+              placeholder="This MCP server provides tools for managing network devices, including configuration retrieval, interface monitoring, and firmware updates."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />

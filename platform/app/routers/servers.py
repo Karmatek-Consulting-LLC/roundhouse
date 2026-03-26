@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -221,6 +222,30 @@ def delete_server(
     store.delete(name)
     db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
     db.commit()
+
+
+# --- Description ---
+
+
+class UpdateDescriptionRequest(BaseModel):
+    description: str
+
+
+@router.put("/servers/{name}/description", response_model=ServerResponse)
+def update_description(
+    name: str,
+    req: UpdateDescriptionRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _check_access(user, name, db)
+    spec = _ensure_spec(name)
+    spec.description = req.description
+    store.save(spec)
+    server = docker_mgr.get_server(name)
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    return _to_response(server, spec, db)
 
 
 # --- Primitives ---

@@ -158,6 +158,12 @@ export const api = {
   deleteServer: (name: string) =>
     request<void>(`/servers/${name}`, { method: "DELETE" }),
 
+  updateDescription: (serverName: string, description: string) =>
+    request<Server>(`/servers/${serverName}/description`, {
+      method: "PUT",
+      body: JSON.stringify({ description }),
+    }),
+
   // Primitives
   addPrimitive: (serverName: string, primitive: Primitive) =>
     request<Server>(`/servers/${serverName}/primitives`, {
