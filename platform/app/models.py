@@ -82,6 +82,7 @@ class ServerSpec(BaseModel):
     """Persisted server definition with its primitives."""
     name: str
     description: str = ""
+    imports: list[str] = []
     primitives: list[Primitive] = []
     pip_packages: list[str] = []
     env_vars: list[EnvVar] = []
@@ -110,6 +111,7 @@ class ServerResponse(BaseModel):
     status: str
     url: str
     description: str = ""
+    imports: list[str] = []
     primitives: list[Primitive] = []
     pip_packages: list[str] = []
     env_vars: list[EnvVar] = []
@@ -131,8 +133,9 @@ class UpdateEnvVarsRequest(BaseModel):
 
 
 class UpdateConfigRequest(BaseModel):
-    pip_packages: list[str]
-    env_vars: list[EnvVar]
+    imports: list[str] = []
+    pip_packages: list[str] = []
+    env_vars: list[EnvVar] = []
 
 
 # --- Auth ---

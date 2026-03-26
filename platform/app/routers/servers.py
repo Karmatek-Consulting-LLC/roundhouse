@@ -54,6 +54,7 @@ def _to_response(
         status=server["status"],
         url=f"{MCP_BASE_URL}/s/{server['name']}/mcp",
         description=spec.description if spec else "",
+        imports=spec.imports if spec else [],
         primitives=spec.primitives if spec else [],
         pip_packages=spec.pip_packages if spec else [],
         env_vars=spec.env_vars if spec else [],
@@ -383,6 +384,7 @@ def update_config(
 ):
     _check_access(user, name, db)
     spec = _ensure_spec(name)
+    spec.imports = req.imports
     spec.pip_packages = req.pip_packages
     spec.env_vars = req.env_vars
 

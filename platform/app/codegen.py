@@ -116,8 +116,14 @@ def generate_server_py(spec: ServerSpec) -> str:
         _generate_primitive(p) for p in spec.primitives
     )
 
+    import_lines = "\n".join(spec.imports) if spec.imports else ""
+
     lines = [
         'from fastmcp import FastMCP',
+    ]
+    if import_lines:
+        lines.append(import_lines)
+    lines += [
         '',
         f'mcp = FastMCP("{spec.name}")',
         '',

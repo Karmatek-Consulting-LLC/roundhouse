@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { AddPrimitiveDialog } from "@/components/add-primitive-dialog";
+import { ImportsEditor } from "@/components/imports-editor";
 import { PackageManager } from "@/components/package-manager";
 import { EnvVarsEditor } from "@/components/env-vars-editor";
 import {
@@ -48,6 +49,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
   const [savingDesc, setSavingDesc] = useState(false);
 
   // Local config state (not yet deployed)
+  const [localImports, setLocalImports] = useState<string[]>([]);
   const [localPackages, setLocalPackages] = useState<string[]>([]);
   const [localEnvVars, setLocalEnvVars] = useState<EnvVar[]>([]);
   const [deploying, setDeploying] = useState(false);
@@ -58,6 +60,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
       const data = await api.getServer(serverName);
       setServer(data);
       setLocalDesc(data.description ?? "");
+      setLocalImports(data.imports ?? []);
       setLocalPackages(data.pip_packages ?? []);
       setLocalEnvVars(data.env_vars ?? []);
     } finally {
@@ -71,7 +74,8 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
 
   const configDirty =
     server !== null &&
-    (JSON.stringify(localPackages) !== JSON.stringify(server.pip_packages ?? []) ||
+    (JSON.stringify(localImports) !== JSON.stringify(server.imports ?? []) ||
+      JSON.stringify(localPackages) !== JSON.stringify(server.pip_packages ?? []) ||
       JSON.stringify(localEnvVars) !== JSON.stringify(server.env_vars ?? []));
 
   async function handleDeploy() {
@@ -79,7 +83,8 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
     setDeployError(null);
     try {
       const filtered = localEnvVars.filter((v) => v.name.trim());
-      await api.deployConfig(serverName, localPackages, filtered);
+      const cleanImports = localImports.filter((i) => i.trim());
+      await api.deployConfig(serverName, cleanImports, localPackages, filtered);
       await refresh();
     } catch (e) {
       setDeployError(e instanceof Error ? e.message : "Deploy failed");
@@ -243,6 +248,10 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
           </Table>
         </div>
       )}
+
+      <div className="rounded-lg border p-4">
+        <ImportsEditor imports={localImports} onChange={setLocalImports} />
+      </div>
 
       <div className="grid gap-6 md:grid-cols-2">
         <div className="rounded-lg border p-4">

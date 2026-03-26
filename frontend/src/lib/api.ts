@@ -70,6 +70,7 @@ export interface Server {
   status: string;
   url: string;
   description: string;
+  imports: string[];
   primitives: Primitive[];
   pip_packages: string[];
   env_vars: EnvVar[];
@@ -189,10 +190,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ env_vars }),
     }),
-  deployConfig: (serverName: string, pip_packages: string[], env_vars: EnvVar[]) =>
+  deployConfig: (serverName: string, imports: string[], pip_packages: string[], env_vars: EnvVar[]) =>
     request<Server>(`/servers/${serverName}/config`, {
       method: "PUT",
-      body: JSON.stringify({ pip_packages, env_vars }),
+      body: JSON.stringify({ imports, pip_packages, env_vars }),
     }),
 
   // PyPI
