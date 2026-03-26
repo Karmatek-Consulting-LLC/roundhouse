@@ -239,49 +239,65 @@ export function AddPrimitiveDialog({
                 </Button>
               </div>
               {params.map((p, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_100px_1fr_auto] gap-2 items-end">
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Name</Label>
-                    <Input
-                      placeholder="param_name"
-                      value={p.name}
-                      onChange={(e) => updateParam(idx, "name", e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Type</Label>
-                    <Select
-                      value={p.type}
-                      onValueChange={(v) => updateParam(idx, "type", v)}
+                <div key={idx} className="space-y-2 rounded-md border p-3">
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs text-muted-foreground">Name</Label>
+                      <Input
+                        placeholder="param_name"
+                        value={p.name}
+                        onChange={(e) => updateParam(idx, "name", e.target.value)}
+                      />
+                    </div>
+                    <div className="w-[100px]">
+                      <Label className="text-xs text-muted-foreground">Type</Label>
+                      <Select
+                        value={p.type}
+                        onValueChange={(v) => updateParam(idx, "type", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="str">str</SelectItem>
+                          <SelectItem value="int">int</SelectItem>
+                          <SelectItem value="float">float</SelectItem>
+                          <SelectItem value="bool">bool</SelectItem>
+                          <SelectItem value="list">list</SelectItem>
+                          <SelectItem value="dict">dict</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeParam(idx)}
                     >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="str">str</SelectItem>
-                        <SelectItem value="int">int</SelectItem>
-                        <SelectItem value="float">float</SelectItem>
-                        <SelectItem value="bool">bool</SelectItem>
-                        <SelectItem value="list">list</SelectItem>
-                        <SelectItem value="dict">dict</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
                   </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Description</Label>
-                    <Input
-                      placeholder="What this param does"
-                      value={p.description}
-                      onChange={(e) => updateParam(idx, "description", e.target.value)}
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Description</Label>
+                      <Input
+                        placeholder="What this param does"
+                        value={p.description}
+                        onChange={(e) => updateParam(idx, "description", e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Default value</Label>
+                      <Input
+                        placeholder="None (required)"
+                        value={p.default ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateParam(idx, "default", val || null as unknown as string);
+                          updateParam(idx, "required", !val);
+                        }}
+                      />
+                    </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeParam(idx)}
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
                 </div>
               ))}
             </div>
