@@ -4,6 +4,7 @@ import { ServerTable } from "@/components/server-table";
 import { ServerDetail } from "@/components/server-detail";
 import { CreateServerDialog } from "@/components/create-server-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Logo } from "@/components/logo";
 
 export default function App() {
   const { servers, loading, error, refresh } = useServers();
@@ -15,14 +16,17 @@ export default function App() {
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <button
             onClick={() => setSelectedServer(null)}
-            className="text-left"
+            className="flex items-center gap-3 text-left"
           >
-            <h1 className="text-xl font-semibold tracking-tight">
-              MCP Platform
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Deploy and manage MCP servers
-            </p>
+            <Logo className="h-10 w-10 shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">
+                MCP Platform
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Deploy and manage MCP servers
+              </p>
+            </div>
           </button>
           <div className="flex items-center gap-2">
             <ThemeToggle />
