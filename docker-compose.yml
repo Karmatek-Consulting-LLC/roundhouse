@@ -13,9 +13,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: mcp
-      POSTGRES_PASSWORD: mcp
-      POSTGRES_DB: mcp
+      POSTGRES_USER: ${POSTGRES_USER:-mcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcp}
+      POSTGRES_DB: ${POSTGRES_DB:-mcp}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -36,14 +36,14 @@ services:
       - ./templates:/app/templates:ro
       - ./data/servers:/app/data/servers
     environment:
-      - DOCKER_NETWORK=mcp-network
-      - MCP_BASE_URL=http://localhost:3080
+      - DOCKER_NETWORK=${DOCKER_NETWORK:-mcp-network}
+      - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:3080}
       - SERVERS_DATA_DIR=/app/data/servers
       - TEMPLATES_DIR=/app/templates
-      - DATABASE_URL=postgresql://mcp:mcp@postgres:5432/mcp
-      - JWT_SECRET_KEY=change-me-in-production
-      - ADMIN_EMAIL=admin@mcp.local
-      - ADMIN_PASSWORD=admin
+      - DATABASE_URL=${DATABASE_URL:-postgresql://mcp:mcp@postgres:5432/mcp}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
     networks:
       - mcp-network
     labels:
