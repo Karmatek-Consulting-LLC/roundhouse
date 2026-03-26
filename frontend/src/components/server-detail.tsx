@@ -249,10 +249,6 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         </div>
       )}
 
-      <div className="rounded-lg border p-4">
-        <ImportsEditor imports={localImports} onChange={setLocalImports} />
-      </div>
-
       <div className="grid gap-6 md:grid-cols-2">
         <div className="rounded-lg border p-4">
           <PackageManager
@@ -266,6 +262,10 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
             onChange={setLocalEnvVars}
           />
         </div>
+      </div>
+
+      <div className="rounded-lg border p-4">
+        <ImportsEditor imports={localImports} onChange={setLocalImports} />
       </div>
 
       {(configDirty || deployError) && (
