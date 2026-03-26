@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import re
+from typing import Literal
+
 from pydantic import BaseModel, field_validator
+
+
+# --- Templates (kept for backward compat) ---
 
 
 class TemplateVariable(BaseModel):
@@ -17,9 +22,69 @@ class TemplateResponse(BaseModel):
     variables: list[TemplateVariable]
 
 
+# --- MCP Primitives ---
+
+
+class ToolParameter(BaseModel):
+    name: str
+    type: str = "str"
+    description: str = ""
+    required: bool = True
+    default: str | None = None
+
+
+class ToolPrimitive(BaseModel):
+    kind: Literal["tool"] = "tool"
+    name: str
+    description: str = ""
+    parameters: list[ToolParameter] = []
+    code: str = ""
+
+
+class ResourcePrimitive(BaseModel):
+    kind: Literal["resource"] = "resource"
+    name: str
+    uri: str
+    description: str = ""
+    mime_type: str = "text/plain"
+    code: str = ""
+
+
+class ResourceTemplatePrimitive(BaseModel):
+    kind: Literal["resource_template"] = "resource_template"
+    name: str
+    uri_template: str
+    description: str = ""
+    mime_type: str = "text/plain"
+    code: str = ""
+
+
+class PromptPrimitive(BaseModel):
+    kind: Literal["prompt"] = "prompt"
+    name: str
+    description: str = ""
+    parameters: list[ToolParameter] = []
+    code: str = ""
+
+
+Primitive = ToolPrimitive | ResourcePrimitive | ResourceTemplatePrimitive | PromptPrimitive
+
+
+# --- Server ---
+
+
+class ServerSpec(BaseModel):
+    """Persisted server definition with its primitives."""
+    name: str
+    description: str = ""
+    primitives: list[Primitive] = []
+    pip_packages: list[str] = []
+
+
 class CreateServerRequest(BaseModel):
     name: str
-    template: str
+    description: str = ""
+    template: str | None = None
     config: dict[str, str] = {}
 
     @field_validator("name")
@@ -38,4 +103,15 @@ class ServerResponse(BaseModel):
     template: str
     status: str
     url: str
+    description: str = ""
+    primitives: list[Primitive] = []
+    pip_packages: list[str] = []
     created_at: str | None = None
+
+
+class AddPrimitiveRequest(BaseModel):
+    primitive: Primitive
+
+
+class UpdatePipPackagesRequest(BaseModel):
+    pip_packages: list[str]

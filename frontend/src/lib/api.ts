@@ -1,3 +1,51 @@
+export interface ToolParameter {
+  name: string;
+  type: string;
+  description: string;
+  required: boolean;
+  default: string | null;
+}
+
+export interface ToolPrimitive {
+  kind: "tool";
+  name: string;
+  description: string;
+  parameters: ToolParameter[];
+  code: string;
+}
+
+export interface ResourcePrimitive {
+  kind: "resource";
+  name: string;
+  uri: string;
+  description: string;
+  mime_type: string;
+  code: string;
+}
+
+export interface ResourceTemplatePrimitive {
+  kind: "resource_template";
+  name: string;
+  uri_template: string;
+  description: string;
+  mime_type: string;
+  code: string;
+}
+
+export interface PromptPrimitive {
+  kind: "prompt";
+  name: string;
+  description: string;
+  parameters: ToolParameter[];
+  code: string;
+}
+
+export type Primitive =
+  | ToolPrimitive
+  | ResourcePrimitive
+  | ResourceTemplatePrimitive
+  | PromptPrimitive;
+
 export interface TemplateVariable {
   name: string;
   description: string;
@@ -16,13 +64,17 @@ export interface Server {
   template: string;
   status: string;
   url: string;
+  description: string;
+  primitives: Primitive[];
+  pip_packages: string[];
   created_at: string | null;
 }
 
 export interface CreateServerRequest {
   name: string;
-  template: string;
-  config: Record<string, string>;
+  description?: string;
+  template?: string;
+  config?: Record<string, string>;
 }
 
 const BASE = "/api";
@@ -56,4 +108,25 @@ export const api = {
     request<Server>(`/servers/${name}/stop`, { method: "POST" }),
   deleteServer: (name: string) =>
     request<void>(`/servers/${name}`, { method: "DELETE" }),
+
+  // Primitives
+  addPrimitive: (serverName: string, primitive: Primitive) =>
+    request<Server>(`/servers/${serverName}/primitives`, {
+      method: "POST",
+      body: JSON.stringify({ primitive }),
+    }),
+  updatePrimitive: (serverName: string, primName: string, primitive: Primitive) =>
+    request<Server>(`/servers/${serverName}/primitives/${primName}`, {
+      method: "PUT",
+      body: JSON.stringify({ primitive }),
+    }),
+  deletePrimitive: (serverName: string, primName: string) =>
+    request<Server>(`/servers/${serverName}/primitives/${primName}`, {
+      method: "DELETE",
+    }),
+  updatePipPackages: (serverName: string, pip_packages: string[]) =>
+    request<Server>(`/servers/${serverName}/packages`, {
+      method: "PUT",
+      body: JSON.stringify({ pip_packages }),
+    }),
 };

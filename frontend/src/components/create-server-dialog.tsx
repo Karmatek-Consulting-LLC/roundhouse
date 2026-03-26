@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type Template } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,36 +12,21 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 interface CreateServerDialogProps {
-  templates: Template[];
   onCreated: () => void;
 }
 
-export function CreateServerDialog({
-  templates,
-  onCreated,
-}: CreateServerDialogProps) {
+export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [templateName, setTemplateName] = useState("");
-  const [config, setConfig] = useState<Record<string, string>>({});
+  const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const selectedTemplate = templates.find((t) => t.name === templateName);
-
   function reset() {
     setName("");
-    setTemplateName("");
-    setConfig({});
+    setDescription("");
     setError(null);
   }
 
@@ -49,7 +34,7 @@ export function CreateServerDialog({
     setError(null);
     setCreating(true);
     try {
-      await api.createServer({ name, template: templateName, config });
+      await api.createServer({ name, description });
       setOpen(false);
       reset();
       onCreated();
@@ -75,7 +60,7 @@ export function CreateServerDialog({
         <DialogHeader>
           <DialogTitle>Create MCP Server</DialogTitle>
           <DialogDescription>
-            Deploy a new MCP server from a template.
+            Create an empty server, then add tools, resources, and prompts.
           </DialogDescription>
         </DialogHeader>
 
@@ -91,54 +76,20 @@ export function CreateServerDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label>Template</Label>
-            <Select
-              value={templateName}
-              onValueChange={setTemplateName}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a template" />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map((t) => (
-                  <SelectItem key={t.name} value={t.name}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedTemplate && (
-              <p className="text-sm text-muted-foreground">
-                {selectedTemplate.description}
-              </p>
-            )}
+            <Label htmlFor="server-desc">Description</Label>
+            <Input
+              id="server-desc"
+              placeholder="What this server does"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
           </div>
 
-          {selectedTemplate?.variables.map((v) => (
-            <div key={v.name} className="grid gap-2">
-              <Label htmlFor={`var-${v.name}`}>{v.name}</Label>
-              <Input
-                id={`var-${v.name}`}
-                placeholder={v.default ?? ""}
-                value={config[v.name] ?? ""}
-                onChange={(e) =>
-                  setConfig((prev) => ({ ...prev, [v.name]: e.target.value }))
-                }
-              />
-              <p className="text-xs text-muted-foreground">{v.description}</p>
-            </div>
-          ))}
-
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
         <DialogFooter>
-          <Button
-            onClick={handleCreate}
-            disabled={!name || !templateName || creating}
-          >
+          <Button onClick={handleCreate} disabled={!name || creating}>
             {creating ? "Creating..." : "Create"}
           </Button>
         </DialogFooter>

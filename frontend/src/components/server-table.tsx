@@ -14,9 +14,10 @@ import { StatusBadge } from "@/components/status-badge";
 interface ServerTableProps {
   servers: Server[];
   onRefresh: () => void;
+  onSelect: (name: string) => void;
 }
 
-export function ServerTable({ servers, onRefresh }: ServerTableProps) {
+export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) {
   const [busy, setBusy] = useState<string | null>(null);
 
   async function handleAction(name: string, action: () => Promise<unknown>) {
@@ -43,7 +44,7 @@ export function ServerTable({ servers, onRefresh }: ServerTableProps) {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Template</TableHead>
+            <TableHead>Primitives</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Endpoint</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -52,8 +53,17 @@ export function ServerTable({ servers, onRefresh }: ServerTableProps) {
         <TableBody>
           {servers.map((s) => (
             <TableRow key={s.name}>
-              <TableCell className="font-medium">{s.name}</TableCell>
-              <TableCell className="text-muted-foreground">{s.template}</TableCell>
+              <TableCell>
+                <button
+                  className="font-medium text-primary hover:underline"
+                  onClick={() => onSelect(s.name)}
+                >
+                  {s.name}
+                </button>
+              </TableCell>
+              <TableCell className="text-muted-foreground text-sm">
+                {s.primitives?.length ?? 0} primitives
+              </TableCell>
               <TableCell>
                 <StatusBadge status={s.status} />
               </TableCell>
