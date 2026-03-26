@@ -32,8 +32,8 @@ class DockerManager:
         return {
             "traefik.enable": "true",
             f"traefik.http.routers.{router}.entrypoints": "web",
-            f"traefik.http.routers.{router}.rule": f"PathPrefix(`/mcp/{server_name}`)",
-            f"traefik.http.middlewares.{router}-strip.stripprefix.prefixes": f"/mcp/{server_name}",
+            f"traefik.http.routers.{router}.rule": f"PathPrefix(`/s/{server_name}`)",
+            f"traefik.http.middlewares.{router}-strip.stripprefix.prefixes": f"/s/{server_name}",
             f"traefik.http.routers.{router}.middlewares": f"{router}-strip",
             f"traefik.http.services.{router}.loadbalancer.server.port": "8000",
         }
