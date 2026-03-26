@@ -68,8 +68,8 @@ export function CreateServerDialog({
         if (!v) reset();
       }}
     >
-      <DialogTrigger render={<Button />}>
-        Create Server
+      <DialogTrigger asChild>
+        <Button>Create Server</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -94,7 +94,7 @@ export function CreateServerDialog({
             <Label>Template</Label>
             <Select
               value={templateName}
-              onValueChange={(val) => setTemplateName(val ?? "")}
+              onValueChange={setTemplateName}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select a template" />
