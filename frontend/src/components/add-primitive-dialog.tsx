@@ -176,24 +176,28 @@ export function AddPrimitiveDialog({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label>Name</Label>
-              <Input
-                placeholder="my_tool"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={isEdit}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Description</Label>
-              <Input
-                placeholder="What this primitive does"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
+          <div className="grid gap-2">
+            <Label>Name</Label>
+            <Input
+              placeholder="my_tool"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={isEdit}
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label>Description</Label>
+            <p className="text-xs text-muted-foreground">
+              This is passed to the LLM as context. Be detailed about what the primitive does,
+              when to use it, expected inputs/outputs, and any important behavior.
+            </p>
+            <Textarea
+              className="min-h-[120px]"
+              placeholder={"Describe what this tool does, when an LLM should use it, what it returns, and any constraints or edge cases."}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
           </div>
 
           {showUri && (
