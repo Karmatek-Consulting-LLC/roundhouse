@@ -1,0 +1,37 @@
+services:
+  traefik:
+    image: traefik:v3.3
+    ports:
+      - "3080:80"
+      - "3081:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+    networks:
+      - mcp-network
+
+  platform-api:
+    build: ./platform
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./templates:/app/templates:ro
+      - ./data/servers:/app/data/servers
+    environment:
+      - DOCKER_NETWORK=mcp-network
+      - MCP_BASE_URL=http://localhost:3080
+      - SERVERS_DATA_DIR=/app/data/servers
+      - TEMPLATES_DIR=/app/templates
+    networks:
+      - mcp-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.platform-api.entrypoints=web"
+      - "traefik.http.routers.platform-api.rule=PathPrefix(`/api`)"
+      - "traefik.http.services.platform-api.loadbalancer.server.port=9000"
+
+networks:
+  mcp-network:
+    name: mcp-network
+    driver: bridge
