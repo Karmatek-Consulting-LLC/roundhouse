@@ -131,7 +131,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { headers, ...options });
   if (res.status === 401) {
     localStorage.removeItem("token");
-    window.location.reload();
     throw new Error("Session expired");
   }
   if (!res.ok) {
