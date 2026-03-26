@@ -44,6 +44,7 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
+            <TableHead>Owner</TableHead>
             <TableHead>Primitives</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Endpoint</TableHead>
@@ -60,6 +61,9 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
                 >
                   {s.name}
                 </button>
+              </TableCell>
+              <TableCell className="text-muted-foreground text-sm">
+                {s.owner_email ?? "\u2014"}
               </TableCell>
               <TableCell className="text-muted-foreground text-sm">
                 {s.primitives?.length ?? 0} primitives

@@ -10,8 +10,27 @@ services:
     networks:
       - mcp-network
 
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mcp
+      POSTGRES_PASSWORD: mcp
+      POSTGRES_DB: mcp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcp"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   platform-api:
     build: ./platform
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./templates:/app/templates:ro
@@ -21,6 +40,10 @@ services:
       - MCP_BASE_URL=http://localhost:3080
       - SERVERS_DATA_DIR=/app/data/servers
       - TEMPLATES_DIR=/app/templates
+      - DATABASE_URL=postgresql://mcp:mcp@postgres:5432/mcp
+      - JWT_SECRET_KEY=change-me-in-production
+      - ADMIN_EMAIL=admin@mcp.local
+      - ADMIN_PASSWORD=admin
     networks:
       - mcp-network
     labels:
@@ -35,6 +58,7 @@ services:
       - ./frontend/package.json:/app/package.json
       - ./frontend/pnpm-lock.yaml:/app/pnpm-lock.yaml
       - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
       - ./frontend/index.html:/app/index.html
       - ./frontend/vite.config.ts:/app/vite.config.ts
       - ./frontend/tailwind.config.js:/app/tailwind.config.js
@@ -56,3 +80,6 @@ networks:
   mcp-network:
     name: mcp-network
     driver: bridge
+
+volumes:
+  pgdata:

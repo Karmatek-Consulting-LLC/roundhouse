@@ -113,6 +113,8 @@ class ServerResponse(BaseModel):
     primitives: list[Primitive] = []
     pip_packages: list[str] = []
     env_vars: list[EnvVar] = []
+    owner_id: str | None = None
+    owner_email: str | None = None
     created_at: str | None = None
 
 
@@ -131,3 +133,55 @@ class UpdateEnvVarsRequest(BaseModel):
 class UpdateConfigRequest(BaseModel):
     pip_packages: list[str]
     env_vars: list[EnvVar]
+
+
+# --- Auth ---
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    display_name: str
+    role: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    display_name: str
+    role: str = "user"
+
+
+class TeamRequest(BaseModel):
+    name: str
+    description: str = ""
+
+
+class TeamMemberRequest(BaseModel):
+    user_id: str
+    role: str = "member"
+
+
+class TeamMemberResponse(BaseModel):
+    user_id: str
+    email: str
+    display_name: str
+    role: str
+
+
+class TeamResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    members: list[TeamMemberResponse] = []
