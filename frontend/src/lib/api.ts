@@ -146,6 +146,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ env_vars }),
     }),
+  deployConfig: (serverName: string, pip_packages: string[], env_vars: EnvVar[]) =>
+    request<Server>(`/servers/${serverName}/config`, {
+      method: "PUT",
+      body: JSON.stringify({ pip_packages, env_vars }),
+    }),
 
   // PyPI
   searchPyPI: (query: string) =>

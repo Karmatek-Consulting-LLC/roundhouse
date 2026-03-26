@@ -7,21 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { Package, Search, X, Loader2 } from "lucide-react";
 
 interface PackageManagerProps {
-  serverName: string;
   packages: string[];
-  onUpdated: () => void;
+  onChange: (packages: string[]) => void;
 }
 
-export function PackageManager({
-  serverName,
-  packages,
-  onUpdated,
-}: PackageManagerProps) {
+export function PackageManager({ packages, onChange }: PackageManagerProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PyPIPackageInfo[]>([]);
   const [searching, setSearching] = useState(false);
   const [noResults, setNoResults] = useState(false);
-  const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const search = useCallback(async (q: string) => {
@@ -55,30 +49,16 @@ export function PackageManager({
     return () => clearTimeout(debounceRef.current);
   }, [query, search]);
 
-  async function addPackage(name: string) {
-    if (packages.includes(name)) return;
-    setSaving(true);
-    try {
-      await api.updatePipPackages(serverName, [...packages, name]);
-      setQuery("");
-      setResults([]);
-      onUpdated();
-    } finally {
-      setSaving(false);
+  function addPackage(name: string) {
+    if (!packages.includes(name)) {
+      onChange([...packages, name]);
     }
+    setQuery("");
+    setResults([]);
   }
 
-  async function removePackage(name: string) {
-    setSaving(true);
-    try {
-      await api.updatePipPackages(
-        serverName,
-        packages.filter((p) => p !== name)
-      );
-      onUpdated();
-    } finally {
-      setSaving(false);
-    }
+  function removePackage(name: string) {
+    onChange(packages.filter((p) => p !== name));
   }
 
   return (
@@ -126,7 +106,7 @@ export function PackageManager({
                 <Button
                   size="sm"
                   variant={alreadyAdded ? "outline" : "default"}
-                  disabled={alreadyAdded || saving}
+                  disabled={alreadyAdded}
                   onClick={() => addPackage(pkg.name)}
                 >
                   {alreadyAdded ? "Added" : "Add"}
@@ -151,7 +131,6 @@ export function PackageManager({
               <button
                 className="ml-1 rounded-sm hover:bg-muted p-0.5"
                 onClick={() => removePackage(pkg)}
-                disabled={saving}
               >
                 <X className="h-3 w-3" />
               </button>

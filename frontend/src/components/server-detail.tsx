@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Primitive, type Server } from "@/lib/api";
+import { api, type EnvVar, type Primitive, type Server } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { AddPrimitiveDialog } from "@/components/add-primitive-dialog";
+import { PackageManager } from "@/components/package-manager";
+import { EnvVarsEditor } from "@/components/env-vars-editor";
 import {
   Table,
   TableBody,
@@ -12,9 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PackageManager } from "@/components/package-manager";
-import { EnvVarsEditor } from "@/components/env-vars-editor";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Rocket, Trash2 } from "lucide-react";
 
 interface ServerDetailProps {
   serverName: string;
@@ -40,10 +40,18 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Local config state (not yet deployed)
+  const [localPackages, setLocalPackages] = useState<string[]>([]);
+  const [localEnvVars, setLocalEnvVars] = useState<EnvVar[]>([]);
+  const [deploying, setDeploying] = useState(false);
+  const [deployError, setDeployError] = useState<string | null>(null);
+
   const refresh = useCallback(async () => {
     try {
       const data = await api.getServer(serverName);
       setServer(data);
+      setLocalPackages(data.pip_packages ?? []);
+      setLocalEnvVars(data.env_vars ?? []);
     } finally {
       setLoading(false);
     }
@@ -52,6 +60,25 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const configDirty =
+    server !== null &&
+    (JSON.stringify(localPackages) !== JSON.stringify(server.pip_packages ?? []) ||
+      JSON.stringify(localEnvVars) !== JSON.stringify(server.env_vars ?? []));
+
+  async function handleDeploy() {
+    setDeploying(true);
+    setDeployError(null);
+    try {
+      const filtered = localEnvVars.filter((v) => v.name.trim());
+      await api.deployConfig(serverName, localPackages, filtered);
+      await refresh();
+    } catch (e) {
+      setDeployError(e instanceof Error ? e.message : "Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
+  }
 
   async function handleDeletePrimitive(p: Primitive) {
     setDeleting(p.name);
@@ -125,8 +152,8 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
                       {kindLabels[p.kind] ?? p.kind}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {p.description || "—"}
+                  <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
+                    {p.description || "\u2014"}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {"parameters" in p && p.parameters.length > 0 && (
@@ -166,19 +193,44 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
       <div className="grid gap-6 md:grid-cols-2">
         <div className="rounded-lg border p-4">
           <PackageManager
-            serverName={serverName}
-            packages={server.pip_packages ?? []}
-            onUpdated={refresh}
+            packages={localPackages}
+            onChange={setLocalPackages}
           />
         </div>
         <div className="rounded-lg border p-4">
           <EnvVarsEditor
-            serverName={serverName}
-            envVars={server.env_vars ?? []}
-            onUpdated={refresh}
+            envVars={localEnvVars}
+            onChange={setLocalEnvVars}
           />
         </div>
       </div>
+
+      {(configDirty || deployError) && (
+        <div className="sticky bottom-4 flex items-center justify-between rounded-lg border bg-card p-4 shadow-lg">
+          <div>
+            {deployError ? (
+              <p className="text-sm text-destructive">{deployError}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                You have unsaved configuration changes.
+              </p>
+            )}
+          </div>
+          <Button onClick={handleDeploy} disabled={deploying}>
+            {deploying ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Deploying...
+              </>
+            ) : (
+              <>
+                <Rocket className="mr-2 h-4 w-4" />
+                Deploy Changes
+              </>
+            )}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,6 +14,7 @@ from app.models import (
     ServerResponse,
     ServerSpec,
     TemplateResponse,
+    UpdateConfigRequest,
     UpdateEnvVarsRequest,
     UpdatePipPackagesRequest,
 )
@@ -256,4 +257,22 @@ def update_env_vars(name: str, req: UpdateEnvVarsRequest):
         return _to_response(server, spec)
     except Exception as e:
         logger.exception("Failed to update env vars for '%s'", name)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Config (packages + env vars in one deploy) ---
+
+
+@router.put("/servers/{name}/config", response_model=ServerResponse)
+def update_config(name: str, req: UpdateConfigRequest):
+    spec = _ensure_spec(name)
+
+    spec.pip_packages = req.pip_packages
+    spec.env_vars = req.env_vars
+
+    try:
+        server = _redeploy(spec)
+        return _to_response(server, spec)
+    except Exception as e:
+        logger.exception("Failed to update config for '%s'", name)
         raise HTTPException(status_code=500, detail=str(e))

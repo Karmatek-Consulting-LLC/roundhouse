@@ -126,3 +126,8 @@ class UpdatePipPackagesRequest(BaseModel):
 
 class UpdateEnvVarsRequest(BaseModel):
     env_vars: list[EnvVar]
+
+
+class UpdateConfigRequest(BaseModel):
+    pip_packages: list[str]
+    env_vars: list[EnvVar]
