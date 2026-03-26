@@ -18,36 +18,37 @@ export function PackageManager({
   onUpdated,
 }: PackageManagerProps) {
   const [query, setQuery] = useState("");
-  const [result, setResult] = useState<PyPIPackageInfo | null>(null);
+  const [results, setResults] = useState<PyPIPackageInfo[]>([]);
   const [searching, setSearching] = useState(false);
-  const [notFound, setNotFound] = useState(false);
+  const [noResults, setNoResults] = useState(false);
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const search = useCallback(async (q: string) => {
-    if (!q.trim()) {
-      setResult(null);
-      setNotFound(false);
+    if (q.trim().length < 2) {
+      setResults([]);
+      setNoResults(false);
       return;
     }
     setSearching(true);
-    setNotFound(false);
-    const info = await api.searchPyPI(q.trim());
-    setSearching(false);
-    if (info) {
-      setResult(info);
-      setNotFound(false);
-    } else {
-      setResult(null);
-      setNotFound(true);
+    setNoResults(false);
+    try {
+      const data = await api.searchPyPI(q.trim());
+      setResults(data);
+      setNoResults(data.length === 0);
+    } catch {
+      setResults([]);
+      setNoResults(true);
+    } finally {
+      setSearching(false);
     }
   }, []);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
-    if (!query.trim()) {
-      setResult(null);
-      setNotFound(false);
+    if (query.trim().length < 2) {
+      setResults([]);
+      setNoResults(false);
       return;
     }
     debounceRef.current = setTimeout(() => search(query), 400);
@@ -60,7 +61,7 @@ export function PackageManager({
     try {
       await api.updatePipPackages(serverName, [...packages, name]);
       setQuery("");
-      setResult(null);
+      setResults([]);
       onUpdated();
     } finally {
       setSaving(false);
@@ -79,8 +80,6 @@ export function PackageManager({
       setSaving(false);
     }
   }
-
-  const alreadyAdded = result ? packages.includes(result.name) : false;
 
   return (
     <div className="space-y-4">
@@ -102,32 +101,45 @@ export function PackageManager({
         )}
       </div>
 
-      {result && (
-        <div className="rounded-md border p-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-sm">{result.name}</span>
-              <Badge variant="outline" className="text-xs">{result.version}</Badge>
-            </div>
-            {result.summary && (
-              <p className="text-xs text-muted-foreground mt-1 truncate">
-                {result.summary}
-              </p>
-            )}
-          </div>
-          <Button
-            size="sm"
-            disabled={alreadyAdded || saving}
-            onClick={() => addPackage(result.name)}
-          >
-            {alreadyAdded ? "Added" : "Add"}
-          </Button>
+      {results.length > 0 && (
+        <div className="rounded-md border divide-y max-h-[240px] overflow-y-auto">
+          {results.map((pkg) => {
+            const alreadyAdded = packages.includes(pkg.name);
+            return (
+              <div
+                key={pkg.name}
+                className="flex items-start justify-between gap-3 p-2.5"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">{pkg.name}</span>
+                    <Badge variant="outline" className="text-xs">
+                      {pkg.version}
+                    </Badge>
+                  </div>
+                  {pkg.summary && (
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                      {pkg.summary}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant={alreadyAdded ? "outline" : "default"}
+                  disabled={alreadyAdded || saving}
+                  onClick={() => addPackage(pkg.name)}
+                >
+                  {alreadyAdded ? "Added" : "Add"}
+                </Button>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {notFound && query.trim() && (
+      {noResults && query.trim().length >= 2 && (
         <p className="text-sm text-muted-foreground">
-          No package found for "{query.trim()}"
+          No packages found for "{query.trim()}"
         </p>
       )}
 
@@ -148,7 +160,7 @@ export function PackageManager({
         </div>
       )}
 
-      {packages.length === 0 && !result && !searching && (
+      {packages.length === 0 && results.length === 0 && !searching && (
         <p className="text-sm text-muted-foreground">
           No packages installed. Search PyPI above to add dependencies.
         </p>

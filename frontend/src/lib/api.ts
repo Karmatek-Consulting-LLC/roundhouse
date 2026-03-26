@@ -148,18 +148,6 @@ export const api = {
     }),
 
   // PyPI
-  searchPyPI: async (query: string): Promise<PyPIPackageInfo | null> => {
-    try {
-      const res = await fetch(`https://pypi.org/pypi/${encodeURIComponent(query)}/json`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      return {
-        name: data.info.name,
-        version: data.info.version,
-        summary: data.info.summary ?? "",
-      };
-    } catch {
-      return null;
-    }
-  },
+  searchPyPI: (query: string) =>
+    request<PyPIPackageInfo[]>(`/pypi/search?q=${encodeURIComponent(query)}`),
 };
