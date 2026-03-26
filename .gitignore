@@ -18,5 +18,9 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Node
+node_modules/
+frontend/dist/
+
 # Docker
 *.log
