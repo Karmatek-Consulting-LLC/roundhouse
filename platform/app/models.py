@@ -73,12 +73,18 @@ Primitive = ToolPrimitive | ResourcePrimitive | ResourceTemplatePrimitive | Prom
 # --- Server ---
 
 
+class EnvVar(BaseModel):
+    name: str
+    value: str
+
+
 class ServerSpec(BaseModel):
     """Persisted server definition with its primitives."""
     name: str
     description: str = ""
     primitives: list[Primitive] = []
     pip_packages: list[str] = []
+    env_vars: list[EnvVar] = []
 
 
 class CreateServerRequest(BaseModel):
@@ -106,6 +112,7 @@ class ServerResponse(BaseModel):
     description: str = ""
     primitives: list[Primitive] = []
     pip_packages: list[str] = []
+    env_vars: list[EnvVar] = []
     created_at: str | None = None
 
 
@@ -115,3 +122,7 @@ class AddPrimitiveRequest(BaseModel):
 
 class UpdatePipPackagesRequest(BaseModel):
     pip_packages: list[str]
+
+
+class UpdateEnvVarsRequest(BaseModel):
+    env_vars: list[EnvVar]

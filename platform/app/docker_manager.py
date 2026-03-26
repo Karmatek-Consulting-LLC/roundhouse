@@ -39,7 +39,11 @@ class DockerManager:
         }
 
     def build_and_start(
-        self, server_name: str, build_context: Path, template_name: str
+        self,
+        server_name: str,
+        build_context: Path,
+        template_name: str,
+        env_vars: dict[str, str] | None = None,
     ) -> dict:
         tag = self._image_tag(server_name)
         container_name = self._container_name(server_name)
@@ -61,6 +65,7 @@ class DockerManager:
             name=container_name,
             network=self.network_name,
             labels=labels,
+            environment=env_vars or {},
         )
         return self._container_to_dict(container)
 

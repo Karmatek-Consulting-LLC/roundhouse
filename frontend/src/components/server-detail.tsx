@@ -12,6 +12,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PackageManager } from "@/components/package-manager";
+import { EnvVarsEditor } from "@/components/env-vars-editor";
 import { ArrowLeft, Trash2 } from "lucide-react";
 
 interface ServerDetailProps {
@@ -160,6 +162,23 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
           </Table>
         </div>
       )}
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="rounded-lg border p-4">
+          <PackageManager
+            serverName={serverName}
+            packages={server.pip_packages}
+            onUpdated={refresh}
+          />
+        </div>
+        <div className="rounded-lg border p-4">
+          <EnvVarsEditor
+            serverName={serverName}
+            envVars={server.env_vars}
+            onUpdated={refresh}
+          />
+        </div>
+      </div>
     </div>
   );
 }

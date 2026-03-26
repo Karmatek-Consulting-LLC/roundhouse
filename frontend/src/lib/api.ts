@@ -59,6 +59,11 @@ export interface Template {
   variables: TemplateVariable[];
 }
 
+export interface EnvVar {
+  name: string;
+  value: string;
+}
+
 export interface Server {
   name: string;
   template: string;
@@ -67,7 +72,14 @@ export interface Server {
   description: string;
   primitives: Primitive[];
   pip_packages: string[];
+  env_vars: EnvVar[];
   created_at: string | null;
+}
+
+export interface PyPIPackageInfo {
+  name: string;
+  version: string;
+  summary: string;
 }
 
 export interface CreateServerRequest {
@@ -129,4 +141,25 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ pip_packages }),
     }),
+  updateEnvVars: (serverName: string, env_vars: EnvVar[]) =>
+    request<Server>(`/servers/${serverName}/env`, {
+      method: "PUT",
+      body: JSON.stringify({ env_vars }),
+    }),
+
+  // PyPI
+  searchPyPI: async (query: string): Promise<PyPIPackageInfo | null> => {
+    try {
+      const res = await fetch(`https://pypi.org/pypi/${encodeURIComponent(query)}/json`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return {
+        name: data.info.name,
+        version: data.info.version,
+        summary: data.info.summary ?? "",
+      };
+    } catch {
+      return null;
+    }
+  },
 };

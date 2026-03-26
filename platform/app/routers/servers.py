@@ -14,6 +14,7 @@ from app.models import (
     ServerResponse,
     ServerSpec,
     TemplateResponse,
+    UpdateEnvVarsRequest,
     UpdatePipPackagesRequest,
 )
 from app.server_store import ServerStore
@@ -36,15 +37,20 @@ def _to_response(server: dict, spec: ServerSpec | None = None) -> ServerResponse
         description=spec.description if spec else "",
         primitives=spec.primitives if spec else [],
         pip_packages=spec.pip_packages if spec else [],
+        env_vars=spec.env_vars if spec else [],
         created_at=server.get("created_at"),
     )
+
+
+def _env_dict(spec: ServerSpec) -> dict[str, str]:
+    return {ev.name: ev.value for ev in spec.env_vars}
 
 
 def _build_and_deploy(spec: ServerSpec) -> dict:
     """Generate code, build image, and start container."""
     build_ctx = write_build_context(spec, SERVERS_DATA_DIR / spec.name)
     store.save(spec)
-    return docker_mgr.build_and_start(spec.name, build_ctx, "custom")
+    return docker_mgr.build_and_start(spec.name, build_ctx, "custom", env_vars=_env_dict(spec))
 
 
 def _redeploy(spec: ServerSpec) -> dict:
@@ -230,4 +236,23 @@ def update_pip_packages(name: str, req: UpdatePipPackagesRequest):
         return _to_response(server, spec)
     except Exception as e:
         logger.exception("Failed to update packages for '%s'", name)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Environment Variables ---
+
+
+@router.put("/servers/{name}/env", response_model=ServerResponse)
+def update_env_vars(name: str, req: UpdateEnvVarsRequest):
+    spec = store.load(name)
+    if not spec:
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+
+    spec.env_vars = req.env_vars
+
+    try:
+        server = _redeploy(spec)
+        return _to_response(server, spec)
+    except Exception as e:
+        logger.exception("Failed to update env vars for '%s'", name)
         raise HTTPException(status_code=500, detail=str(e))
