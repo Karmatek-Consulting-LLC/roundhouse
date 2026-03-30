@@ -1,0 +1,73 @@
+services:
+  traefik:
+    image: traefik:v3.3
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - traefik-dynamic:/etc/traefik/dynamic:ro
+      - traefik-certs:/etc/traefik/certs:ro
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcp}
+      POSTGRES_DB: ${POSTGRES_DB:-mcp}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcp"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  platform:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - server-data:/app/data/servers
+      - traefik-dynamic:/app/traefik/dynamic
+      - traefik-certs:/app/traefik/certs
+    environment:
+      - DOCKER_NETWORK=mcp-network
+      - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
+      - SERVERS_DATA_DIR=/app/data/servers
+      - TEMPLATES_DIR=/app/templates
+      - DATABASE_URL=${DATABASE_URL:-postgresql://mcp:mcp@postgres:5432/mcp}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - TRAEFIK_DYNAMIC_DIR=/app/traefik/dynamic
+      - TRAEFIK_CERTS_DIR=/app/traefik/certs
+    networks:
+      - mcp-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.platform.entrypoints=web,websecure"
+      - "traefik.http.routers.platform.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.platform.priority=1"
+      - "traefik.http.services.platform.loadbalancer.server.port=9000"
+    restart: unless-stopped
+
+networks:
+  mcp-network:
+    name: mcp-network
+    driver: bridge
+
+volumes:
+  pgdata:
+  server-data:
+  traefik-dynamic:
+  traefik-certs:

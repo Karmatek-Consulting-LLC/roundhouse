@@ -58,3 +58,24 @@ app.include_router(pypi_router, prefix="/api")
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# Serve frontend static files in production
+# (only mounts if the dist directory exists in the image)
+from pathlib import Path
+
+_static_dir = Path("/app/static")
+if _static_dir.exists() and (_static_dir / "index.html").exists():
+    from fastapi.staticfiles import StaticFiles
+    from starlette.responses import FileResponse
+
+    # Serve built assets (JS, CSS, fonts)
+    app.mount("/assets", StaticFiles(directory=_static_dir / "assets"), name="static-assets")
+
+    # SPA catch-all: serve index.html for any non-API, non-asset route
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        file = _static_dir / full_path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(_static_dir / "index.html")
