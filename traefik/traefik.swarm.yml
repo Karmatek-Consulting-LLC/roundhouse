@@ -1,0 +1,19 @@
+api:
+  dashboard: true
+  insecure: true
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: mcp-network
+    swarmMode: true
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true

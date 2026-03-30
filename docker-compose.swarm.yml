@@ -1,0 +1,100 @@
+version: "3.8"
+
+services:
+  traefik:
+    image: traefik:v3.3
+    ports:
+      - target: 80
+        published: 80
+        mode: host
+      - target: 443
+        published: 443
+        mode: host
+      - target: 8080
+        published: 8080
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-dynamic:/etc/traefik/dynamic:ro
+      - traefik-certs:/etc/traefik/certs:ro
+    configs:
+      - source: traefik-config
+        target: /etc/traefik/traefik.yml
+    networks:
+      - mcp-network
+    deploy:
+      placement:
+        constraints:
+          - node.labels.mcp-platform == true
+      restart_policy:
+        condition: on-failure
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcp}
+      POSTGRES_DB: ${POSTGRES_DB:-mcp}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcp"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      placement:
+        constraints:
+          - node.labels.mcp-platform == true
+      restart_policy:
+        condition: on-failure
+
+  platform:
+    image: ${PLATFORM_IMAGE:-mcp-platform:latest}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - server-data:/app/data/servers
+      - traefik-dynamic:/app/traefik/dynamic
+      - traefik-certs:/app/traefik/certs
+    environment:
+      - DOCKER_NETWORK=mcp-network
+      - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
+      - SERVERS_DATA_DIR=/app/data/servers
+      - TEMPLATES_DIR=/app/templates
+      - DATABASE_URL=${DATABASE_URL:-postgresql://mcp:mcp@postgres:5432/mcp}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - TRAEFIK_DYNAMIC_DIR=/app/traefik/dynamic
+      - TRAEFIK_CERTS_DIR=/app/traefik/certs
+    networks:
+      - mcp-network
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.platform.entrypoints=web,websecure"
+        - "traefik.http.routers.platform.rule=PathPrefix(`/`)"
+        - "traefik.http.routers.platform.priority=1"
+        - "traefik.http.services.platform.loadbalancer.server.port=9000"
+      placement:
+        constraints:
+          - node.labels.mcp-platform == true
+      restart_policy:
+        condition: on-failure
+
+configs:
+  traefik-config:
+    file: ./traefik/traefik.swarm.yml
+
+networks:
+  mcp-network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  pgdata:
+  server-data:
+  traefik-dynamic:
+  traefik-certs:
