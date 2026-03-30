@@ -9,11 +9,10 @@ entryPoints:
     address: ":443"
 
 providers:
-  docker:
+  swarm:
     endpoint: "unix:///var/run/docker.sock"
     exposedByDefault: false
     network: mcp-network
-    swarmMode: true
   file:
     directory: /etc/traefik/dynamic
     watch: true
