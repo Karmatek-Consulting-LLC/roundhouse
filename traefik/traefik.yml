@@ -5,10 +5,14 @@ api:
 entryPoints:
   web:
     address: ":80"
-    # Exposed on host as port 3080 to avoid conflict with Herd
+  websecure:
+    address: ":443"
 
 providers:
   docker:
     endpoint: "unix:///var/run/docker.sock"
     exposedByDefault: false
     network: mcp-network
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true

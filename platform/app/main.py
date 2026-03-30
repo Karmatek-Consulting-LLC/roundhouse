@@ -10,6 +10,7 @@ from app.routers.auth import router as auth_router
 from app.routers.pypi import router as pypi_router
 from app.routers.servers import router as servers_router
 from app.routers.teams import router as teams_router
+from app.routers.settings import router as settings_router
 from app.routers.users import router as users_router
 from app.seed import seed_admin
 
@@ -50,6 +51,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(servers_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(teams_router, prefix="/api")
+app.include_router(settings_router, prefix="/api")
 app.include_router(pypi_router, prefix="/api")
 
 

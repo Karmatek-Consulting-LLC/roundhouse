@@ -3,10 +3,13 @@ services:
     image: traefik:v3.3
     ports:
       - "3080:80"
+      - "3443:443"
       - "3081:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - traefik-dynamic:/etc/traefik/dynamic:ro
+      - traefik-certs:/etc/traefik/certs:ro
     networks:
       - mcp-network
 
@@ -35,6 +38,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./templates:/app/templates:ro
       - ./data/servers:/app/data/servers
+      - traefik-dynamic:/app/traefik/dynamic
+      - traefik-certs:/app/traefik/certs
     environment:
       - DOCKER_NETWORK=${DOCKER_NETWORK:-mcp-network}
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:3080}
@@ -44,11 +49,13 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - TRAEFIK_DYNAMIC_DIR=/app/traefik/dynamic
+      - TRAEFIK_CERTS_DIR=/app/traefik/certs
     networks:
       - mcp-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.platform-api.entrypoints=web"
+      - "traefik.http.routers.platform-api.entrypoints=web,websecure"
       - "traefik.http.routers.platform-api.rule=PathPrefix(`/api`)"
       - "traefik.http.services.platform-api.loadbalancer.server.port=9000"
 
@@ -71,7 +78,7 @@ services:
       - mcp-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.entrypoints=web,websecure"
       - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=5173"
@@ -83,3 +90,5 @@ networks:
 
 volumes:
   pgdata:
+  traefik-dynamic:
+  traefik-certs:

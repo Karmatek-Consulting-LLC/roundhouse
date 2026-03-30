@@ -218,6 +218,44 @@ export const api = {
   deleteUser: (id: string) =>
     request<void>(`/users/${id}`, { method: "DELETE" }),
 
+  // Settings
+  getSettings: () => request<{
+    hostname: string;
+    tls_enabled: boolean;
+    has_certificate: boolean;
+    base_url: string;
+  }>("/settings"),
+  updateHostname: async (hostname: string) => {
+    const token = localStorage.getItem("token");
+    const form = new FormData();
+    form.append("hostname", hostname);
+    const res = await fetch("/api/settings/hostname", {
+      method: "PUT",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) throw new Error("Failed to update hostname");
+    return res.json();
+  },
+  uploadCertificate: async (cert: File, key: File) => {
+    const token = localStorage.getItem("token");
+    const form = new FormData();
+    form.append("cert", cert);
+    form.append("key", key);
+    const res = await fetch("/api/settings/certificate", {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail ?? "Failed to upload certificate");
+    }
+    return res.json();
+  },
+  deleteCertificate: () =>
+    request<{ tls_enabled: boolean }>("/settings/certificate", { method: "DELETE" }),
+
   // Teams
   listTeams: () => request<Team[]>("/teams"),
   createTeam: (data: { name: string; description?: string }) =>

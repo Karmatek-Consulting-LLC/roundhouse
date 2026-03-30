@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.codegen import write_build_context
-from app.config import MCP_BASE_URL, SERVERS_DATA_DIR
+from app.config import SERVERS_DATA_DIR
 from app.database import get_db
 from app.db_models import ServerOwner, User
 from app.docker_manager import DockerManager
+from app.routers.settings import get_base_url
 from app.models import (
     AddPrimitiveRequest,
     CreateServerRequest,
@@ -52,7 +53,7 @@ def _to_response(
         name=server["name"],
         template=server["template"],
         status=server["status"],
-        url=f"{MCP_BASE_URL}/s/{server['name']}/mcp",
+        url=f"{get_base_url(db) if db else ''}/s/{server['name']}/mcp",
         description=spec.description if spec else "",
         imports=spec.imports if spec else [],
         primitives=spec.primitives if spec else [],

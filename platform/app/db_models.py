@@ -56,3 +56,10 @@ class ServerOwner(Base):
     created_at: Mapped[datetime] = mapped_column(default=func.now())
 
     owner: Mapped["User"] = relationship()
+
+
+class PlatformSetting(Base):
+    __tablename__ = "platform_settings"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="")

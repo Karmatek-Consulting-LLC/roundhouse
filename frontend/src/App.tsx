@@ -7,6 +7,7 @@ import { CreateServerDialog } from "@/components/create-server-dialog";
 import { LoginPage } from "@/components/login-page";
 import { UserManagement } from "@/components/user-management";
 import { TeamManagement } from "@/components/team-management";
+import { PlatformSettings } from "@/components/platform-settings";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -17,9 +18,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Shield, Users } from "lucide-react";
+import { LogOut, Settings, Shield, Users } from "lucide-react";
 
-type View = "servers" | "users" | "teams";
+type View = "servers" | "users" | "teams" | "settings";
 
 export default function App() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -83,6 +84,10 @@ export default function App() {
                       <Users className="mr-2 h-4 w-4" />
                       Manage Teams
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => { setView("settings"); setSelectedServer(null); }}>
+                      <Settings className="mr-2 h-4 w-4" />
+                      Platform Settings
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </>
                 )}
@@ -97,7 +102,9 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-8">
-        {view === "users" && isSuperAdmin ? (
+        {view === "settings" && isSuperAdmin ? (
+          <PlatformSettings onBack={goHome} />
+        ) : view === "users" && isSuperAdmin ? (
           <UserManagement onBack={goHome} />
         ) : view === "teams" ? (
           <TeamManagement onBack={goHome} />
