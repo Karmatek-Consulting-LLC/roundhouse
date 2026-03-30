@@ -32,9 +32,11 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-mcp}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcp}
-      POSTGRES_DB: ${POSTGRES_DB:-mcp}
+      POSTGRES_USER: mcp
+      POSTGRES_DB: mcp
+      POSTGRES_PASSWORD_FILE: /run/secrets/mcp_postgres_password
+    secrets:
+      - mcp_postgres_password
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -53,20 +55,22 @@ services:
 
   platform:
     image: ${PLATFORM_IMAGE:-mcp-platform:latest}
+    secrets:
+      - mcp_jwt_secret_key
+      - mcp_admin_email
+      - mcp_admin_password
+      - mcp_postgres_password
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - server-data:/app/data/servers
       - traefik-dynamic:/app/traefik/dynamic
       - traefik-certs:/app/traefik/certs
     environment:
-      - DOCKER_NETWORK=mcp-network
+      - DOCKER_NETWORK=mcp_mcp-network
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
       - SERVERS_DATA_DIR=/app/data/servers
       - TEMPLATES_DIR=/app/templates
-      - DATABASE_URL=${DATABASE_URL:-postgresql://mcp:mcp@postgres:5432/mcp}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?Set JWT_SECRET_KEY}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - DATABASE_URL=postgresql://mcp:__SECRET__@postgres:5432/mcp
       - TRAEFIK_DYNAMIC_DIR=/app/traefik/dynamic
       - TRAEFIK_CERTS_DIR=/app/traefik/certs
     networks:
@@ -83,6 +87,16 @@ services:
           - node.labels.mcp-platform == true
       restart_policy:
         condition: on-failure
+
+secrets:
+  mcp_jwt_secret_key:
+    external: true
+  mcp_admin_email:
+    external: true
+  mcp_admin_password:
+    external: true
+  mcp_postgres_password:
+    external: true
 
 configs:
   traefik-config:
