@@ -1,6 +1,6 @@
 # Stage 1: Build frontend
 FROM node:20-slim AS frontend-build
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 WORKDIR /build
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/.npmrc ./
 RUN pnpm install --frozen-lockfile
@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY platform/app/ ./app/
 COPY platform/alembic.ini ./
 COPY platform/alembic/ ./alembic/
+COPY templates/ /app/templates/
 
 # Copy built frontend
 COPY --from=frontend-build /build/dist ./static/

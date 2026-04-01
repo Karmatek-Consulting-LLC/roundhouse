@@ -48,25 +48,32 @@ def _indent(code: str, level: int = 1) -> str:
     return "\n".join(prefix + line if line.strip() else "" for line in lines)
 
 
+def _doc_literal(description: str) -> str:
+    """Safe Python string literal for a function docstring (handles quotes, newlines, etc.)."""
+    return repr(description)
+
+
 def _generate_tool(tool: ToolPrimitive) -> str:
     sig = _param_signature(tool.parameters)
-    body = tool.code.strip() if tool.code.strip() else 'return "Not implemented"'
-    docstring = tool.description or tool.name
+    ret_py = "dict" if tool.return_type == "dict" else "str"
+    default_body = 'return "Not implemented"' if ret_py == "str" else "return {}"
+    body = tool.code.strip() if tool.code.strip() else default_body
+    doc = _doc_literal(tool.description or tool.name)
     return f'''
 @mcp.tool()
-def {tool.name}({sig}) -> str:
-    """{docstring}"""
+def {tool.name}({sig}) -> {ret_py}:
+    {doc}
 {_indent(body)}
 '''
 
 
 def _generate_resource(res: ResourcePrimitive) -> str:
     body = res.code.strip() if res.code.strip() else f'return "{res.name}"'
-    docstring = res.description or res.name
+    doc = _doc_literal(res.description or res.name)
     return f'''
-@mcp.resource("{res.uri}")
+@mcp.resource({repr(res.uri)})
 def {res.name}() -> str:
-    """{docstring}"""
+    {doc}
 {_indent(body)}
 '''
 
@@ -77,11 +84,11 @@ def _generate_resource_template(rt: ResourceTemplatePrimitive) -> str:
     param_names = re.findall(r"\{(\w+)\}", rt.uri_template)
     sig = ", ".join(f"{p}: str" for p in param_names)
     body = rt.code.strip() if rt.code.strip() else f'return "{rt.name}"'
-    docstring = rt.description or rt.name
+    doc = _doc_literal(rt.description or rt.name)
     return f'''
-@mcp.resource("{rt.uri_template}")
+@mcp.resource({repr(rt.uri_template)})
 def {rt.name}({sig}) -> str:
-    """{docstring}"""
+    {doc}
 {_indent(body)}
 '''
 
@@ -89,11 +96,11 @@ def {rt.name}({sig}) -> str:
 def _generate_prompt(prompt: PromptPrimitive) -> str:
     sig = _param_signature(prompt.parameters)
     body = prompt.code.strip() if prompt.code.strip() else 'return "Not implemented"'
-    docstring = prompt.description or prompt.name
+    doc = _doc_literal(prompt.description or prompt.name)
     return f'''
 @mcp.prompt()
 def {prompt.name}({sig}) -> str:
-    """{docstring}"""
+    {doc}
 {_indent(body)}
 '''
 

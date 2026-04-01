@@ -68,6 +68,9 @@ export function AddPrimitiveDialog({
   const [params, setParams] = useState<ToolParameter[]>(
     existing && "parameters" in existing ? existing.parameters : []
   );
+  const [returnType, setReturnType] = useState<"str" | "dict">(
+    existing?.kind === "tool" && existing.return_type === "dict" ? "dict" : "str",
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -80,6 +83,7 @@ export function AddPrimitiveDialog({
       setUri("");
       setMimeType("text/plain");
       setParams([]);
+      setReturnType("str");
     }
     setError(null);
   }
@@ -100,10 +104,24 @@ export function AddPrimitiveDialog({
     );
   }
 
+  /** Single state update for multiple param fields (avoids stale closure when updating twice per keystroke). */
+  function updateParamFields(idx: number, updates: Partial<ToolParameter>) {
+    setParams(
+      params.map((p, i) => (i === idx ? { ...p, ...updates } : p))
+    );
+  }
+
   function buildPrimitive(): Primitive {
     switch (kind) {
       case "tool":
-        return { kind: "tool", name, description, parameters: params, code };
+        return {
+          kind: "tool",
+          name,
+          description,
+          parameters: params,
+          code,
+          return_type: returnType,
+        };
       case "resource":
         return { kind: "resource", name, uri, description, mime_type: mimeType, code };
       case "resource_template":
@@ -204,6 +222,29 @@ export function AddPrimitiveDialog({
             />
           </div>
 
+          {kind === "tool" && (
+            <div className="grid gap-2">
+              <Label>Tool return type</Label>
+              <p className="text-xs text-muted-foreground">
+                Controls the Python annotation (<code className="rounded bg-muted px-1">-&gt; str</code> vs{" "}
+                <code className="rounded bg-muted px-1">-&gt; dict</code>) and how FastMCP builds MCP
+                structured output.
+              </p>
+              <Select
+                value={returnType}
+                onValueChange={(v) => setReturnType(v as "str" | "dict")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="str">Text (str) — single value</SelectItem>
+                  <SelectItem value="dict">Object (dict) — JSON object</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {showUri && (
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -292,8 +333,10 @@ export function AddPrimitiveDialog({
                         value={p.default ?? ""}
                         onChange={(e) => {
                           const val = e.target.value;
-                          updateParam(idx, "default", val || null as unknown as string);
-                          updateParam(idx, "required", !val);
+                          updateParamFields(idx, {
+                            default: val === "" ? null : val,
+                            required: val === "",
+                          });
                         }}
                       />
                     </div>
@@ -306,8 +349,28 @@ export function AddPrimitiveDialog({
           <div className="grid gap-2">
             <Label>Python Code</Label>
             <p className="text-xs text-muted-foreground">
-              Function body only -- parameters are defined above.
-              Use <code className="rounded bg-muted px-1">return</code> to send the result.
+              Function body only — parameters are defined above. Use{" "}
+              <code className="rounded bg-muted px-1">return</code> for the result.
+              {kind === "tool" && returnType === "str" && (
+                <>
+                  {" "}
+                  With <strong className="font-medium text-foreground">Text (str)</strong>, return a plain
+                  string. FastMCP exposes it as structured{" "}
+                  <code className="rounded bg-muted px-1">{`{ "result": "..." }`}</code>. Some UIs show an
+                  &quot;unstructured&quot; panel as plain text — that is normal; it is not a JSON object, so
+                  warnings like &quot;not valid JSON&quot; there are expected.
+                </>
+              )}
+              {kind === "tool" && returnType === "dict" && (
+                <>
+                  {" "}
+                  With <strong className="font-medium text-foreground">Object (dict)</strong>, return a Python
+                  dict (e.g. <code className="rounded bg-muted px-1">{`return {"result": f"Hello, {who}!"}`}</code>
+                  ). Structured content matches your keys directly — no extra{" "}
+                  <code className="rounded bg-muted px-1">result</code> wrapper from FastMCP as with plain
+                  strings.
+                </>
+              )}
             </p>
             <div className="rounded-md border overflow-hidden">
               <CodeMirror
@@ -315,7 +378,11 @@ export function AddPrimitiveDialog({
                 onChange={setCode}
                 theme={resolvedTheme}
                 extensions={[python()]}
-                placeholder={'return f"Hello, {name}!"'}
+                placeholder={
+                  kind === "tool" && returnType === "dict"
+                    ? 'return {"result": f"Hello, {who}!"}'
+                    : 'return f"Hello, {name}!"'
+                }
                 minHeight="200px"
                 basicSetup={{
                   lineNumbers: true,

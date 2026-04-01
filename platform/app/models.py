@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
+from app.config import MAX_MCP_SERVER_REPLICAS
+
 
 # --- Templates (kept for backward compat) ---
 
@@ -39,6 +41,8 @@ class ToolPrimitive(BaseModel):
     description: str = ""
     parameters: list[ToolParameter] = []
     code: str = ""
+    # FastMCP: str is wrapped as structured {"result": <value>}; dict becomes structured JSON as-is.
+    return_type: Literal["str", "dict"] = "str"
 
 
 class ResourcePrimitive(BaseModel):
@@ -86,6 +90,19 @@ class ServerSpec(BaseModel):
     primitives: list[Primitive] = []
     pip_packages: list[str] = []
     env_vars: list[EnvVar] = []
+    # Desired Swarm replicas when running; None = use platform default (DEFAULT_MCP_SERVER_REPLICAS).
+    replicas: int | None = None
+
+    @field_validator("replicas")
+    @classmethod
+    def _replicas_range(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v < 1 or v > MAX_MCP_SERVER_REPLICAS:
+            raise ValueError(
+                f"replicas must be between 1 and {MAX_MCP_SERVER_REPLICAS}, or omitted"
+            )
+        return v
 
 
 class CreateServerRequest(BaseModel):
@@ -93,6 +110,7 @@ class CreateServerRequest(BaseModel):
     description: str = ""
     template: str | None = None
     config: dict[str, str] = {}
+    replicas: int | None = None
 
     @field_validator("name")
     @classmethod
@@ -104,10 +122,32 @@ class CreateServerRequest(BaseModel):
             )
         return v
 
+    @field_validator("replicas")
+    @classmethod
+    def _create_replicas_range(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v < 1 or v > MAX_MCP_SERVER_REPLICAS:
+            raise ValueError(
+                f"replicas must be between 1 and {MAX_MCP_SERVER_REPLICAS}, or omitted"
+            )
+        return v
+
+
+class PlacementTask(BaseModel):
+    """One Swarm task (running or failed placement attempt)."""
+    task_id: str
+    node_id: str = ""
+    node_name: str | None = None
+    state: str = ""
+    slot: int | None = None
+    error: str | None = None
+
 
 class ServerResponse(BaseModel):
     name: str
     template: str
+    # running | stopped (Swarm) | container states | not_deployed | unknown
     status: str
     url: str
     description: str = ""
@@ -118,6 +158,23 @@ class ServerResponse(BaseModel):
     owner_id: str | None = None
     owner_email: str | None = None
     created_at: str | None = None
+    replicas_desired: int = 1
+    replicas_running: int = 0
+    docker_swarm_mode: bool = False
+    placement: list[PlacementTask] = []
+
+
+class UpdateReplicasRequest(BaseModel):
+    replicas: int
+
+    @field_validator("replicas")
+    @classmethod
+    def _update_replicas_range(cls, v: int) -> int:
+        if v < 1 or v > MAX_MCP_SERVER_REPLICAS:
+            raise ValueError(
+                f"replicas must be between 1 and {MAX_MCP_SERVER_REPLICAS}"
+            )
+        return v
 
 
 class AddPrimitiveRequest(BaseModel):

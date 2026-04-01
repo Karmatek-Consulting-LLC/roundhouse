@@ -51,6 +51,8 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
       - TRAEFIK_DYNAMIC_DIR=/app/traefik/dynamic
       - TRAEFIK_CERTS_DIR=/app/traefik/certs
+      - DEFAULT_MCP_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
+      - MAX_MCP_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
     networks:
       - mcp-network
     labels:
@@ -61,6 +63,8 @@ services:
 
   frontend:
     build: ./frontend
+    environment:
+      - API_PROXY_TARGET=http://platform-api:9000
     volumes:
       - ./frontend/package.json:/app/package.json
       - ./frontend/pnpm-lock.yaml:/app/pnpm-lock.yaml

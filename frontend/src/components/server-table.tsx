@@ -33,21 +33,22 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
   if (servers.length === 0) {
     return (
       <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-        No MCP servers running. Create one to get started.
+        No MCP servers registered yet. Create one to get started.
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border">
+    <div className="w-full min-w-0 rounded-lg border">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Owner</TableHead>
             <TableHead>Primitives</TableHead>
+            <TableHead>Replicas</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Endpoint</TableHead>
+            <TableHead className="min-w-[14rem]">Endpoint</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -68,17 +69,30 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
               <TableCell className="text-muted-foreground text-sm">
                 {s.primitives?.length ?? 0} primitives
               </TableCell>
+              <TableCell className="text-muted-foreground text-sm tabular-nums">
+                {s.status === "not_deployed" || s.status === "unknown"
+                  ? "—"
+                  : s.docker_swarm_mode
+                    ? `${s.replicas_running}/${s.replicas_desired}`
+                    : s.replicas_running > 0
+                      ? "1"
+                      : "0"}
+              </TableCell>
               <TableCell>
                 <StatusBadge status={s.status} />
               </TableCell>
-              <TableCell>
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
+              <TableCell className="min-w-0">
+                <code className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                   {s.url}
                 </code>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-2">
-                  {s.status === "running" ? (
+                  {s.status === "not_deployed" || s.status === "unknown" ? (
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {s.status === "unknown" ? "Check Docker" : "Deploy in details"}
+                    </span>
+                  ) : s.status === "running" ? (
                     <Button
                       variant="outline"
                       size="sm"

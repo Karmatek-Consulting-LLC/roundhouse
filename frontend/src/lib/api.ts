@@ -12,6 +12,8 @@ export interface ToolPrimitive {
   description: string;
   parameters: ToolParameter[];
   code: string;
+  /** FastMCP: str → structured { result }; dict → structured object matches your keys */
+  return_type?: "str" | "dict";
 }
 
 export interface ResourcePrimitive {
@@ -64,6 +66,15 @@ export interface EnvVar {
   value: string;
 }
 
+export interface PlacementTask {
+  task_id: string;
+  node_id: string;
+  node_name: string | null;
+  state: string;
+  slot: number | null;
+  error: string | null;
+}
+
 export interface Server {
   name: string;
   template: string;
@@ -77,6 +88,10 @@ export interface Server {
   owner_id: string | null;
   owner_email: string | null;
   created_at: string | null;
+  replicas_desired: number;
+  replicas_running: number;
+  docker_swarm_mode: boolean;
+  placement: PlacementTask[];
 }
 
 export interface AuthUser {
@@ -117,9 +132,17 @@ export interface CreateServerRequest {
   description?: string;
   template?: string;
   config?: Record<string, string>;
+  /** Omit to use platform default (Swarm only for N>1). */
+  replicas?: number | null;
 }
 
 const BASE = "/api";
+
+async function errorDetailFrom401(res: Response): Promise<string | undefined> {
+  const body = await res.json().catch(() => ({}));
+  const d = (body as { detail?: unknown }).detail;
+  return typeof d === "string" ? d : undefined;
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("token");
@@ -131,8 +154,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
   const res = await fetch(`${BASE}${path}`, { headers, ...options });
   if (res.status === 401) {
+    const detail = await errorDetailFrom401(res);
+    const method = (options?.method ?? "GET").toUpperCase();
+    const isLoginFailure = path === "/auth/login" && method === "POST";
+    if (isLoginFailure) {
+      throw new Error(detail ?? "Invalid email or password");
+    }
     localStorage.removeItem("token");
-    throw new Error("Session expired");
+    throw new Error(detail ?? "Session expired");
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -142,11 +171,45 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+async function requestText(path: string): Promise<string> {
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${BASE}${path}`, { headers });
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    throw new Error("Session expired");
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const body = JSON.parse(text) as { detail?: string };
+      throw new Error(body.detail ?? (text || `Request failed: ${res.status}`));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        throw new Error(text || `Request failed: ${res.status}`);
+      }
+      throw e;
+    }
+  }
+  return res.text();
+}
+
 export const api = {
   listTemplates: () => request<Template[]>("/templates"),
   getTemplate: (name: string) => request<Template>(`/templates/${name}`),
   listServers: () => request<Server[]>("/servers"),
+  getServerReplicaLimits: () =>
+    request<{
+      default_mcp_server_replicas: number;
+      max_mcp_server_replicas: number;
+      docker_swarm_mode: boolean;
+    }>("/servers/limits"),
   getServer: (name: string) => request<Server>(`/servers/${name}`),
+  getServerLogs: (name: string, tail = 200) =>
+    requestText(`/servers/${encodeURIComponent(name)}/logs?tail=${tail}`),
   createServer: (data: CreateServerRequest) =>
     request<Server>("/servers", {
       method: "POST",
@@ -156,6 +219,8 @@ export const api = {
     request<Server>(`/servers/${name}/start`, { method: "POST" }),
   stopServer: (name: string) =>
     request<Server>(`/servers/${name}/stop`, { method: "POST" }),
+  redeployServer: (name: string) =>
+    request<Server>(`/servers/${name}/redeploy`, { method: "POST" }),
   deleteServer: (name: string) =>
     request<void>(`/servers/${name}`, { method: "DELETE" }),
 
@@ -163,6 +228,11 @@ export const api = {
     request<Server>(`/servers/${serverName}/description`, {
       method: "PUT",
       body: JSON.stringify({ description }),
+    }),
+  updateServerReplicas: (serverName: string, replicas: number) =>
+    request<Server>(`/servers/${serverName}/replicas`, {
+      method: "PUT",
+      body: JSON.stringify({ replicas }),
     }),
 
   // Primitives
@@ -224,7 +294,28 @@ export const api = {
     tls_enabled: boolean;
     has_certificate: boolean;
     base_url: string;
+    default_mcp_server_replicas: number;
+    max_mcp_server_replicas: number;
+    docker_swarm_mode: boolean;
+    docker_registry: string;
+    docker_registry_effective: string;
+    docker_registry_username: string;
+    docker_registry_password_configured: boolean;
   }>("/settings"),
+  updateDockerRegistry: (body: {
+    registry: string;
+    username?: string;
+    password?: string;
+  }) =>
+    request<{
+      docker_registry: string;
+      docker_registry_effective: string;
+      docker_registry_username: string;
+      docker_registry_password_configured: boolean;
+    }>("/settings/docker-registry", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   updateHostname: async (hostname: string) => {
     const token = localStorage.getItem("token");
     const form = new FormData();

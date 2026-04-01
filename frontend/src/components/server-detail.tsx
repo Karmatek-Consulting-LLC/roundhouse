@@ -17,7 +17,9 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Check, Loader2, Pencil, Rocket, Trash2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, Check, Loader2, Pencil, RefreshCw, Rocket, Trash2 } from "lucide-react";
 
 interface ServerDetailProps {
   serverName: string;
@@ -55,6 +57,18 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState<string | null>(null);
 
+  const [logs, setLogs] = useState<string | null>(null);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
+
+  const [replicaLimits, setReplicaLimits] = useState<{
+    max_mcp_server_replicas: number;
+    docker_swarm_mode: boolean;
+  } | null>(null);
+  const [localReplicas, setLocalReplicas] = useState(1);
+  const [savingReplicas, setSavingReplicas] = useState(false);
+  const [redeploying, setRedeploying] = useState(false);
+
   const refresh = useCallback(async () => {
     try {
       const data = await api.getServer(serverName);
@@ -71,6 +85,22 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    void api
+      .getServerReplicaLimits()
+      .then((l) =>
+        setReplicaLimits({
+          max_mcp_server_replicas: l.max_mcp_server_replicas,
+          docker_swarm_mode: l.docker_swarm_mode,
+        }),
+      )
+      .catch(() => setReplicaLimits(null));
+  }, []);
+
+  useEffect(() => {
+    if (server) setLocalReplicas(server.replicas_desired);
+  }, [server]);
 
   const configDirty =
     server !== null &&
@@ -90,6 +120,34 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
       setDeployError(e instanceof Error ? e.message : "Deploy failed");
     } finally {
       setDeploying(false);
+    }
+  }
+
+  async function handleRedeploy() {
+    setRedeploying(true);
+    setDeployError(null);
+    try {
+      await api.redeployServer(serverName);
+      await refresh();
+      void loadLogs();
+    } catch (e) {
+      setDeployError(e instanceof Error ? e.message : "Redeploy failed");
+    } finally {
+      setRedeploying(false);
+    }
+  }
+
+  async function loadLogs() {
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      const text = await api.getServerLogs(serverName, 400);
+      setLogs(text.trim() ? text : "(no log lines yet)");
+    } catch (e) {
+      setLogsError(e instanceof Error ? e.message : "Failed to load logs");
+      setLogs(null);
+    } finally {
+      setLogsLoading(false);
     }
   }
 
@@ -120,6 +178,35 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         </Button>
       </div>
 
+      <Tabs defaultValue="details" className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2 sm:inline-flex sm:w-auto">
+          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="runtime">Deployment &amp; logs</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="details" className="mt-6 space-y-6">
+      {(server.status === "not_deployed" || server.status === "unknown") && (
+        <div
+          className={
+            server.status === "unknown"
+              ? "rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              : "rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100"
+          }
+        >
+          {server.status === "unknown" ? (
+            <>
+              <strong>Docker status unavailable.</strong> The platform could not read this server from
+              Docker. Check that the Docker socket is reachable and try again.
+            </>
+          ) : (
+            <>
+              <strong>Not deployed to Docker.</strong> This server is registered but has no running
+              service or container. Use <strong>Deploy Changes</strong> below after editing configuration,
+              or fix the deployment from the Deployment &amp; logs tab.
+            </>
+          )}
+        </div>
+      )}
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
@@ -127,9 +214,16 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
             <StatusBadge status={server.status} />
           </div>
           <p className="mt-2">
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono break-all">
               {server.url}
             </code>
+          </p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Use this <strong>full URL</strong> in MCP Inspector with transport <strong>Streamable HTTP</strong>
+            (it must include the <code className="rounded bg-muted px-1">/mcp</code> suffix). If Inspector
+            asks for a <strong>proxy session token</strong>, open <strong>Configuration</strong> and
+            connect directly to this URL without a proxy layer, or leave the token field empty unless your
+            network requires it.
           </p>
         </div>
         <AddPrimitiveDialog serverName={serverName} onAdded={refresh} />
@@ -294,6 +388,165 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
           </Button>
         </div>
       )}
+        </TabsContent>
+
+        <TabsContent value="runtime" className="mt-6 space-y-6">
+          <div className="rounded-lg border p-4 space-y-3">
+            <Label className="text-sm font-medium">Deployment</Label>
+            <p className="text-xs text-muted-foreground">
+              {replicaLimits?.docker_swarm_mode ?? server.docker_swarm_mode
+                ? "Docker Swarm: Traefik spreads traffic across tasks."
+                : "Stand-alone Docker: one container per server. The replica value is stored and used if you move to Swarm."}
+            </p>
+            {(replicaLimits?.docker_swarm_mode ?? server.docker_swarm_mode) && (
+              <p className="text-xs text-muted-foreground border-l-2 border-primary/40 pl-3">
+                <strong className="text-foreground">Why tasks show &quot;No such image&quot;:</strong> MCP
+                server images are built on the host that runs the platform API. Other Swarm nodes need the
+                image from a registry. Set the <strong>Docker image registry</strong> under{" "}
+                <strong>Platform Settings</strong> so builds are tagged and pushed; ensure workers can
+                pull that registry.
+              </p>
+            )}
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="desired-replicas" className="text-xs">
+                  Desired replicas
+                </Label>
+                <Input
+                  id="desired-replicas"
+                  type="number"
+                  min={1}
+                  max={replicaLimits?.max_mcp_server_replicas ?? 32}
+                  className="w-28"
+                  value={localReplicas}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") setLocalReplicas(1);
+                    else setLocalReplicas(Math.max(1, parseInt(v, 10) || 1));
+                  }}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={
+                  savingReplicas || localReplicas === server.replicas_desired
+                }
+                onClick={async () => {
+                  setSavingReplicas(true);
+                  try {
+                    await api.updateServerReplicas(serverName, localReplicas);
+                    await refresh();
+                  } finally {
+                    setSavingReplicas(false);
+                  }
+                }}
+              >
+                {savingReplicas ? "Saving…" : "Apply"}
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Running: <strong>{server.replicas_running}</strong> task
+              {server.replicas_running === 1 ? "" : "s"} (desired{" "}
+              <strong>{server.replicas_desired}</strong>)
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={redeploying}
+                onClick={() => void handleRedeploy()}
+              >
+                {redeploying ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Rebuilding…
+                  </>
+                ) : (
+                  <>
+                    <Rocket className="mr-2 h-4 w-4" />
+                    Rebuild &amp; redeploy
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground max-w-[28rem]">
+                Regenerates <code className="text-[0.8rem]">server.py</code> from the saved spec and
+                rebuilds the Docker image. Use this after a platform upgrade or if containers fail to
+                start.
+              </p>
+            </div>
+            {server.placement.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Task placement</p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>State</TableHead>
+                      <TableHead>Node</TableHead>
+                      <TableHead>Task</TableHead>
+                      <TableHead>Slot</TableHead>
+                      <TableHead>Error</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {server.placement.map((t) => (
+                      <TableRow key={t.task_id}>
+                        <TableCell className="font-mono text-xs">{t.state}</TableCell>
+                        <TableCell className="text-xs">
+                          {t.node_name ?? (t.node_id || "—")}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{t.task_id.slice(0, 12)}</TableCell>
+                        <TableCell className="text-xs">{t.slot ?? "—"}</TableCell>
+                        <TableCell className="text-xs text-destructive max-w-[180px] truncate">
+                          {t.error ?? "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label className="text-sm font-medium">Server container logs</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={logsLoading}
+                onClick={() => void loadLogs()}
+              >
+                {logsLoading ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-1 h-3 w-3" />
+                )}
+                Refresh
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Last lines from the Docker container or Swarm service for this MCP server (stdout/stderr).
+            </p>
+            {logsError && (
+              <p className="text-sm text-destructive">{logsError}</p>
+            )}
+            {logs !== null && (
+              <pre className="max-h-96 overflow-auto rounded-md border bg-muted/50 p-3 text-xs font-mono whitespace-pre-wrap">
+                {logs}
+              </pre>
+            )}
+            {logs === null && !logsError && !logsLoading && (
+              <p className="text-xs text-muted-foreground">
+                Click Refresh to load logs from the host.
+              </p>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

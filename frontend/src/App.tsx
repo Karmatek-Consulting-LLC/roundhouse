@@ -1,4 +1,13 @@
-import { useState } from "react";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useOutletContext,
+  useParams,
+} from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useServers } from "@/hooks/use-servers";
 import { ServerTable } from "@/components/server-table";
@@ -20,38 +29,64 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Settings, Shield, Users } from "lucide-react";
 
-type View = "servers" | "users" | "teams" | "settings";
+export type ServersOutletContext = ReturnType<typeof useServers>;
 
-export default function App() {
-  const { user, loading: authLoading, logout } = useAuth();
-  const { servers, loading, error, refresh } = useServers();
-  const [selectedServer, setSelectedServer] = useState<string | null>(null);
-  const [view, setView] = useState<View>("servers");
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <p className="text-muted-foreground">Loading...</p>
+    </div>
+  );
+}
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
-  }
+function RequireAuth() {
+  const { user, loading } = useAuth();
+  const location = useLocation();
 
+  if (loading) return <LoadingScreen />;
   if (!user) {
-    return <LoginPage />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
+  return <Outlet />;
+}
+
+function LoginRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (user) return <Navigate to="/" replace />;
+  return <LoginPage />;
+}
+
+function SuperAdminOnly({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (user?.role !== "superadmin") return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+function AppShell() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const serversState = useServers();
+
+  if (!user) return null;
 
   const isSuperAdmin = user.role === "superadmin";
+  const isServerList = location.pathname === "/";
 
   function goHome() {
-    setSelectedServer(null);
-    setView("servers");
+    navigate("/");
   }
 
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <button onClick={goHome} className="flex items-center gap-3 text-left">
+        <div className="mx-auto flex w-full max-w-screen-2xl items-center justify-between px-6 py-4">
+          <button
+            type="button"
+            onClick={goHome}
+            className="flex items-center gap-3 text-left"
+          >
             <Logo className="h-10 w-10 shrink-0" />
             <div>
               <h1 className="text-xl font-semibold tracking-tight">
@@ -64,9 +99,7 @@ export default function App() {
           </button>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            {view === "servers" && !selectedServer && (
-              <CreateServerDialog onCreated={refresh} />
-            )}
+            {isServerList && <CreateServerDialog onCreated={serversState.refresh} />}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -76,15 +109,27 @@ export default function App() {
               <DropdownMenuContent align="end">
                 {isSuperAdmin && (
                   <>
-                    <DropdownMenuItem onClick={() => { setView("users"); setSelectedServer(null); }}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        navigate("/users");
+                      }}
+                    >
                       <Shield className="mr-2 h-4 w-4" />
                       Manage Users
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => { setView("teams"); setSelectedServer(null); }}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        navigate("/teams");
+                      }}
+                    >
                       <Users className="mr-2 h-4 w-4" />
                       Manage Teams
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => { setView("settings"); setSelectedServer(null); }}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        navigate("/settings");
+                      }}
+                    >
                       <Settings className="mr-2 h-4 w-4" />
                       Platform Settings
                     </DropdownMenuItem>
@@ -101,34 +146,99 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        {view === "settings" && isSuperAdmin ? (
-          <PlatformSettings onBack={goHome} />
-        ) : view === "users" && isSuperAdmin ? (
-          <UserManagement onBack={goHome} />
-        ) : view === "teams" ? (
-          <TeamManagement onBack={goHome} />
-        ) : selectedServer ? (
-          <ServerDetail
-            serverName={selectedServer}
-            onBack={() => setSelectedServer(null)}
-          />
-        ) : loading ? (
-          <div className="py-12 text-center text-muted-foreground">
-            Loading...
-          </div>
-        ) : error ? (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
-            {error}
-          </div>
-        ) : (
-          <ServerTable
-            servers={servers}
-            onRefresh={refresh}
-            onSelect={setSelectedServer}
-          />
-        )}
+      <main className="mx-auto w-full max-w-screen-2xl px-6 py-8">
+        <Outlet context={serversState satisfies ServersOutletContext} />
       </main>
     </div>
+  );
+}
+
+function HomePage() {
+  const navigate = useNavigate();
+  const { servers, loading, error, refresh } =
+    useOutletContext<ServersOutletContext>();
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center text-muted-foreground">Loading...</div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
+        {error}
+      </div>
+    );
+  }
+  return (
+    <ServerTable
+      servers={servers}
+      onRefresh={refresh}
+      onSelect={(name) => {
+        navigate(`/servers/${encodeURIComponent(name)}`);
+      }}
+    />
+  );
+}
+
+function ServerDetailRoute() {
+  const { serverName } = useParams();
+  const navigate = useNavigate();
+  if (!serverName) return <Navigate to="/" replace />;
+  return (
+    <ServerDetail serverName={serverName} onBack={() => navigate("/")} />
+  );
+}
+
+function UserManagementPage() {
+  const navigate = useNavigate();
+  return <UserManagement onBack={() => navigate("/")} />;
+}
+
+function TeamManagementPage() {
+  const navigate = useNavigate();
+  return <TeamManagement onBack={() => navigate("/")} />;
+}
+
+function PlatformSettingsPage() {
+  const navigate = useNavigate();
+  return <PlatformSettings onBack={() => navigate("/")} />;
+}
+
+export default function App() {
+  const { loading: authLoading } = useAuth();
+
+  if (authLoading) {
+    return <LoadingScreen />;
+  }
+
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginRoute />} />
+      <Route element={<RequireAuth />}>
+        <Route element={<AppShell />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/servers/:serverName" element={<ServerDetailRoute />} />
+          <Route
+            path="/users"
+            element={
+              <SuperAdminOnly>
+                <UserManagementPage />
+              </SuperAdminOnly>
+            }
+          />
+          <Route path="/teams" element={<TeamManagementPage />} />
+          <Route
+            path="/settings"
+            element={
+              <SuperAdminOnly>
+                <PlatformSettingsPage />
+              </SuperAdminOnly>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Route>
+    </Routes>
   );
 }

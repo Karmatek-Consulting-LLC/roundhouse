@@ -21,6 +21,7 @@ Thumbs.db
 # Node
 node_modules/
 frontend/dist/
+frontend/package-lock.json
 
 # Docker
 *.log

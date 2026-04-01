@@ -1,18 +1,11 @@
 version: "3.8"
 
 services:
+  # Traefik is on the external `caddy` network for ingress from Caddy; backends stay on mcp-network.
+  # v3.3's embedded Docker client negotiates API 1.24; Engine with min API 1.40+ rejects it, so the
+  # Swarm provider never loads (empty routers, 404 on :80). Use v3.6+ (see traefik/traefik#12253).
   traefik:
-    image: traefik:v3.3
-    ports:
-      - target: 80
-        published: ${HTTP_PORT:-80}
-        mode: host
-      - target: 443
-        published: ${HTTPS_PORT:-443}
-        mode: host
-      - target: 8080
-        published: ${DASHBOARD_PORT:-8080}
-        mode: host
+    image: traefik:v3.6
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
@@ -22,6 +15,7 @@ services:
         target: /etc/traefik/traefik.yml
     networks:
       - mcp-network
+      - caddy_caddy
     deploy:
       placement:
         constraints:
@@ -66,19 +60,25 @@ services:
       - traefik-dynamic:/app/traefik/dynamic
       - traefik-certs:/app/traefik/certs
     environment:
-      - DOCKER_NETWORK=mcp_mcp-network
+      # Must match `docker network ls` overlay: {stack}_mcp-network (same as Traefik labels).
+      - DOCKER_NETWORK=mcp-platform_mcp-network
+      - TRAEFIK_ENTRYPOINTS=web
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
       - SERVERS_DATA_DIR=/app/data/servers
       - TEMPLATES_DIR=/app/templates
       - DATABASE_URL=postgresql://mcp:__SECRET__@postgres:5432/mcp
       - TRAEFIK_DYNAMIC_DIR=/app/traefik/dynamic
       - TRAEFIK_CERTS_DIR=/app/traefik/certs
+      - DEFAULT_MCP_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
+      - MAX_MCP_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
     networks:
       - mcp-network
     deploy:
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.platform.entrypoints=web,websecure"
+        # Required for Swarm: pick the overlay IP Traefik uses (see providers.swarm.network in traefik.swarm.yml).
+        - "traefik.docker.network=mcp-platform_mcp-network"
+        - "traefik.http.routers.platform.entrypoints=web"
         - "traefik.http.routers.platform.rule=PathPrefix(`/`)"
         - "traefik.http.routers.platform.priority=1"
         - "traefik.http.services.platform.loadbalancer.server.port=9000"
@@ -100,12 +100,17 @@ secrets:
 
 configs:
   traefik-config:
+    # Swarm configs cannot be updated in place; change the name (e.g. v3) when
+    # editing traefik/traefik.swarm.yml, then `docker config rm` the old one if unused.
+    name: mcp-platform_traefik-static-v3
     file: ./traefik/traefik.swarm.yml
 
 networks:
   mcp-network:
     driver: overlay
     attachable: true
+  caddy_caddy:
+    external: true
 
 volumes:
   pgdata:

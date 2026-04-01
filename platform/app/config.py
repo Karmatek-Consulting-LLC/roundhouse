@@ -42,3 +42,12 @@ ADMIN_PASSWORD = _read_secret("mcp_admin_password", "ADMIN_PASSWORD")
 
 TRAEFIK_DYNAMIC_DIR = Path(os.environ.get("TRAEFIK_DYNAMIC_DIR", "/app/traefik/dynamic"))
 TRAEFIK_CERTS_DIR = Path(os.environ.get("TRAEFIK_CERTS_DIR", "/app/traefik/certs"))
+TRAEFIK_ENTRYPOINTS = os.environ.get("TRAEFIK_ENTRYPOINTS", "web,websecure")
+
+# Swarm: default desired replica count for new MCP server services (per-server spec overrides).
+MAX_MCP_SERVER_REPLICAS = max(1, int(os.environ.get("MAX_MCP_SERVER_REPLICAS", "32")))
+DEFAULT_MCP_SERVER_REPLICAS = max(
+    1,
+    min(int(os.environ.get("DEFAULT_MCP_SERVER_REPLICAS", "1")), MAX_MCP_SERVER_REPLICAS),
+)
+
