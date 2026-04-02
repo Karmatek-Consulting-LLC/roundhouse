@@ -112,7 +112,6 @@ export function TeamManagement({ onBack }: TeamManagementProps) {
   if (selectedTeam) {
     const memberIds = new Set(selectedTeam.members.map((m) => m.user_id));
     const availableUsers = allUsers.filter((u) => !memberIds.has(u.id));
-
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">

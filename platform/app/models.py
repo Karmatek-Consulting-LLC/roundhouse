@@ -82,6 +82,28 @@ class EnvVar(BaseModel):
     value: str
 
 
+def _normalize_env_name(n: str) -> str:
+    s = n.strip().upper()
+    return "".join(c if (c.isalnum() or c == "_") else "" for c in s)
+
+
+def coerce_env_import_list(v: object) -> list[str]:
+    if v is None:
+        return []
+    if not isinstance(v, list):
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in v:
+        if not isinstance(item, str):
+            continue
+        name = _normalize_env_name(item)
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
 class ServerSpec(BaseModel):
     """Persisted server definition with its primitives."""
     name: str
@@ -89,9 +111,17 @@ class ServerSpec(BaseModel):
     imports: list[str] = []
     primitives: list[Primitive] = []
     pip_packages: list[str] = []
+    # Names of platform global env vars to inject (values from platform settings).
+    env_global_imports: list[str] = []
+    # Server-only name=value pairs (override same-named global at runtime).
     env_vars: list[EnvVar] = []
     # Desired Swarm replicas when running; None = use platform default (DEFAULT_MCP_SERVER_REPLICAS).
     replicas: int | None = None
+
+    @field_validator("env_global_imports", mode="before")
+    @classmethod
+    def _normalize_import_lists(cls, v: object) -> list[str]:
+        return coerce_env_import_list(v)
 
     @field_validator("replicas")
     @classmethod
@@ -154,7 +184,11 @@ class ServerResponse(BaseModel):
     imports: list[str] = []
     primitives: list[Primitive] = []
     pip_packages: list[str] = []
+    env_global_imports: list[str] = []
+    # Local-only env vars on this server.
     env_vars: list[EnvVar] = []
+    # Catalog for picking global imports (platform settings).
+    global_env: list[EnvVar] = []
     owner_id: str | None = None
     owner_email: str | None = None
     created_at: str | None = None
@@ -186,13 +220,25 @@ class UpdatePipPackagesRequest(BaseModel):
 
 
 class UpdateEnvVarsRequest(BaseModel):
-    env_vars: list[EnvVar]
+    env_global_imports: list[str] = []
+    env_vars: list[EnvVar] = []
+
+    @field_validator("env_global_imports", mode="before")
+    @classmethod
+    def _norm_imp(cls, v: object) -> list[str]:
+        return coerce_env_import_list(v)
 
 
 class UpdateConfigRequest(BaseModel):
     imports: list[str] = []
     pip_packages: list[str] = []
+    env_global_imports: list[str] = []
     env_vars: list[EnvVar] = []
+
+    @field_validator("env_global_imports", mode="before")
+    @classmethod
+    def _norm_imp_cfg(cls, v: object) -> list[str]:
+        return coerce_env_import_list(v)
 
 
 # --- Auth ---

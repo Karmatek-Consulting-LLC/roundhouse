@@ -64,20 +64,15 @@ services:
   frontend:
     build: ./frontend
     environment:
+      - CI=true
       - API_PROXY_TARGET=http://platform-api:9000
     volumes:
-      - ./frontend/package.json:/app/package.json
-      - ./frontend/pnpm-lock.yaml:/app/pnpm-lock.yaml
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-      - ./frontend/index.html:/app/index.html
-      - ./frontend/vite.config.ts:/app/vite.config.ts
-      - ./frontend/tailwind.config.js:/app/tailwind.config.js
-      - ./frontend/postcss.config.js:/app/postcss.config.js
-      - ./frontend/tsconfig.json:/app/tsconfig.json
-      - ./frontend/tsconfig.app.json:/app/tsconfig.app.json
-      - ./frontend/tsconfig.node.json:/app/tsconfig.node.json
-      - ./frontend/components.json:/app/components.json
+      # Bind-mount the whole tree (avoids macOS Docker file-vs-directory mount bugs on single files).
+      # Keep node_modules in a volume so Linux deps match the container, not the host OS.
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      # pnpm store on a Linux volume (see frontend/docker-entrypoint.sh); avoids EPERM on macOS Docker.
+      - frontend_pnpm_store:/var/cache/pnpm-store
     networks:
       - mcp-network
     labels:
@@ -96,3 +91,5 @@ volumes:
   pgdata:
   traefik-dynamic:
   traefik-certs:
+  frontend_node_modules:
+  frontend_pnpm_store:

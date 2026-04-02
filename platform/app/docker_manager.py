@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 from pathlib import Path
 
@@ -336,6 +337,34 @@ class DockerManager:
         if self.swarm_mode:
             return self._create_service(server_name, tag, template_name, ev, replicas)
         return self._create_container(server_name, tag, template_name, ev)
+
+    def update_runtime_env(self, server_name: str, env_vars: dict[str, str]) -> dict | None:
+        """Update container/service environment without rebuilding the image."""
+        env_list = [f"{k}={v}" for k, v in env_vars.items()]
+        if self.swarm_mode:
+            svc = self._find_service(server_name)
+            if not svc:
+                return None
+            spec = svc.attrs.get("Spec") or {}
+            task_template = copy.deepcopy(spec.get("TaskTemplate"))
+            if not task_template or "ContainerSpec" not in task_template:
+                logger.warning("Swarm service %s has no ContainerSpec; cannot update env", server_name)
+                return None
+            task_template["ContainerSpec"]["Env"] = env_list
+            svc.update(task_template=task_template, force_update=True)
+            svc.reload()
+            return self._service_to_dict(svc, include_placement=True)
+        try:
+            container = self.client.containers.get(self._service_name(server_name))
+        except NotFound:
+            return None
+        labels = container.labels
+        template_name = labels.get(LABEL_TEMPLATE, "custom")
+        img = container.image
+        tag = img.tags[0] if getattr(img, "tags", None) else img.id
+        container.stop()
+        container.remove()
+        return self._create_container(server_name, tag, template_name, env_vars)
 
     def list_servers(self) -> list[dict]:
         if self.swarm_mode:

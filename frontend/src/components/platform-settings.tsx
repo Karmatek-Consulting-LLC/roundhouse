@@ -11,7 +11,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ArrowLeft, Boxes, Container, Globe, Lock, Save, Shield, Trash2, Upload } from "lucide-react";
+import { EnvVarsEditor } from "@/components/env-vars-editor";
+import type { EnvVar } from "@/lib/api";
+import { ArrowLeft, Boxes, Container, Globe, Lock, Save, Shield, Trash2, Upload, Variable } from "lucide-react";
 
 interface PlatformSettingsProps {
   onBack: () => void;
@@ -34,6 +36,9 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
   const [registryPassword, setRegistryPassword] = useState("");
   const [passwordClearRequested, setPasswordClearRequested] = useState(false);
   const [registryPasswordConfigured, setRegistryPasswordConfigured] = useState(false);
+  const [globalEnvVars, setGlobalEnvVars] = useState<EnvVar[]>([]);
+  const [savedGlobalEnvVars, setSavedGlobalEnvVars] = useState<EnvVar[]>([]);
+  const [savingGlobalEnv, setSavingGlobalEnv] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingRegistry, setSavingRegistry] = useState(false);
@@ -61,6 +66,14 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       setRegistryPasswordConfigured(data.docker_registry_password_configured);
       setRegistryPassword("");
       setPasswordClearRequested(false);
+      try {
+        const envData = await api.getMcpEnvSettings();
+        setGlobalEnvVars(envData.env_vars);
+        setSavedGlobalEnvVars(envData.env_vars);
+      } catch {
+        setGlobalEnvVars([]);
+        setSavedGlobalEnvVars([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -102,6 +115,24 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
     dockerUsername !== savedDockerUsername ||
     registryPassword.length > 0 ||
     passwordClearRequested;
+
+  const globalEnvDirty =
+    JSON.stringify(globalEnvVars) !== JSON.stringify(savedGlobalEnvVars);
+
+  async function handleSaveGlobalEnv() {
+    setSavingGlobalEnv(true);
+    setError(null);
+    try {
+      const filtered = globalEnvVars.filter((v) => v.name.trim());
+      const data = await api.putMcpEnvSettings(filtered);
+      setGlobalEnvVars(data.env_vars);
+      setSavedGlobalEnvVars(data.env_vars);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save global environment variables");
+    } finally {
+      setSavingGlobalEnv(false);
+    }
+  }
 
   async function handleSaveHostname() {
     setSaving(true);
@@ -290,6 +321,36 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
             Max allowed:{" "}
             <strong className="text-foreground">{maxReplicas ?? "—"}</strong>
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Variable className="h-5 w-5" />
+            Global MCP environment variables
+          </CardTitle>
+          <CardDescription>
+            Applied only to MCP servers that import each name here. Per-server local variables override these
+            when the same name is set.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <EnvVarsEditor
+            title="Variables"
+            hint="No global variables. Add keys shared by all servers (for example API endpoint URLs)."
+            envVars={globalEnvVars}
+            onChange={setGlobalEnvVars}
+          />
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleSaveGlobalEnv()}
+            disabled={savingGlobalEnv || !globalEnvDirty}
+          >
+            <Save className="mr-1 h-4 w-4" />
+            {savingGlobalEnv ? "Saving…" : "Save global env"}
+          </Button>
         </CardContent>
       </Card>
 

@@ -7,9 +7,17 @@ import { Plus, Settings, Trash2 } from "lucide-react";
 interface EnvVarsEditorProps {
   envVars: EnvVar[];
   onChange: (envVars: EnvVar[]) => void;
+  /** Defaults to "Environment Variables" */
+  title?: string;
+  /** Shown when the list is empty */
+  hint?: string;
 }
 
-export function EnvVarsEditor({ envVars, onChange }: EnvVarsEditorProps) {
+export function EnvVarsEditor({ envVars, onChange, title, hint }: EnvVarsEditorProps) {
+  const heading = title ?? "Environment Variables";
+  const emptyHint =
+    hint ??
+    "No environment variables configured. These are passed to the MCP server container at runtime.";
   function addVar() {
     onChange([...envVars, { name: "", value: "" }]);
   }
@@ -27,7 +35,7 @@ export function EnvVarsEditor({ envVars, onChange }: EnvVarsEditorProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Settings className="h-4 w-4 text-muted-foreground" />
-          <Label className="text-sm font-medium">Environment Variables</Label>
+          <Label className="text-sm font-medium">{heading}</Label>
         </div>
         <Button variant="outline" size="sm" onClick={addVar}>
           <Plus className="mr-1 h-3 w-3" />
@@ -36,9 +44,7 @@ export function EnvVarsEditor({ envVars, onChange }: EnvVarsEditorProps) {
       </div>
 
       {envVars.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No environment variables configured. These are passed to the MCP server container at runtime.
-        </p>
+        <p className="text-sm text-muted-foreground">{emptyHint}</p>
       ) : (
         <div className="space-y-2">
           {envVars.map((v, idx) => (

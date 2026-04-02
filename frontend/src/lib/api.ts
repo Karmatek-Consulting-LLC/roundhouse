@@ -66,6 +66,12 @@ export interface EnvVar {
   value: string;
 }
 
+/** Server env: explicit global imports + local pairs (API `/servers/.../config` and `/env`). */
+export interface ServerEnvConfig {
+  env_global_imports: string[];
+  env_vars: EnvVar[];
+}
+
 export interface PlacementTask {
   task_id: string;
   node_id: string;
@@ -84,7 +90,10 @@ export interface Server {
   imports: string[];
   primitives: Primitive[];
   pip_packages: string[];
+  env_global_imports?: string[];
   env_vars: EnvVar[];
+  /** Platform-wide catalog for picking global imports. */
+  global_env?: EnvVar[];
   owner_id: string | null;
   owner_email: string | null;
   created_at: string | null;
@@ -255,15 +264,25 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ pip_packages }),
     }),
-  updateEnvVars: (serverName: string, env_vars: EnvVar[]) =>
+  updateEnvVars: (serverName: string, cfg: ServerEnvConfig) =>
     request<Server>(`/servers/${serverName}/env`, {
       method: "PUT",
-      body: JSON.stringify({ env_vars }),
+      body: JSON.stringify(cfg),
     }),
-  deployConfig: (serverName: string, imports: string[], pip_packages: string[], env_vars: EnvVar[]) =>
+  deployConfig: (
+    serverName: string,
+    imports: string[],
+    pip_packages: string[],
+    env: ServerEnvConfig,
+  ) =>
     request<Server>(`/servers/${serverName}/config`, {
       method: "PUT",
-      body: JSON.stringify({ imports, pip_packages, env_vars }),
+      body: JSON.stringify({
+        imports,
+        pip_packages,
+        env_global_imports: env.env_global_imports,
+        env_vars: env.env_vars,
+      }),
     }),
 
   // PyPI
@@ -346,6 +365,12 @@ export const api = {
   },
   deleteCertificate: () =>
     request<{ tls_enabled: boolean }>("/settings/certificate", { method: "DELETE" }),
+  getMcpEnvSettings: () => request<{ env_vars: EnvVar[] }>("/settings/mcp-env"),
+  putMcpEnvSettings: (env_vars: EnvVar[]) =>
+    request<{ env_vars: EnvVar[] }>("/settings/mcp-env", {
+      method: "PUT",
+      body: JSON.stringify({ env_vars }),
+    }),
 
   // Teams
   listTeams: () => request<Team[]>("/teams"),

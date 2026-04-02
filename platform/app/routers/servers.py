@@ -18,6 +18,11 @@ from app.database import get_db
 from app.db_models import ServerOwner, User
 from app.docker_manager import DockerManager
 from app.routers.settings import get_base_url, get_docker_registry_auth, get_docker_registry_prefix
+from app.mcp_env import (
+    effective_env_dict,
+    global_env_vars_from_db,
+    reapply_runtime_env_for_server_name,
+)
 from app.models import (
     AddPrimitiveRequest,
     CreateServerRequest,
@@ -114,6 +119,10 @@ def _to_response(
     raw_placement = server.get("placement") or []
     placement = [PlacementTask(**p) for p in raw_placement]
 
+    global_env: list = []
+    if db:
+        global_env = global_env_vars_from_db(db)
+
     return ServerResponse(
         name=server["name"],
         template=server["template"],
@@ -123,7 +132,9 @@ def _to_response(
         imports=spec.imports if spec else [],
         primitives=spec.primitives if spec else [],
         pip_packages=spec.pip_packages if spec else [],
+        env_global_imports=spec.env_global_imports if spec else [],
         env_vars=spec.env_vars if spec else [],
+        global_env=global_env,
         owner_id=owner_id,
         owner_email=owner_email,
         created_at=server.get("created_at"),
@@ -132,10 +143,6 @@ def _to_response(
         docker_swarm_mode=docker_mgr.swarm_mode,
         placement=placement,
     )
-
-
-def _env_dict(spec: ServerSpec) -> dict[str, str]:
-    return {ev.name: ev.value for ev in spec.env_vars}
 
 
 def _registry_prefix(db: Session) -> str | None:
@@ -149,7 +156,7 @@ def _build_and_deploy(spec: ServerSpec, db: Session) -> dict:
         spec.name,
         build_ctx,
         "custom",
-        env_vars=_env_dict(spec),
+        env_vars=effective_env_dict(db, spec),
         replicas=effective_replicas(spec),
         registry_prefix=_registry_prefix(db),
         registry_auth=get_docker_registry_auth(db),
@@ -299,6 +306,15 @@ def create_server(
 
     _cleanup_orphan_server_registration(req.name, user, db)
 
+    if db.query(ServerOwner).filter(ServerOwner.server_name == req.name).first():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Server name '{req.name}' is already registered",
+        )
+
+    db.add(ServerOwner(server_name=req.name, owner_id=user.id))
+    db.commit()
+
     try:
         if req.template:
             if not template_engine.get_template(req.template):
@@ -314,6 +330,7 @@ def create_server(
                 req.name,
                 build_context,
                 req.template,
+                env_vars=effective_env_dict(db, spec),
                 replicas=effective_replicas(spec),
                 registry_prefix=_registry_prefix(db),
                 registry_auth=get_docker_registry_auth(db),
@@ -324,14 +341,14 @@ def create_server(
             )
             server = _build_and_deploy(spec, db)
 
-        # Record ownership
-        db.add(ServerOwner(server_name=req.name, owner_id=user.id))
-        db.commit()
-
         return _to_response(server, spec, db)
     except HTTPException:
+        db.query(ServerOwner).filter(ServerOwner.server_name == req.name).delete()
+        db.commit()
         raise
     except Exception as e:
+        db.query(ServerOwner).filter(ServerOwner.server_name == req.name).delete()
+        db.commit()
         store.delete(req.name)
         docker_mgr.remove_server(req.name, registry_prefix=_registry_prefix(db))
         logger.exception("Failed to create server '%s'", req.name)
@@ -574,7 +591,12 @@ def update_env_vars(
 ):
     _check_access(user, name, db)
     spec = _ensure_spec(name, db)
-    spec.env_vars = req.env_vars
+    spec = spec.model_copy(
+        update={
+            "env_global_imports": req.env_global_imports,
+            "env_vars": req.env_vars,
+        }
+    )
 
     try:
         server = _redeploy(spec, db)
@@ -596,9 +618,14 @@ def update_config(
 ):
     _check_access(user, name, db)
     spec = _ensure_spec(name, db)
-    spec.imports = req.imports
-    spec.pip_packages = req.pip_packages
-    spec.env_vars = req.env_vars
+    spec = spec.model_copy(
+        update={
+            "imports": req.imports,
+            "pip_packages": req.pip_packages,
+            "env_global_imports": req.env_global_imports,
+            "env_vars": req.env_vars,
+        }
+    )
 
     try:
         server = _redeploy(spec, db)

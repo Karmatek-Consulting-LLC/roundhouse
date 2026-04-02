@@ -9,15 +9,23 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import require_superadmin
+from app.docker_manager import DockerManager
 from app.config import (
     DEFAULT_MCP_SERVER_REPLICAS,
     MAX_MCP_SERVER_REPLICAS,
     TRAEFIK_CERTS_DIR,
     TRAEFIK_DYNAMIC_DIR,
 )
-from app.docker_manager import DockerManager
 from app.database import get_db
 from app.db_models import PlatformSetting, User
+from app.mcp_env import (
+    all_registered_server_names,
+    global_env_vars_from_db,
+    reapply_runtime_env_for_servers,
+    save_global_env_vars,
+)
+from app.models import UpdateEnvVarsRequest
+from app.server_store import ServerStore
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -112,6 +120,28 @@ def _write_traefik_tls_config() -> None:
     config_path = TRAEFIK_DYNAMIC_DIR / "tls.yml"
     config_path.write_text(yaml.dump(config, default_flow_style=False))
     logger.info("Wrote Traefik TLS config to %s", config_path)
+
+
+@router.get("/settings/mcp-env")
+def get_mcp_env_settings(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_superadmin),
+):
+    return {"env_vars": global_env_vars_from_db(db)}
+
+
+@router.put("/settings/mcp-env")
+def put_mcp_env_settings(
+    body: UpdateEnvVarsRequest,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_superadmin),
+):
+    save_global_env_vars(db, body.env_vars)
+    store = ServerStore()
+    reapply_runtime_env_for_servers(
+        db, all_registered_server_names(db), DockerManager(), store
+    )
+    return {"env_vars": global_env_vars_from_db(db)}
 
 
 @router.get("/settings")

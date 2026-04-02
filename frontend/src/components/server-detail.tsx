@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type EnvVar, type Primitive, type Server } from "@/lib/api";
+import { api, type Primitive, type Server, type ServerEnvConfig } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { AddPrimitiveDialog } from "@/components/add-primitive-dialog";
 import { ImportsEditor } from "@/components/imports-editor";
 import { PackageManager } from "@/components/package-manager";
-import { EnvVarsEditor } from "@/components/env-vars-editor";
+import {
+  ServerEnvBindingsEditor,
+  type ServerEnvBindings,
+} from "@/components/server-env-bindings-editor";
 import {
   Table,
   TableBody,
@@ -53,7 +56,10 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
   // Local config state (not yet deployed)
   const [localImports, setLocalImports] = useState<string[]>([]);
   const [localPackages, setLocalPackages] = useState<string[]>([]);
-  const [localEnvVars, setLocalEnvVars] = useState<EnvVar[]>([]);
+  const [localEnvBindings, setLocalEnvBindings] = useState<ServerEnvBindings>({
+    env_global_imports: [],
+    env_vars: [],
+  });
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState<string | null>(null);
 
@@ -76,7 +82,10 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
       setLocalDesc(data.description ?? "");
       setLocalImports(data.imports ?? []);
       setLocalPackages(data.pip_packages ?? []);
-      setLocalEnvVars(data.env_vars ?? []);
+      setLocalEnvBindings({
+        env_global_imports: data.env_global_imports ?? [],
+        env_vars: data.env_vars ?? [],
+      });
     } finally {
       setLoading(false);
     }
@@ -102,19 +111,27 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
     if (server) setLocalReplicas(server.replicas_desired);
   }, [server]);
 
+  const savedEnv: ServerEnvConfig = {
+    env_global_imports: server?.env_global_imports ?? [],
+    env_vars: server?.env_vars ?? [],
+  };
+
   const configDirty =
     server !== null &&
     (JSON.stringify(localImports) !== JSON.stringify(server.imports ?? []) ||
       JSON.stringify(localPackages) !== JSON.stringify(server.pip_packages ?? []) ||
-      JSON.stringify(localEnvVars) !== JSON.stringify(server.env_vars ?? []));
+      JSON.stringify(localEnvBindings) !== JSON.stringify(savedEnv));
 
   async function handleDeploy() {
     setDeploying(true);
     setDeployError(null);
     try {
-      const filtered = localEnvVars.filter((v) => v.name.trim());
+      const filteredLocals = localEnvBindings.env_vars.filter((v) => v.name.trim());
       const cleanImports = localImports.filter((i) => i.trim());
-      await api.deployConfig(serverName, cleanImports, localPackages, filtered);
+      await api.deployConfig(serverName, cleanImports, localPackages, {
+        env_global_imports: localEnvBindings.env_global_imports,
+        env_vars: filteredLocals,
+      });
       await refresh();
     } catch (e) {
       setDeployError(e instanceof Error ? e.message : "Deploy failed");
@@ -220,10 +237,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
             Use this <strong>full URL</strong> in MCP Inspector with transport <strong>Streamable HTTP</strong>
-            (it must include the <code className="rounded bg-muted px-1">/mcp</code> suffix). If Inspector
-            asks for a <strong>proxy session token</strong>, open <strong>Configuration</strong> and
-            connect directly to this URL without a proxy layer, or leave the token field empty unless your
-            network requires it.
+            (it must include the <code className="rounded bg-muted px-1">/mcp</code> suffix).
           </p>
         </div>
         <AddPrimitiveDialog serverName={serverName} onAdded={refresh} />
@@ -343,7 +357,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-lg border p-4">
           <PackageManager
             packages={localPackages}
@@ -351,9 +365,10 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
           />
         </div>
         <div className="rounded-lg border p-4">
-          <EnvVarsEditor
-            envVars={localEnvVars}
-            onChange={setLocalEnvVars}
+          <ServerEnvBindingsEditor
+            value={localEnvBindings}
+            onChange={setLocalEnvBindings}
+            globalCatalog={server.global_env ?? []}
           />
         </div>
       </div>
