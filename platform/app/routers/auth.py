@@ -12,7 +12,13 @@ from app.auth import (
 )
 from app.database import get_db
 from app.db_models import User
-from app.models import LoginRequest, RegisterRequest, TokenResponse, UserResponse
+from app.models import (
+    ChangePasswordRequest,
+    LoginRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+)
 
 router = APIRouter()
 
@@ -41,6 +47,26 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/auth/me", response_model=UserResponse)
 def me(user: User = Depends(get_current_user)):
     return _user_response(user)
+
+
+@router.post("/auth/change-password", status_code=204)
+def change_password(
+    req: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not verify_password(req.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    if req.current_password == req.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from your current password",
+        )
+    user.password_hash = hash_password(req.new_password)
+    db.commit()
 
 
 @router.post("/auth/register", response_model=UserResponse, status_code=201)

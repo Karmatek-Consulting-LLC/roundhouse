@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.config import MAX_MCP_SERVER_REPLICAS
 
@@ -267,6 +267,17 @@ class RegisterRequest(BaseModel):
     password: str
     display_name: str
     role: str = "user"
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8, max_length=256)
+
+
+class AdminSetPasswordRequest(BaseModel):
+    """SuperAdmin sets another user's password (no current password)."""
+
+    new_password: str = Field(..., min_length=8, max_length=256)
 
 
 class TeamRequest(BaseModel):

@@ -28,7 +28,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { SetUserPasswordDialog } from "@/components/change-password-dialog";
+import { ArrowLeft, KeyRound, Plus, Trash2 } from "lucide-react";
 
 interface UserManagementProps {
   onBack: () => void;
@@ -44,6 +45,7 @@ export function UserManagement({ onBack }: UserManagementProps) {
   const [role, setRole] = useState("user");
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState<AuthUser | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -161,13 +163,27 @@ export function UserManagement({ onBack }: UserManagementProps) {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDelete(u.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        title="Set password"
+                        aria-label={`Set password for ${u.email}`}
+                        onClick={() => setPasswordTarget(u)}
+                      >
+                        <KeyRound className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        title="Delete user"
+                        aria-label={`Delete ${u.email}`}
+                        onClick={() => handleDelete(u.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -175,6 +191,18 @@ export function UserManagement({ onBack }: UserManagementProps) {
           </Table>
         </div>
       )}
+
+      {passwordTarget ? (
+        <SetUserPasswordDialog
+          key={passwordTarget.id}
+          userId={passwordTarget.id}
+          label={passwordTarget.email}
+          open
+          onOpenChange={(open) => {
+            if (!open) setPasswordTarget(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

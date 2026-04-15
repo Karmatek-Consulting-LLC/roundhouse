@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth import require_superadmin
+from app.auth import hash_password, require_superadmin
 from app.database import get_db
 from app.db_models import User
-from app.models import UserResponse
+from app.models import AdminSetPasswordRequest, UserResponse
 
 router = APIRouter()
 
@@ -39,6 +41,24 @@ def get_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return _user_response(user)
+
+
+@router.put("/users/{user_id}/password", status_code=204)
+def admin_set_password(
+    user_id: str,
+    req: AdminSetPasswordRequest,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_superadmin),
+):
+    try:
+        uid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user = db.query(User).filter(User.id == uid).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user.password_hash = hash_password(req.new_password)
+    db.commit()
 
 
 @router.delete("/users/{user_id}", status_code=204)

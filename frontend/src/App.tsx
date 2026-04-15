@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Navigate,
   Outlet,
@@ -27,7 +28,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, Settings, Shield, Users } from "lucide-react";
+import { ChangePasswordDialog } from "@/components/change-password-dialog";
+import { KeyRound, LogOut, Settings, Shield, Users } from "lucide-react";
 
 export type ServersOutletContext = ReturnType<typeof useServers>;
 
@@ -68,6 +70,7 @@ function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const serversState = useServers();
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
   if (!user) return null;
 
@@ -136,6 +139,10 @@ function AppShell() {
                     <DropdownMenuSeparator />
                   </>
                 )}
+                <DropdownMenuItem onSelect={() => setChangePasswordOpen(true)}>
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  Change password
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={logout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign Out
@@ -145,6 +152,8 @@ function AppShell() {
           </div>
         </div>
       </header>
+
+      <ChangePasswordDialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen} />
 
       <main className="mx-auto w-full max-w-screen-2xl px-6 py-8">
         <Outlet context={serversState satisfies ServersOutletContext} />

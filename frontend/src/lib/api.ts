@@ -147,6 +147,27 @@ export interface CreateServerRequest {
 
 const BASE = "/api";
 
+function formatApiErrorDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (
+          item &&
+          typeof item === "object" &&
+          "msg" in item &&
+          typeof (item as { msg: unknown }).msg === "string"
+        ) {
+          return (item as { msg: string }).msg;
+        }
+        return JSON.stringify(item);
+      })
+      .join(", ");
+  }
+  if (detail != null && typeof detail === "object") return JSON.stringify(detail);
+  return "Request failed";
+}
+
 async function errorDetailFrom401(res: Response): Promise<string | undefined> {
   const body = await res.json().catch(() => ({}));
   const d = (body as { detail?: unknown }).detail;
@@ -174,7 +195,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Request failed: ${res.status}`);
+    const d = (body as { detail?: unknown }).detail;
+    throw new Error(d != null ? formatApiErrorDetail(d) : `Request failed: ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -301,9 +323,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    request<void>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   // Users
   listUsers: () => request<AuthUser[]>("/users"),
+  setUserPassword: (userId: string, new_password: string) =>
+    request<void>(`/users/${userId}/password`, {
+      method: "PUT",
+      body: JSON.stringify({ new_password }),
+    }),
   deleteUser: (id: string) =>
     request<void>(`/users/${id}`, { method: "DELETE" }),
 
