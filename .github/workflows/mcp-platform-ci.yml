@@ -14,7 +14,7 @@
 #         REGISTRY_USERNAME
 #         REGISTRY_PASSWORD
 #
-# Swarm: stack expects external secrets (see docker-compose.swarm.yml):
+# Swarm: stack expects external secrets (see docker-stack-lab.yml):
 #   mcp_jwt_secret_key, mcp_admin_email, mcp_admin_password, mcp_postgres_password
 #   Node label: mcp-platform == true (placement)
 
@@ -29,7 +29,7 @@ on:
       - "templates/**"
       - "traefik/**"
       - "Dockerfile"
-      - "docker-compose.swarm.yml"
+      - "docker-stack-lab.yml"
       - ".github/workflows/mcp-platform-ci.yml"
   pull_request:
     branches: [lab]
@@ -39,7 +39,7 @@ on:
       - "templates/**"
       - "traefik/**"
       - "Dockerfile"
-      - "docker-compose.swarm.yml"
+      - "docker-stack-lab.yml"
       - ".github/workflows/mcp-platform-ci.yml"
   workflow_dispatch: {}
 
@@ -163,5 +163,5 @@ jobs:
           docker stack deploy \
             --with-registry-auth \
             --resolve-image always \
-            -c docker-compose.swarm.yml \
+            -c docker-stack-lab.yml \
             mcp-platform
