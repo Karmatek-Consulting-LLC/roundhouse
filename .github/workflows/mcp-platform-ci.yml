@@ -1,0 +1,167 @@
+# MCP Platform Lab CI/CD
+# - Build app image
+# - Smoke test startup with ephemeral Postgres
+# - Push image to internal registry
+# - Deploy Swarm stack
+#
+# Configure in GitHub -> Settings:
+#   Variables:
+#     MCP_PLATFORM_IMAGE (optional)
+#       Example: registry.example.com/cns-swarm-stack-crrc/mcp-platform
+#   Environments:
+#     lab
+#       Secrets:
+#         REGISTRY_USERNAME
+#         REGISTRY_PASSWORD
+#
+# Swarm: stack expects external secrets (see docker-compose.swarm.yml):
+#   mcp_jwt_secret_key, mcp_admin_email, mcp_admin_password, mcp_postgres_password
+#   Node label: mcp-platform == true (placement)
+
+name: MCP Platform Lab CI
+
+on:
+  push:
+    branches: [lab]
+    paths:
+      - "platform/**"
+      - "frontend/**"
+      - "templates/**"
+      - "traefik/**"
+      - "Dockerfile"
+      - "docker-compose.swarm.yml"
+      - ".github/workflows/mcp-platform-ci.yml"
+  pull_request:
+    branches: [lab]
+    paths:
+      - "platform/**"
+      - "frontend/**"
+      - "templates/**"
+      - "traefik/**"
+      - "Dockerfile"
+      - "docker-compose.swarm.yml"
+      - ".github/workflows/mcp-platform-ci.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: mcp-platform-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-smoke-push-deploy:
+    name: Build, smoke test, push (lab tags), deploy
+    # Do not run untrusted fork PRs on the org runner (Docker socket access).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    environment: lab
+    runs-on: [self-hosted, linux, x64, swarm]
+    env:
+      PLATFORM: linux/amd64
+      MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'registry.example.com/cns-swarm-stack-crrc/mcp-platform' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: |
+          set -euo pipefail
+          export DOCKER_BUILDKIT=0
+          LAB_SHA_TAG="lab-${GITHUB_SHA}"
+          docker build \
+            --platform "$PLATFORM" \
+            -t "mcp-platform-ci:${LAB_SHA_TAG}" \
+            -t "${MCP_PLATFORM_IMAGE}:${LAB_SHA_TAG}" \
+            .
+
+      - name: Smoke test (platform + ephemeral Postgres)
+        run: |
+          set -euo pipefail
+          NET="mcp-platform-smoke-net-${GITHUB_RUN_ID}"
+          DB="mcp-platform-smoke-db-${GITHUB_RUN_ID}"
+          APP="mcp-platform-smoke-app-${GITHUB_RUN_ID}"
+          LAB_SHA_TAG="lab-${GITHUB_SHA}"
+          docker network create "$NET"
+          trap 'docker rm -f "$APP" "$DB" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true' EXIT
+
+          docker run -d --name "$DB" --network "$NET" \
+            -e POSTGRES_USER=mcp \
+            -e POSTGRES_PASSWORD=mcp \
+            -e POSTGRES_DB=mcp \
+            postgres:16-alpine >/dev/null
+
+          for i in $(seq 1 30); do
+            if docker exec "$DB" pg_isready -U mcp >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          docker run -d --name "$APP" --network "$NET" \
+            -e DATABASE_URL=postgresql://mcp:mcp@"$DB":5432/mcp \
+            -e JWT_SECRET_KEY=ci-smoke-secret \
+            -e ADMIN_EMAIL=ci-admin@example.local \
+            -e ADMIN_PASSWORD=ci-admin-password \
+            -e MCP_BASE_URL=http://localhost \
+            "mcp-platform-ci:${LAB_SHA_TAG}" >/dev/null
+
+          for i in $(seq 1 60); do
+            RUNNING="$(docker inspect -f '{{.State.Running}}' "$APP" 2>/dev/null || echo false)"
+            if [[ "$RUNNING" != "true" ]]; then
+              EXIT_CODE="$(docker inspect -f '{{.State.ExitCode}}' "$APP" 2>/dev/null || echo unknown)"
+              echo "::error::MCP Platform container exited before health check passed (exit=${EXIT_CODE})."
+              docker logs "$APP" 2>&1 || true
+              exit 1
+            fi
+            if docker exec "$APP" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/api/health', timeout=2).read()" >/dev/null 2>&1; then
+              echo "Smoke OK (/api/health)"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "::error::MCP Platform did not become healthy on /api/health"
+          docker logs "$APP" 2>&1 || true
+          exit 1
+
+      - name: Log in to internal registry
+        if: github.event_name != 'pull_request'
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASS: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${REGISTRY_USER:-}" || -z "${REGISTRY_PASS:-}" ]]; then
+            echo "::error::Missing REGISTRY_USERNAME or REGISTRY_PASSWORD."
+            exit 1
+          fi
+          REGISTRY_HOST="${MCP_PLATFORM_IMAGE%%/*}"
+          echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
+
+      - name: Push image (immutable tag)
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          LAB_SHA_TAG="lab-${GITHUB_SHA}"
+          docker push "${MCP_PLATFORM_IMAGE}:${LAB_SHA_TAG}"
+
+      - name: Tag and push lab-latest
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          LAB_SHA_TAG="lab-${GITHUB_SHA}"
+          docker tag "${MCP_PLATFORM_IMAGE}:${LAB_SHA_TAG}" "${MCP_PLATFORM_IMAGE}:lab-latest"
+          docker push "${MCP_PLATFORM_IMAGE}:lab-latest"
+
+      - name: Deploy stack
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          docker info --format '{{.Swarm.LocalNodeState}} {{.Swarm.ControlAvailable}}'
+          export PLATFORM_IMAGE="${MCP_PLATFORM_IMAGE}:lab-latest"
+          docker stack deploy \
+            --with-registry-auth \
+            --resolve-image always \
+            -c docker-compose.swarm.yml \
+            mcp-platform
