@@ -91,8 +91,18 @@ jobs:
             -e POSTGRES_DB=mcp \
             postgres:16-alpine >/dev/null
 
-          for i in $(seq 1 30); do
+          # Wait for Postgres process inside the DB container.
+          for i in $(seq 1 60); do
             if docker exec "$DB" pg_isready -U mcp >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Verify DB is reachable from the same network the app will use.
+          for i in $(seq 1 60); do
+            if docker run --rm --network "$NET" postgres:16-alpine \
+              pg_isready -h "$DB" -U mcp >/dev/null 2>&1; then
               break
             fi
             sleep 1
@@ -100,6 +110,7 @@ jobs:
 
           docker run -d --name "$APP" --network "$NET" \
             -e DATABASE_URL=postgresql://mcp:mcp@"$DB":5432/mcp \
+            -e POSTGRES_PASSWORD=mcp \
             -e JWT_SECRET_KEY=ci-smoke-secret \
             -e ADMIN_EMAIL=ci-admin@example.local \
             -e ADMIN_PASSWORD=ci-admin-password \
@@ -111,6 +122,7 @@ jobs:
             if [[ "$RUNNING" != "true" ]]; then
               EXIT_CODE="$(docker inspect -f '{{.State.ExitCode}}' "$APP" 2>/dev/null || echo unknown)"
               echo "::error::MCP Platform container exited before health check passed (exit=${EXIT_CODE})."
+              docker inspect "$APP" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^DATABASE_URL=' || true
               docker logs "$APP" 2>&1 || true
               exit 1
             fi
