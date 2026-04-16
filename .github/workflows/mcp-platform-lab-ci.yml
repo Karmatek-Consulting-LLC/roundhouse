@@ -30,7 +30,7 @@ on:
       - "traefik/**"
       - "Dockerfile"
       - "docker-stack-lab.yml"
-      - ".github/workflows/mcp-platform-ci.yml"
+      - ".github/workflows/mcp-platform-lab-ci.yml"
   pull_request:
     branches: [lab]
     paths:
@@ -40,7 +40,7 @@ on:
       - "traefik/**"
       - "Dockerfile"
       - "docker-stack-lab.yml"
-      - ".github/workflows/mcp-platform-ci.yml"
+      - ".github/workflows/mcp-platform-lab-ci.yml"
   workflow_dispatch: {}
 
 concurrency:
