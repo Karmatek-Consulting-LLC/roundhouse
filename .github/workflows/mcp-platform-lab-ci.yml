@@ -108,7 +108,9 @@ jobs:
             sleep 1
           done
 
+          # Platform initializes DockerManager at startup; mount host socket like docker-stack-lab.yml.
           docker run -d --name "$APP" --network "$NET" \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             -e DATABASE_URL=postgresql://mcp:mcp@"$DB":5432/mcp \
             -e POSTGRES_PASSWORD=mcp \
             -e JWT_SECRET_KEY=ci-smoke-secret \
