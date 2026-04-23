@@ -50,8 +50,12 @@ permissions:
 jobs:
   build-smoke-push-deploy:
     name: Build, smoke test, push (lab tags), deploy
-    # Do not run untrusted fork PRs on the org runner (Docker socket access).
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Only run on GitHub Enterprise (customer site). Skip cleanly on github.com
+    # pushes where the lab registry and self-hosted runners don't exist.
+    # Also skip untrusted fork PRs on the org runner (Docker socket access).
+    if: >-
+      github.server_url != 'https://github.com'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     environment: lab
     runs-on: [self-hosted, linux, x64, swarm]
     env:
