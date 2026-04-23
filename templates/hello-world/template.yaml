@@ -1,11 +1,3 @@
 name: hello-world
-description: A simple MCP server with greeting and info tools
-variables:
-  - name: greeting
-    description: The greeting message prefix
-    default: "Hello"
-    required: false
-  - name: server_description
-    description: Description of this MCP server instance
-    default: "A hello world MCP server"
-    required: false
+description: Empty FastMCP server — add tools, resources, and prompts via the UI.
+variables: []
