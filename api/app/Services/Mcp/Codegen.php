@@ -66,13 +66,20 @@ class Codegen
         return implode("\n", $lines);
     }
 
-    /** Write server.py and Dockerfile into a build-context directory. */
+    /**
+     * Write server.py and Dockerfile into a build-context directory.
+     * In code mode, the user's source is written verbatim (no codegen).
+     */
     public function writeBuildContext(ServerSpec $spec, string $outputDir): string
     {
         if (! is_dir($outputDir)) {
             mkdir($outputDir, 0755, true);
         }
-        file_put_contents($outputDir.'/server.py', $this->generateServerPy($spec));
+        $serverPy = $spec->isCodeMode()
+            ? (string) ($spec->source ?? '')
+            : $this->generateServerPy($spec);
+
+        file_put_contents($outputDir.'/server.py', $serverPy);
         file_put_contents($outputDir.'/Dockerfile', $this->generateDockerfile($spec));
         return $outputDir;
     }

@@ -67,6 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/servers/{name}/packages', [ServerController::class, 'updatePackages']);
     Route::put('/servers/{name}/env', [ServerController::class, 'updateEnv']);
     Route::put('/servers/{name}/config', [ServerController::class, 'updateConfig']);
+    Route::put('/servers/{name}/source', [ServerController::class, 'updateSource']);
 
     // Invoke live MCP primitives (JSON-RPC pass-through, gated by ServerPermissions).
     Route::get('/servers/{name}/tools', [InvokeController::class, 'listTools']);

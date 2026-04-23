@@ -9,12 +9,17 @@ namespace App\Services\Mcp;
  */
 final class ServerSpec
 {
+    public const MODE_STRUCTURED = 'structured';
+    public const MODE_CODE = 'code';
+
     /**
      * @param array<int, array<string, mixed>> $primitives  tool | resource | resource_template | prompt
      * @param string[] $imports
      * @param string[] $pipPackages
      * @param string[] $envGlobalImports
      * @param EnvVar[] $envVars
+     * @param 'structured'|'code' $mode
+     * @param ?string $source Raw server.py text — only used when mode === 'code'
      */
     public function __construct(
         public string $name,
@@ -25,7 +30,14 @@ final class ServerSpec
         public array $envGlobalImports = [],
         public array $envVars = [],
         public ?int $replicas = null,
+        public string $mode = self::MODE_STRUCTURED,
+        public ?string $source = null,
     ) {}
+
+    public function isCodeMode(): bool
+    {
+        return $this->mode === self::MODE_CODE;
+    }
 
     public static function fromArray(array $data): self
     {
@@ -44,6 +56,14 @@ final class ServerSpec
             $replicas = (int) $replicas;
         }
 
+        $mode = ($data['mode'] ?? self::MODE_STRUCTURED) === self::MODE_CODE
+            ? self::MODE_CODE
+            : self::MODE_STRUCTURED;
+
+        $source = isset($data['source']) && is_string($data['source'])
+            ? $data['source']
+            : null;
+
         return new self(
             name: (string) ($data['name'] ?? ''),
             description: (string) ($data['description'] ?? ''),
@@ -53,6 +73,8 @@ final class ServerSpec
             envGlobalImports: self::normalizeEnvImports($data['env_global_imports'] ?? []),
             envVars: $envVars,
             replicas: $replicas,
+            mode: $mode,
+            source: $source,
         );
     }
 
@@ -67,6 +89,8 @@ final class ServerSpec
             'env_global_imports' => $this->envGlobalImports,
             'env_vars' => array_map(fn (EnvVar $v) => $v->toArray(), $this->envVars),
             'replicas' => $this->replicas,
+            'mode' => $this->mode,
+            'source' => $this->source,
         ];
     }
 

@@ -20,6 +20,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(prepend: [ForceJsonResponse::class]);
+        // Preserve raw Python source byte-for-byte (trailing newlines matter).
+        $middleware->trimStrings(except: ['source']);
         $middleware->alias([
             'superadmin' => RequireSuperadmin::class,
         ]);

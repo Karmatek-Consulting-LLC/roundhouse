@@ -92,7 +92,19 @@ class ServerController extends Controller
             'template' => ['sometimes', 'nullable', 'string'],
             'config' => ['sometimes', 'array'],
             'replicas' => ['sometimes', 'nullable', 'integer', 'min:1', "max:{$max}"],
+            'mode' => ['sometimes', 'string', 'in:structured,code'],
+            'source' => ['sometimes', 'string'],
         ]);
+
+        $mode = $data['mode'] ?? ServerSpec::MODE_STRUCTURED;
+        if ($mode === ServerSpec::MODE_CODE) {
+            if (empty($data['source'])) {
+                throw new HttpException(422, 'source is required when mode is "code"');
+            }
+            if (! empty($data['template'])) {
+                throw new HttpException(422, 'Cannot specify both a template and code-mode source');
+            }
+        }
 
         $user = $request->user();
         $name = $data['name'];
@@ -118,6 +130,8 @@ class ServerController extends Controller
                 name: $name,
                 description: (string) ($data['description'] ?? ''),
                 replicas: $data['replicas'] ?? null,
+                mode: $mode,
+                source: $mode === ServerSpec::MODE_CODE ? $data['source'] : null,
             );
 
             if ($templateName) {
@@ -264,11 +278,27 @@ class ServerController extends Controller
         return response()->json($this->toResponse($server, $spec));
     }
 
+    public function updateSource(Request $request, string $name): JsonResponse
+    {
+        $data = $request->validate([
+            'source' => ['required', 'string'],
+        ]);
+        $this->assertAccess($request->user(), $name);
+        $spec = $this->ensureSpec($name);
+
+        if (! $spec->isCodeMode()) {
+            throw new HttpException(409, 'Cannot set source on a structured server — use the primitive editor instead.');
+        }
+        $spec->source = $data['source'];
+        return $this->redeployAndRespond($spec);
+    }
+
     public function addPrimitive(Request $request, string $name): JsonResponse
     {
         $primitive = $this->validatePrimitive($request);
         $this->assertAccess($request->user(), $name);
         $spec = $this->ensureSpec($name);
+        $this->assertStructuredMode($spec, 'add primitives');
 
         foreach ($spec->primitives as $p) {
             if (($p['name'] ?? null) === $primitive['name'] && ($p['kind'] ?? null) === $primitive['kind']) {
@@ -285,6 +315,7 @@ class ServerController extends Controller
         $primitive = $this->validatePrimitive($request);
         $this->assertAccess($request->user(), $name);
         $spec = $this->ensureSpec($name);
+        $this->assertStructuredMode($spec, 'update primitives');
 
         $idx = null;
         foreach ($spec->primitives as $i => $p) {
@@ -305,6 +336,7 @@ class ServerController extends Controller
     {
         $this->assertAccess($request->user(), $name);
         $spec = $this->ensureSpec($name);
+        $this->assertStructuredMode($spec, 'delete primitives');
 
         $before = count($spec->primitives);
         $spec->primitives = array_values(array_filter(
@@ -356,6 +388,9 @@ class ServerController extends Controller
 
         $this->assertAccess($request->user(), $name);
         $spec = $this->ensureSpec($name);
+        // updateConfig rewrites imports too, which is structured-only. Packages + env are
+        // available in code mode via their individual endpoints.
+        $this->assertStructuredMode($spec, 'update config (imports)');
         $spec->imports = array_values($data['imports'] ?? []);
         $spec->pipPackages = array_values($data['pip_packages'] ?? []);
         $spec->envGlobalImports = ServerSpec::normalizeEnvImports($data['env_global_imports'] ?? []);
@@ -427,6 +462,16 @@ class ServerController extends Controller
     {
         if (! $this->perms->canAccess($user, $serverName)) {
             throw new HttpException(403, 'Access denied');
+        }
+    }
+
+    private function assertStructuredMode(ServerSpec $spec, string $operation): void
+    {
+        if ($spec->isCodeMode()) {
+            throw new HttpException(
+                409,
+                "Cannot {$operation} on a code-mode server — edit its server.py source instead."
+            );
         }
     }
 
@@ -525,6 +570,8 @@ class ServerController extends Controller
             'status' => $server['status'] ?? 'unknown',
             'url' => $this->service->baseUrl()."/s/{$name}/mcp",
             'description' => $spec?->description ?? '',
+            'mode' => $spec?->mode ?? ServerSpec::MODE_STRUCTURED,
+            'source' => $spec?->source,
             'imports' => $spec?->imports ?? [],
             'primitives' => $spec?->primitives ?? [],
             'pip_packages' => $spec?->pipPackages ?? [],

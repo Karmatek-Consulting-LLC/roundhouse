@@ -106,6 +106,45 @@ export interface McpPromptResult {
   }>;
 }
 
+// --- Live schema from tools/list | resources/list | prompts/list ---
+
+export interface McpJsonSchema {
+  type?: string;
+  properties?: Record<string, {
+    type?: string;
+    description?: string;
+    default?: unknown;
+    [key: string]: unknown;
+  }>;
+  required?: string[];
+  [key: string]: unknown;
+}
+
+export interface McpLiveTool {
+  name: string;
+  description?: string;
+  inputSchema?: McpJsonSchema;
+}
+
+export interface McpLiveResource {
+  uri?: string;
+  uriTemplate?: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+  isTemplate?: boolean;
+}
+
+export interface McpLivePrompt {
+  name: string;
+  description?: string;
+  arguments?: Array<{
+    name: string;
+    description?: string;
+    required?: boolean;
+  }>;
+}
+
 export interface PlacementTask {
   task_id: string;
   node_id: string;
@@ -115,12 +154,16 @@ export interface PlacementTask {
   error: string | null;
 }
 
+export type ServerMode = "structured" | "code";
+
 export interface Server {
   name: string;
   template: string;
   status: string;
   url: string;
   description: string;
+  mode: ServerMode;
+  source: string | null;
   imports: string[];
   primitives: Primitive[];
   pip_packages: string[];
@@ -177,6 +220,11 @@ export interface CreateServerRequest {
   config?: Record<string, string>;
   /** Omit to use platform default (Swarm only for N>1). */
   replicas?: number | null;
+  /** "structured" (default) — primitives managed via the UI.
+   *  "code"       — user provides a full server.py; primitive editor is hidden. */
+  mode?: ServerMode;
+  /** Required when mode === "code". The raw server.py text. */
+  source?: string;
 }
 
 const BASE = "/api";
@@ -340,6 +388,22 @@ export const api = {
         env_vars: env.env_vars,
       }),
     }),
+
+  updateSource: (serverName: string, source: string) =>
+    request<Server>(`/servers/${encodeURIComponent(serverName)}/source`, {
+      method: "PUT",
+      body: JSON.stringify({ source }),
+    }),
+
+  // Live MCP primitive discovery — used by code-mode servers where our stored spec has no primitives.
+  listLiveTools: (serverName: string) =>
+    request<{ tools: McpLiveTool[] }>(`/servers/${encodeURIComponent(serverName)}/tools`),
+  listLiveResources: (serverName: string) =>
+    request<{ resources: McpLiveResource[] }>(
+      `/servers/${encodeURIComponent(serverName)}/resources`,
+    ),
+  listLivePrompts: (serverName: string) =>
+    request<{ prompts: McpLivePrompt[] }>(`/servers/${encodeURIComponent(serverName)}/prompts`),
 
   // Live MCP invocation (pass-through to the deployed server's JSON-RPC endpoint)
   invokeTool: (serverName: string, tool: string, args: Record<string, unknown>) =>
