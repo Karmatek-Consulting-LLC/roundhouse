@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Primitive, type Server, type ServerEnvConfig } from "@/lib/api";
+import {
+  liveToolToPrimitive,
+  liveResourceToPrimitive,
+  livePromptToPrimitive,
+} from "@/lib/mcp-schema";
+import CodeMirror from "@uiw/react-codemirror";
+import { python } from "@codemirror/lang-python";
+import { useTheme } from "@/hooks/use-theme";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
@@ -76,6 +84,14 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
   const [savingReplicas, setSavingReplicas] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
 
+  // Code-mode state
+  const [localSource, setLocalSource] = useState("");
+  const [savingSource, setSavingSource] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [livePrimitives, setLivePrimitives] = useState<Primitive[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const { resolvedTheme } = useTheme();
+
   const refresh = useCallback(async () => {
     try {
       const data = await api.getServer(serverName);
@@ -87,10 +103,39 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         env_global_imports: data.env_global_imports ?? [],
         env_vars: data.env_vars ?? [],
       });
+      setLocalSource(data.source ?? "");
     } finally {
       setLoading(false);
     }
   }, [serverName]);
+
+  // In code mode, fetch the primitive list live from the MCP server since our
+  // stored spec doesn't know about them.
+  const loadLivePrimitives = useCallback(async () => {
+    if (!server || server.mode !== "code" || server.status !== "running") {
+      setLivePrimitives([]);
+      return;
+    }
+    setLiveLoading(true);
+    try {
+      const [tools, resources, prompts] = await Promise.all([
+        api.listLiveTools(serverName).catch(() => ({ tools: [] })),
+        api.listLiveResources(serverName).catch(() => ({ resources: [] })),
+        api.listLivePrompts(serverName).catch(() => ({ prompts: [] })),
+      ]);
+      setLivePrimitives([
+        ...tools.tools.map(liveToolToPrimitive),
+        ...resources.resources.map(liveResourceToPrimitive),
+        ...prompts.prompts.map(livePromptToPrimitive),
+      ]);
+    } finally {
+      setLiveLoading(false);
+    }
+  }, [serverName, server]);
+
+  useEffect(() => {
+    void loadLivePrimitives();
+  }, [loadLivePrimitives]);
 
   useEffect(() => {
     refresh();
@@ -117,11 +162,34 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
     env_vars: server?.env_vars ?? [],
   };
 
+  const isCodeMode = server?.mode === "code";
+
   const configDirty =
     server !== null &&
     (JSON.stringify(localImports) !== JSON.stringify(server.imports ?? []) ||
       JSON.stringify(localPackages) !== JSON.stringify(server.pip_packages ?? []) ||
       JSON.stringify(localEnvBindings) !== JSON.stringify(savedEnv));
+
+  const sourceDirty = isCodeMode && localSource !== (server?.source ?? "");
+
+  const primitivesToRender = useMemo(
+    () => (isCodeMode ? livePrimitives : server?.primitives ?? []),
+    [isCodeMode, livePrimitives, server],
+  );
+
+  async function handleSaveSource() {
+    setSavingSource(true);
+    setSourceError(null);
+    try {
+      await api.updateSource(serverName, localSource);
+      await refresh();
+      await loadLivePrimitives();
+    } catch (e) {
+      setSourceError(e instanceof Error ? e.message : "Failed to save source");
+    } finally {
+      setSavingSource(false);
+    }
+  }
 
   async function handleDeploy() {
     setDeploying(true);
@@ -240,8 +308,15 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
             Use this <strong>full URL</strong> in MCP Inspector with transport <strong>Streamable HTTP</strong>
             (it must include the <code className="rounded bg-muted px-1">/mcp</code> suffix).
           </p>
+          {isCodeMode && (
+            <Badge variant="outline" className="mt-3">
+              Code-first
+            </Badge>
+          )}
         </div>
-        <AddPrimitiveDialog serverName={serverName} onAdded={refresh} />
+        {!isCodeMode && (
+          <AddPrimitiveDialog serverName={serverName} onAdded={refresh} />
+        )}
       </div>
 
       <div className="rounded-lg border p-4 space-y-2">
@@ -293,9 +368,19 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         )}
       </div>
 
-      {server.primitives.length === 0 ? (
+      {primitivesToRender.length === 0 ? (
         <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-          No primitives yet. Click "Add Primitive" to define tools, resources, or prompts.
+          {isCodeMode ? (
+            liveLoading ? (
+              "Loading primitives from the live server..."
+            ) : server.status !== "running" ? (
+              "The server isn't running — start it to discover primitives."
+            ) : (
+              "Server is running but exposes no tools, resources, or prompts yet."
+            )
+          ) : (
+            <>No primitives yet. Click "Add Primitive" to define tools, resources, or prompts.</>
+          )}
         </div>
       ) : (
         <div className="rounded-lg border">
@@ -310,7 +395,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {server.primitives.map((p) => (
+              {primitivesToRender.map((p) => (
                 <TableRow key={`${p.kind}-${p.name}`}>
                   <TableCell className="font-medium font-mono text-sm">
                     {p.name}
@@ -341,19 +426,23 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
                         primitive={p}
                         disabled={server.status !== "running"}
                       />
-                      <AddPrimitiveDialog
-                        serverName={serverName}
-                        onAdded={refresh}
-                        existing={p}
-                      />
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        disabled={deleting === p.name}
-                        onClick={() => handleDeletePrimitive(p)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      {!isCodeMode && (
+                        <>
+                          <AddPrimitiveDialog
+                            serverName={serverName}
+                            onAdded={refresh}
+                            existing={p}
+                          />
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={deleting === p.name}
+                            onClick={() => handleDeletePrimitive(p)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -379,9 +468,55 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         </div>
       </div>
 
-      <div className="rounded-lg border p-4">
-        <ImportsEditor imports={localImports} onChange={setLocalImports} />
-      </div>
+      {!isCodeMode && (
+        <div className="rounded-lg border p-4">
+          <ImportsEditor imports={localImports} onChange={setLocalImports} />
+        </div>
+      )}
+
+      {isCodeMode && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">server.py</Label>
+              <p className="text-xs text-muted-foreground">
+                Your FastMCP server. Save &amp; Redeploy rebuilds the image and restarts the
+                container with the new source.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              disabled={!sourceDirty || savingSource}
+              onClick={() => void handleSaveSource()}
+            >
+              {savingSource ? (
+                <>
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                  Saving &amp; redeploying...
+                </>
+              ) : (
+                <>
+                  <Rocket className="mr-2 h-3 w-3" />
+                  Save &amp; Redeploy
+                </>
+              )}
+            </Button>
+          </div>
+          {sourceError && (
+            <p className="text-sm text-destructive">{sourceError}</p>
+          )}
+          <div className="rounded-md border">
+            <CodeMirror
+              value={localSource}
+              height="500px"
+              theme={resolvedTheme === "dark" ? "dark" : "light"}
+              extensions={[python()]}
+              onChange={(v) => setLocalSource(v)}
+              basicSetup={{ lineNumbers: true, foldGutter: true }}
+            />
+          </div>
+        </div>
+      )}
 
       {(configDirty || deployError) && (
         <div className="sticky bottom-4 flex items-center justify-between rounded-lg border bg-card p-4 shadow-lg">
