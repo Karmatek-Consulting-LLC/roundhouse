@@ -50,7 +50,7 @@ services:
       restart_policy:
         condition: on-failure
 
-  platform:
+  platform-api:
     image: ${PLATFORM_IMAGE:-mcp-platform:latest}
     secrets:
       - mcp_app_key
@@ -106,10 +106,10 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=mcp-platform_mcp-network"
-        - "traefik.http.routers.platform.entrypoints=web"
-        - "traefik.http.routers.platform.rule=PathPrefix(`/`)"
-        - "traefik.http.routers.platform.priority=1"
-        - "traefik.http.services.platform.loadbalancer.server.port=9000"
+        - "traefik.http.routers.platform-api.entrypoints=web"
+        - "traefik.http.routers.platform-api.rule=PathPrefix(`/`)"
+        - "traefik.http.routers.platform-api.priority=1"
+        - "traefik.http.services.platform-api.loadbalancer.server.port=9000"
       restart_policy:
         condition: on-failure
 
