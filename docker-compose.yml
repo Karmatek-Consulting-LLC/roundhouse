@@ -30,29 +30,54 @@ services:
       retries: 5
 
   platform-api:
-    build: ./platform
+    build:
+      context: .
+      dockerfile: api/Dockerfile.dev
     depends_on:
       postgres:
         condition: service_healthy
+    # Give the SIGTERM trap time to cleanup every spawned MCP server before SIGKILL.
+    stop_grace_period: 60s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./templates:/app/templates:ro
-      - ./data/servers:/app/data/servers
-      - traefik-dynamic:/app/traefik/dynamic
-      - traefik-certs:/app/traefik/certs
+      - ./api:/var/www/html
+      - ./templates:/var/www/html/templates:ro
+      - platform_vendor:/var/www/html/vendor
+      - server-data:/var/www/html/storage/app/servers
+      - traefik-dynamic:/var/www/html/storage/app/traefik/dynamic
+      - traefik-certs:/var/www/html/storage/app/traefik/certs
     environment:
-      - DOCKER_NETWORK=${DOCKER_NETWORK:-mcp-network}
-      - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:3080}
-      - SERVERS_DATA_DIR=/app/data/servers
-      - TEMPLATES_DIR=/app/templates
-      - DATABASE_URL=${DATABASE_URL:-postgresql://mcp:mcp@postgres:5432/mcp}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-in-production}
+      - APP_NAME=MCP Platform
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=${MCP_BASE_URL:-http://localhost:3080}
+      - LOG_CHANNEL=stderr
+      - LOG_LEVEL=debug
+
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=${POSTGRES_DB:-mcp}
+      - DB_USERNAME=${POSTGRES_USER:-mcp}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-mcp}
+
+      - SESSION_DRIVER=array
+      - CACHE_STORE=database
+      - QUEUE_CONNECTION=database
+      - SANCTUM_TOKEN_EXPIRATION=1440
+
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
-      - TRAEFIK_DYNAMIC_DIR=/app/traefik/dynamic
-      - TRAEFIK_CERTS_DIR=/app/traefik/certs
-      - DEFAULT_MCP_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
-      - MAX_MCP_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
+
+      - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:3080}
+      - MCP_DOCKER_NETWORK=${DOCKER_NETWORK:-mcp-network}
+      - MCP_DOCKER_SOCKET=/var/run/docker.sock
+      - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
+      - MCP_TEMPLATES_DIR=/var/www/html/templates
+      - MCP_TRAEFIK_DYNAMIC_DIR=/var/www/html/storage/app/traefik/dynamic
+      - MCP_TRAEFIK_CERTS_DIR=/var/www/html/storage/app/traefik/certs
+      - MCP_DEFAULT_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
+      - MCP_MAX_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
     networks:
       - mcp-network
     labels:
@@ -67,11 +92,8 @@ services:
       - CI=true
       - API_PROXY_TARGET=http://platform-api:9000
     volumes:
-      # Bind-mount the whole tree (avoids macOS Docker file-vs-directory mount bugs on single files).
-      # Keep node_modules in a volume so Linux deps match the container, not the host OS.
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
-      # pnpm store on a Linux volume (see frontend/docker-entrypoint.sh); avoids EPERM on macOS Docker.
       - frontend_pnpm_store:/var/cache/pnpm-store
     networks:
       - mcp-network
@@ -89,7 +111,9 @@ networks:
 
 volumes:
   pgdata:
+  server-data:
   traefik-dynamic:
   traefik-certs:
+  platform_vendor:
   frontend_node_modules:
   frontend_pnpm_store:
