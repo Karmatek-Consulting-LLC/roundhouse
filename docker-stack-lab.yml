@@ -17,9 +17,6 @@ services:
       - mcp-network
       - caddy_caddy
     deploy:
-      placement:
-        constraints:
-          - node.labels.mcp-platform == true
       restart_policy:
         condition: on-failure
 
@@ -41,9 +38,6 @@ services:
       timeout: 3s
       retries: 5
     deploy:
-      placement:
-        constraints:
-          - node.labels.mcp-platform == true
       restart_policy:
         condition: on-failure
 
@@ -82,9 +76,6 @@ services:
         - "traefik.http.routers.platform.rule=PathPrefix(`/`)"
         - "traefik.http.routers.platform.priority=1"
         - "traefik.http.services.platform.loadbalancer.server.port=9000"
-      placement:
-        constraints:
-          - node.labels.mcp-platform == true
       restart_policy:
         condition: on-failure
 
