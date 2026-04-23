@@ -30,14 +30,14 @@ services:
       retries: 5
     restart: unless-stopped
 
-  platform:
+  platform-api:
     build:
       context: .
       dockerfile: api/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
-    # Give the SIGTERM trap time to cleanup every spawned MCP server before SIGKILL.
+    # Give the SIGTERM trap time to clean up every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -81,10 +81,10 @@ services:
       - mcp-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.platform.entrypoints=web,websecure"
-      - "traefik.http.routers.platform.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.platform.priority=1"
-      - "traefik.http.services.platform.loadbalancer.server.port=9000"
+      - "traefik.http.routers.platform-api.entrypoints=web,websecure"
+      - "traefik.http.routers.platform-api.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.platform-api.priority=1"
+      - "traefik.http.services.platform-api.loadbalancer.server.port=9000"
     restart: unless-stopped
 
 networks:
