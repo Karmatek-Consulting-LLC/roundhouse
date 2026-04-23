@@ -86,7 +86,7 @@ class DockerHttp
     }
 
     /**
-     * Streamed POST — returns an iterable of parsed JSON line frames.
+     * Streamed POST - returns an iterable of parsed JSON line frames.
      * Used by image build and image push endpoints.
      *
      * @param resource|string $body
@@ -96,7 +96,7 @@ class DockerHttp
      */
     public function postStream(string $path, array $query, $body, array $headers = []): iterable
     {
-        // Note: we can't use Guzzle's stream=>true over a unix socket — that forces the
+        // Note: we can't use Guzzle's stream=>true over a unix socket - that forces the
         // PHP StreamHandler which doesn't support CURLOPT_UNIX_SOCKET_PATH. We buffer
         // the whole response (Docker build/push progress is modest) and parse NDJSON.
         $opts = [
@@ -125,7 +125,7 @@ class DockerHttp
     }
 
     /**
-     * Raw streaming GET — returns the full response body (used for logs).
+     * Raw streaming GET - returns the full response body (used for logs).
      *
      * @param array<string, mixed> $query
      */
@@ -150,7 +150,7 @@ class DockerHttp
             $stream = ord($raw[$pos]);
             $size = unpack('N', substr($raw, $pos + 4, 4))[1] ?? 0;
             if ($stream > 2 || $size < 0) {
-                // Unrecognized header — assume raw text
+                // Unrecognized header - assume raw text
                 return $raw;
             }
             $pos += 8;
@@ -210,7 +210,7 @@ class DockerHttp
             $message = (string) $decoded['message'];
         }
         if ($code === 404) {
-            return new DockerNotFoundException("Not found: {$path} — {$message}", $code);
+            return new DockerNotFoundException("Not found: {$path} - {$message}", $code);
         }
         return new DockerException("Docker API {$code} on {$path}: {$message}", $code);
     }

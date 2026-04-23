@@ -49,7 +49,7 @@ export function liveToolToPrimitive(t: McpLiveTool): Primitive {
     description: t.description ?? "",
     parameters: toolParametersFromSchema(t.inputSchema),
     code: "",
-    // FastMCP's tools/list doesn't include return_type — default str.
+    // FastMCP's tools/list doesn't include return_type - default str.
     return_type: "str",
   };
 }

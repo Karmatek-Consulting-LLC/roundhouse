@@ -10,7 +10,7 @@ use GuzzleHttp\Exception\GuzzleException;
  * Thin JSON-RPC client for MCP servers we spawn.
  *
  * Our generated FastMCP servers run with stateless_http=True + json_response=True,
- * which means every request stands alone — no initialize handshake, no SSE streaming,
+ * which means every request stands alone - no initialize handshake, no SSE streaming,
  * just POST JSON → get JSON.
  *
  * Server URL resolution prefers Docker DNS (mcp-{name}:8000/mcp) so we don't depend
@@ -49,7 +49,7 @@ class McpClient
             'jsonrpc' => '2.0',
             'id' => random_int(1, PHP_INT_MAX),
             'method' => $method,
-            // Force JSON object — PHP's empty [] serializes as [], but MCP requires {}.
+            // Force JSON object - PHP's empty [] serializes as [], but MCP requires {}.
             'params' => empty($params) ? new \stdClass() : $params,
         ];
 

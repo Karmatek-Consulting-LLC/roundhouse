@@ -5,12 +5,12 @@ version: "3.8"
 #
 # Required external secrets (one-time create on the Swarm):
 #   docker secret create mcp_app_key <file>           # Laravel APP_KEY, "base64:<32-byte-key>"
-#   docker secret create mcp_admin_email <file>       # optional — seeded on first boot
-#   docker secret create mcp_admin_password <file>    # optional — seeded on first boot
+#   docker secret create mcp_admin_email <file>       # optional - seeded on first boot
+#   docker secret create mcp_admin_password <file>    # optional - seeded on first boot
 #   docker secret create mcp_postgres_password <file>
 #
 # Traefik is on the external `caddy` network for ingress from Caddy; backends stay on mcp-network.
-# v3.6+ required — older Traefik's Docker API negotiation is rejected by modern Engines.
+# v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
   traefik:
@@ -70,7 +70,7 @@ services:
       - LOG_CHANNEL=stderr
       - LOG_LEVEL=info
 
-      # Secret files — entrypoint hydrates APP_KEY / ADMIN_* / DB_PASSWORD from these.
+      # Secret files - entrypoint hydrates APP_KEY / ADMIN_* / DB_PASSWORD from these.
       - APP_KEY_FILE=/run/secrets/mcp_app_key
       - ADMIN_EMAIL_FILE=/run/secrets/mcp_admin_email
       - ADMIN_PASSWORD_FILE=/run/secrets/mcp_admin_password

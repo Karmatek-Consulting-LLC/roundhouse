@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 /**
  * Tear down every container/service labelled mcp-platform.managed=true.
  * Runs from the platform container's SIGTERM trap so `docker compose down` removes spawned MCP servers.
- * DB rows and spec files on disk are kept — redeploying after next boot is intentional.
+ * DB rows and spec files on disk are kept - redeploying after next boot is intentional.
  */
 class CleanupManagedServers extends Command
 {
@@ -28,7 +28,7 @@ class CleanupManagedServers extends Command
         }
 
         if (! $servers) {
-            $this->info('No managed servers running — nothing to clean up.');
+            $this->info('No managed servers running - nothing to clean up.');
             return self::SUCCESS;
         }
 
@@ -48,7 +48,7 @@ class CleanupManagedServers extends Command
         }
 
         if ($failed > 0) {
-            $this->warn("{$failed} removal(s) failed — inspect `docker ps --filter label=mcp-platform.managed=true`.");
+            $this->warn("{$failed} removal(s) failed - inspect `docker ps --filter label=mcp-platform.managed=true`.");
             return self::FAILURE;
         }
 

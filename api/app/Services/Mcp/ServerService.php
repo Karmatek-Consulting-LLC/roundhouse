@@ -108,7 +108,7 @@ class ServerService
     {
         $spec = $this->store->load($serverName) ?? new ServerSpec(name: $serverName);
         if (! $this->docker->getServer($serverName)) {
-            return; // not deployed — nothing to push
+            return; // not deployed - nothing to push
         }
         try {
             $this->docker->updateRuntimeEnv($serverName, $this->effectiveEnv($spec));

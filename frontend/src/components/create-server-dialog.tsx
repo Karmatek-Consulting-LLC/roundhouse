@@ -121,7 +121,7 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
           <DialogDescription>
             {mode === "structured"
               ? "Create an empty server, then add tools, resources, and prompts."
-              : "Paste a full FastMCP server.py — the platform handles Docker, Traefik, and env."}
+              : "Paste a full FastMCP server.py - the platform handles Docker, Traefik, and env."}
           </DialogDescription>
         </DialogHeader>
 
@@ -192,7 +192,7 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
                 Must include <code>mcp = FastMCP(...)</code> and a{" "}
                 <code>mcp.run(transport="streamable-http", host="0.0.0.0", port=8000,
                 stateless_http=True, json_response=True)</code>{" "}
-                invocation. Mode can't be changed after create — delete and recreate to switch.
+                invocation. Mode can't be changed after create - delete and recreate to switch.
               </p>
               <div className="rounded-md border">
                 <CodeMirror

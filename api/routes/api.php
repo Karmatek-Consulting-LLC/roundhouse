@@ -23,7 +23,7 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->group(function () {
-    // Users — superadmin only
+    // Users - superadmin only
     Route::middleware('superadmin')->group(function () {
         Route::get('/users', [UserController::class, 'index']);
         Route::get('/users/{user_id}', [UserController::class, 'show']);
@@ -31,7 +31,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/users/{user_id}', [UserController::class, 'destroy']);
     });
 
-    // Teams — mixed permissions (checked in controller where needed)
+    // Teams - mixed permissions (checked in controller where needed)
     Route::get('/teams', [TeamController::class, 'index']);
     Route::get('/teams/{team_id}', [TeamController::class, 'show']);
     Route::put('/teams/{team_id}', [TeamController::class, 'update']);
@@ -39,13 +39,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/teams/{team_id}/members/{user_id}', [TeamController::class, 'updateMember']);
     Route::delete('/teams/{team_id}/members/{user_id}', [TeamController::class, 'removeMember']);
 
-    // Team create/delete — superadmin only
+    // Team create/delete - superadmin only
     Route::middleware('superadmin')->group(function () {
         Route::post('/teams', [TeamController::class, 'store']);
         Route::delete('/teams/{team_id}', [TeamController::class, 'destroy']);
     });
 
-    // Templates — any authed user
+    // Templates - any authed user
     Route::get('/templates', [TemplateController::class, 'index']);
     Route::get('/templates/{name}', [TemplateController::class, 'show']);
 
@@ -77,10 +77,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/servers/{name}/resources/read', [InvokeController::class, 'readResource']);
     Route::post('/servers/{name}/prompts/get', [InvokeController::class, 'getPrompt']);
 
-    // PyPI — any authed user
+    // PyPI - any authed user
     Route::get('/pypi/search', [PypiController::class, 'search']);
 
-    // Settings — superadmin only
+    // Settings - superadmin only
     Route::middleware('superadmin')->group(function () {
         Route::get('/settings', [SettingsController::class, 'index']);
         Route::put('/settings/hostname', [SettingsController::class, 'updateHostname']);

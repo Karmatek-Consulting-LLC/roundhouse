@@ -3,7 +3,7 @@
 namespace App\Services\Mcp;
 
 /**
- * JSON-file persistence for ServerSpecs — port of server_store.py.
+ * JSON-file persistence for ServerSpecs - port of server_store.py.
  * Each server lives at {base_dir}/{name}/server.json
  */
 class ServerStore

@@ -5,7 +5,7 @@ namespace App\Services\Mcp;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Full port of docker_manager.py — supports standalone containers and Swarm services.
+ * Full port of docker_manager.py - supports standalone containers and Swarm services.
  * All operations talk to the Docker daemon over /var/run/docker.sock via DockerHttp.
  */
 class DockerClient
@@ -317,7 +317,7 @@ class DockerClient
             return null;
         } catch (DockerException $e) {
             if (str_contains($e->getMessage(), 'already started')) {
-                // ignore — already running
+                // ignore - already running
             } else {
                 throw $e;
             }
@@ -628,7 +628,7 @@ class DockerClient
 
     /**
      * Tar a directory into a stream for POST /build.
-     * Shells out to the system `tar` binary — PharData is unusable when phar.readonly=1,
+     * Shells out to the system `tar` binary - PharData is unusable when phar.readonly=1,
      * and the Docker build context is always the platform container where tar is guaranteed present.
      *
      * @return resource

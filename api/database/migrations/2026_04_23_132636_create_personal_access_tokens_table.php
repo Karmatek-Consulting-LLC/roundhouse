@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('personal_access_tokens', function (Blueprint $table) {
             $table->id();
-            // uuidMorphs because our User uses UUID primary keys — default morphs()
+            // uuidMorphs because our User uses UUID primary keys - default morphs()
             // creates tokenable_id as bigint, which Sanctum rejects on token creation.
             $table->uuidMorphs('tokenable');
             $table->text('name');

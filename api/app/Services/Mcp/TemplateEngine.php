@@ -7,7 +7,7 @@ use Twig\Environment;
 use Twig\Loader\FilesystemLoader;
 
 /**
- * Port of app/template_engine.py — loads template bundles, renders *.j2 files
+ * Port of app/template_engine.py - loads template bundles, renders *.j2 files
  * with user variables, copies other files to the build context.
  */
 class TemplateEngine

@@ -287,7 +287,7 @@ class ServerController extends Controller
         $spec = $this->ensureSpec($name);
 
         if (! $spec->isCodeMode()) {
-            throw new HttpException(409, 'Cannot set source on a structured server — use the primitive editor instead.');
+            throw new HttpException(409, 'Cannot set source on a structured server - use the primitive editor instead.');
         }
         $spec->source = $data['source'];
         return $this->redeployAndRespond($spec);
@@ -470,7 +470,7 @@ class ServerController extends Controller
         if ($spec->isCodeMode()) {
             throw new HttpException(
                 409,
-                "Cannot {$operation} on a code-mode server — edit its server.py source instead."
+                "Cannot {$operation} on a code-mode server - edit its server.py source instead."
             );
         }
     }

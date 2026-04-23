@@ -71,7 +71,7 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
               </TableCell>
               <TableCell className="text-muted-foreground text-sm tabular-nums">
                 {s.status === "not_deployed" || s.status === "unknown"
-                  ? "—"
+                  ? "-"
                   : s.docker_swarm_mode
                     ? `${s.replicas_running}/${s.replicas_desired}`
                     : s.replicas_running > 0

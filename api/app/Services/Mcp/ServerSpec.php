@@ -3,7 +3,7 @@
 namespace App\Services\Mcp;
 
 /**
- * Persisted server definition — mirrors platform/app/models.py::ServerSpec.
+ * Persisted server definition - mirrors platform/app/models.py::ServerSpec.
  * Primitives are kept as associative arrays (with a `kind` discriminator) to
  * match the Python JSON schema exactly.
  */
@@ -19,7 +19,7 @@ final class ServerSpec
      * @param string[] $envGlobalImports
      * @param EnvVar[] $envVars
      * @param 'structured'|'code' $mode
-     * @param ?string $source Raw server.py text — only used when mode === 'code'
+     * @param ?string $source Raw server.py text - only used when mode === 'code'
      */
     public function __construct(
         public string $name,

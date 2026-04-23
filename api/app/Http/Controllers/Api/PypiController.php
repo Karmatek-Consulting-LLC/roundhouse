@@ -61,7 +61,7 @@ class PypiController extends Controller
     private function loadPackageIndex(): array
     {
         return Cache::remember(self::CACHE_KEY, self::CACHE_TTL, function () {
-            // PyPI's full index is ~50MB of JSON with 600k+ projects — easily blows the
+            // PyPI's full index is ~50MB of JSON with 600k+ projects - easily blows the
             // default 128M PHP memory limit during decode. Bump for the rest of this request;
             // PHP's per-request model means it resets for the next one.
             ini_set('memory_limit', '512M');

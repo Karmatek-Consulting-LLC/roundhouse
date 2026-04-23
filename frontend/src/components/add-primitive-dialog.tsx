@@ -238,8 +238,8 @@ export function AddPrimitiveDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="str">Text (str) — single value</SelectItem>
-                  <SelectItem value="dict">Object (dict) — JSON object</SelectItem>
+                  <SelectItem value="str">Text (str) - single value</SelectItem>
+                  <SelectItem value="dict">Object (dict) - JSON object</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -349,7 +349,7 @@ export function AddPrimitiveDialog({
           <div className="grid gap-2">
             <Label>Python Code</Label>
             <p className="text-xs text-muted-foreground">
-              Function body only — parameters are defined above. Use{" "}
+              Function body only - parameters are defined above. Use{" "}
               <code className="rounded bg-muted px-1">return</code> for the result.
               {kind === "tool" && returnType === "str" && (
                 <>
@@ -357,7 +357,7 @@ export function AddPrimitiveDialog({
                   With <strong className="font-medium text-foreground">Text (str)</strong>, return a plain
                   string. FastMCP exposes it as structured{" "}
                   <code className="rounded bg-muted px-1">{`{ "result": "..." }`}</code>. Some UIs show an
-                  &quot;unstructured&quot; panel as plain text — that is normal; it is not a JSON object, so
+                  &quot;unstructured&quot; panel as plain text - that is normal; it is not a JSON object, so
                   warnings like &quot;not valid JSON&quot; there are expected.
                 </>
               )}
@@ -366,7 +366,7 @@ export function AddPrimitiveDialog({
                   {" "}
                   With <strong className="font-medium text-foreground">Object (dict)</strong>, return a Python
                   dict (e.g. <code className="rounded bg-muted px-1">{`return {"result": f"Hello, {who}!"}`}</code>
-                  ). Structured content matches your keys directly — no extra{" "}
+                  ). Structured content matches your keys directly - no extra{" "}
                   <code className="rounded bg-muted px-1">result</code> wrapper from FastMCP as with plain
                   strings.
                 </>

@@ -106,7 +106,7 @@ jobs:
             sleep 1
           done
 
-          # Laravel app — startup runs migrations, seeds the admin user, warms caches.
+          # Laravel app - startup runs migrations, seeds the admin user, warms caches.
           docker run -d --name "$APP" --network "$NET" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -e APP_KEY=base64:$(openssl rand -base64 32) \
@@ -124,7 +124,7 @@ jobs:
             -e MCP_BASE_URL=http://localhost \
             "mcp-platform-ci:${LAB_SHA_TAG}" >/dev/null
 
-          # Health probe via /api/health — FastCGI/nginx are in the container, use curl.
+          # Health probe via /api/health - FastCGI/nginx are in the container, use curl.
           for i in $(seq 1 120); do
             RUNNING="$(docker inspect -f '{{.State.Running}}' "$APP" 2>/dev/null || echo false)"
             if [[ "$RUNNING" != "true" ]]; then

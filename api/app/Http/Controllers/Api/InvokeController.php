@@ -85,7 +85,7 @@ class InvokeController extends Controller
             throw new HttpException(403, 'Access denied');
         }
         if (! $this->docker->getServer($name)) {
-            throw new HttpException(409, "Server '{$name}' is not deployed — nothing to invoke against.");
+            throw new HttpException(409, "Server '{$name}' is not deployed - nothing to invoke against.");
         }
     }
 

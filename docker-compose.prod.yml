@@ -47,7 +47,7 @@ services:
     environment:
       - APP_NAME=MCP Platform
       - APP_ENV=production
-      - APP_KEY=${APP_KEY:?Set APP_KEY in .env — run `php artisan key:generate --show` in a shell}
+      - APP_KEY=${APP_KEY:?Set APP_KEY in .env - run `php artisan key:generate --show` in a shell}
       - APP_DEBUG=${APP_DEBUG:-false}
       - APP_URL=${MCP_BASE_URL:-http://localhost}
       - LOG_CHANNEL=stderr
