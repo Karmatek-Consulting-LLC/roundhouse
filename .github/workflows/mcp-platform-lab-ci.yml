@@ -65,14 +65,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show where Docker is talking to
-        run: |
-          echo "=== DOCKER_HOST ==="
-          echo "$DOCKER_HOST"
-          echo "=== Docker info ==="
-          docker info | grep -A10 "HTTP"
-          docker version
-
       - name: Build image
         run: |
           set -euo pipefail
