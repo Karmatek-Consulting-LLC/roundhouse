@@ -1,9 +1,18 @@
 version: "3.8"
 
+# Docker Swarm stack for the lab. Consumed by the lab CI workflow after it
+# builds and pushes the image from api/Dockerfile.
+#
+# Required external secrets (one-time create on the Swarm):
+#   docker secret create mcp_app_key <file>           # Laravel APP_KEY, "base64:<32-byte-key>"
+#   docker secret create mcp_admin_email <file>       # optional — seeded on first boot
+#   docker secret create mcp_admin_password <file>    # optional — seeded on first boot
+#   docker secret create mcp_postgres_password <file>
+#
+# Traefik is on the external `caddy` network for ingress from Caddy; backends stay on mcp-network.
+# v3.6+ required — older Traefik's Docker API negotiation is rejected by modern Engines.
+
 services:
-  # Traefik is on the external `caddy` network for ingress from Caddy; backends stay on mcp-network.
-  # v3.3's embedded Docker client negotiates API 1.24; Engine with min API 1.40+ rejects it, so the
-  # Swarm provider never loads (empty routers, 404 on :80). Use v3.6+ (see traefik/traefik#12253).
   traefik:
     image: traefik:v3.6
     volumes:
@@ -44,33 +53,58 @@ services:
   platform:
     image: ${PLATFORM_IMAGE:-mcp-platform:latest}
     secrets:
-      - mcp_jwt_secret_key
+      - mcp_app_key
       - mcp_admin_email
       - mcp_admin_password
       - mcp_postgres_password
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - server-data:/app/data/servers
-      - traefik-dynamic:/app/traefik/dynamic
-      - traefik-certs:/app/traefik/certs
+      - server-data:/var/www/html/storage/app/servers
+      - traefik-dynamic:/var/www/html/storage/app/traefik/dynamic
+      - traefik-certs:/var/www/html/storage/app/traefik/certs
     environment:
-      # Must match `docker network ls` overlay: {stack}_mcp-network (same as Traefik labels).
-      - DOCKER_NETWORK=mcp-platform_mcp-network
-      - TRAEFIK_ENTRYPOINTS=web
+      - APP_NAME=MCP Platform
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=${MCP_BASE_URL:-http://localhost}
+      - LOG_CHANNEL=stderr
+      - LOG_LEVEL=info
+
+      # Secret files — entrypoint hydrates APP_KEY / ADMIN_* / DB_PASSWORD from these.
+      - APP_KEY_FILE=/run/secrets/mcp_app_key
+      - ADMIN_EMAIL_FILE=/run/secrets/mcp_admin_email
+      - ADMIN_PASSWORD_FILE=/run/secrets/mcp_admin_password
+      - DB_PASSWORD_FILE=/run/secrets/mcp_postgres_password
+
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=mcp
+      - DB_USERNAME=mcp
+
+      - SESSION_DRIVER=array
+      - CACHE_STORE=database
+      - QUEUE_CONNECTION=database
+      - SANCTUM_TOKEN_EXPIRATION=1440
+
+      # Must match `docker network ls` overlay: {stack}_mcp-network.
+      - MCP_DOCKER_NETWORK=mcp-platform_mcp-network
+      - MCP_DOCKER_SOCKET=/var/run/docker.sock
+      - MCP_TRAEFIK_ENTRYPOINTS=web
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
-      - SERVERS_DATA_DIR=/app/data/servers
-      - TEMPLATES_DIR=/app/templates
-      - DATABASE_URL=postgresql://mcp:__SECRET__@postgres:5432/mcp
-      - TRAEFIK_DYNAMIC_DIR=/app/traefik/dynamic
-      - TRAEFIK_CERTS_DIR=/app/traefik/certs
-      - DEFAULT_MCP_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
-      - MAX_MCP_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
+      - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
+      - MCP_TEMPLATES_DIR=/var/www/html/templates
+      - MCP_TRAEFIK_DYNAMIC_DIR=/var/www/html/storage/app/traefik/dynamic
+      - MCP_TRAEFIK_CERTS_DIR=/var/www/html/storage/app/traefik/certs
+      - MCP_DEFAULT_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
+      - MCP_MAX_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
     networks:
       - mcp-network
+    # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.
+    stop_grace_period: 60s
     deploy:
       labels:
         - "traefik.enable=true"
-        # Required for Swarm: pick the overlay IP Traefik uses (see providers.swarm.network in traefik.swarm.yml).
         - "traefik.docker.network=mcp-platform_mcp-network"
         - "traefik.http.routers.platform.entrypoints=web"
         - "traefik.http.routers.platform.rule=PathPrefix(`/`)"
@@ -80,7 +114,7 @@ services:
         condition: on-failure
 
 secrets:
-  mcp_jwt_secret_key:
+  mcp_app_key:
     external: true
   mcp_admin_email:
     external: true
@@ -91,7 +125,7 @@ secrets:
 
 configs:
   traefik-config:
-    # Swarm configs cannot be updated in place; change the name (e.g. v3) when
+    # Swarm configs cannot be updated in place; change the name (e.g. v4) when
     # editing traefik/traefik.swarm.yml, then `docker config rm` the old one if unused.
     name: mcp-platform_traefik-static-v3
     file: ./traefik/traefik.swarm.yml

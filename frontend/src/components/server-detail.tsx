@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { AddPrimitiveDialog } from "@/components/add-primitive-dialog";
+import { TestPrimitiveDialog } from "@/components/test-primitive-dialog";
 import { ImportsEditor } from "@/components/imports-editor";
 import { PackageManager } from "@/components/package-manager";
 import {
@@ -335,6 +336,11 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
+                      <TestPrimitiveDialog
+                        serverName={serverName}
+                        primitive={p}
+                        disabled={server.status !== "running"}
+                      />
                       <AddPrimitiveDialog
                         serverName={serverName}
                         onAdded={refresh}

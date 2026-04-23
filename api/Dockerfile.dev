@@ -1,0 +1,22 @@
+# Dev image: PHP CLI with the artisan server. Code is bind-mounted.
+FROM php:8.4-cli-alpine
+
+RUN apk add --no-cache \
+        tar netcat-openbsd git unzip \
+        postgresql-libs postgresql-dev \
+        libzip-dev oniguruma-dev \
+    && docker-php-ext-install pdo pdo_pgsql bcmath zip opcache \
+    && apk del postgresql-dev \
+    && rm -rf /var/cache/apk/*
+
+COPY --from=composer:2.9 /usr/bin/composer /usr/bin/composer
+
+WORKDIR /var/www/html
+
+COPY api/docker/dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
+RUN chmod +x /usr/local/bin/dev-entrypoint.sh
+
+EXPOSE 9000
+
+ENTRYPOINT ["/usr/local/bin/dev-entrypoint.sh"]
+CMD ["php", "-S", "0.0.0.0:9000", "-t", "public"]

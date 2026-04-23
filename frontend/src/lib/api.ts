@@ -72,6 +72,40 @@ export interface ServerEnvConfig {
   env_vars: EnvVar[];
 }
 
+// --- Live MCP invocation result shapes (mirrors FastMCP's JSON-RPC responses) ---
+
+export interface McpContentBlock {
+  type: "text" | "image" | "resource" | string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+  [key: string]: unknown;
+}
+
+export interface McpToolResult {
+  content: McpContentBlock[];
+  structuredContent?: unknown;
+  isError?: boolean;
+  _meta?: Record<string, unknown>;
+}
+
+export interface McpResourceResult {
+  contents: Array<{
+    uri: string;
+    mimeType?: string;
+    text?: string;
+    blob?: string;
+  }>;
+}
+
+export interface McpPromptResult {
+  description?: string;
+  messages: Array<{
+    role: string;
+    content: McpContentBlock | string;
+  }>;
+}
+
 export interface PlacementTask {
   task_id: string;
   node_id: string;
@@ -305,6 +339,23 @@ export const api = {
         env_global_imports: env.env_global_imports,
         env_vars: env.env_vars,
       }),
+    }),
+
+  // Live MCP invocation (pass-through to the deployed server's JSON-RPC endpoint)
+  invokeTool: (serverName: string, tool: string, args: Record<string, unknown>) =>
+    request<McpToolResult>(`/servers/${encodeURIComponent(serverName)}/tools/invoke`, {
+      method: "POST",
+      body: JSON.stringify({ tool, arguments: args }),
+    }),
+  readResource: (serverName: string, uri: string) =>
+    request<McpResourceResult>(`/servers/${encodeURIComponent(serverName)}/resources/read`, {
+      method: "POST",
+      body: JSON.stringify({ uri }),
+    }),
+  getPrompt: (serverName: string, prompt: string, args: Record<string, unknown>) =>
+    request<McpPromptResult>(`/servers/${encodeURIComponent(serverName)}/prompts/get`, {
+      method: "POST",
+      body: JSON.stringify({ prompt, arguments: args }),
     }),
 
   // PyPI
