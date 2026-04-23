@@ -25,7 +25,7 @@ import { Play } from "lucide-react";
 interface Props {
   serverName: string;
   primitive: Primitive;
-  /** When the backing server isn't deployed, the live endpoint 409s — disable the button upstream. */
+  /** When the backing server isn't deployed, the live endpoint 409s - disable the button upstream. */
   disabled?: boolean;
 }
 
@@ -55,7 +55,7 @@ export function TestPrimitiveDialog({ serverName, primitive, disabled }: Props) 
         default: null,
       }));
     }
-    // Static resource — no params.
+    // Static resource - no params.
     return [] as ToolParameter[];
   }, [primitive]);
 
@@ -129,7 +129,7 @@ export function TestPrimitiveDialog({ serverName, primitive, disabled }: Props) 
         const r = await api.readResource(serverName, primitive.uri);
         setResult(r);
       } else {
-        // resource_template — substitute URI placeholders.
+        // resource_template - substitute URI placeholders.
         let uri = primitive.uri_template;
         for (const [k, v] of Object.entries(args)) {
           uri = uri.replaceAll(`{${k}}`, String(v));
@@ -311,7 +311,7 @@ function summarize(kind: Primitive["kind"], raw: unknown): string | null {
     }
     if (r.structuredContent !== undefined) {
       const sc = r.structuredContent as Record<string, unknown>;
-      // FastMCP wraps str returns as { result: "..." } — unwrap for readability.
+      // FastMCP wraps str returns as { result: "..." } - unwrap for readability.
       if (sc && typeof sc === "object" && "result" in sc && Object.keys(sc).length === 1) {
         return String(sc.result ?? "");
       }

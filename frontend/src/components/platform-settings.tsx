@@ -289,7 +289,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
           <p className="text-sm text-muted-foreground">
             Effective tag prefix:{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono break-all">
-              {dockerRegistryEffective || "(none — local images only)"}
+              {dockerRegistryEffective || "(none - local images only)"}
             </code>
           </p>
         </CardContent>
@@ -316,10 +316,10 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
           </div>
           <p className="text-muted-foreground">
             Default replicas:{" "}
-            <strong className="text-foreground">{defaultReplicas ?? "—"}</strong>
+            <strong className="text-foreground">{defaultReplicas ?? "-"}</strong>
             {" · "}
             Max allowed:{" "}
-            <strong className="text-foreground">{maxReplicas ?? "—"}</strong>
+            <strong className="text-foreground">{maxReplicas ?? "-"}</strong>
           </p>
         </CardContent>
       </Card>

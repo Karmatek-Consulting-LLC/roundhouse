@@ -220,8 +220,8 @@ export interface CreateServerRequest {
   config?: Record<string, string>;
   /** Omit to use platform default (Swarm only for N>1). */
   replicas?: number | null;
-  /** "structured" (default) — primitives managed via the UI.
-   *  "code"       — user provides a full server.py; primitive editor is hidden. */
+  /** "structured" (default) - primitives managed via the UI.
+   *  "code"       - user provides a full server.py; primitive editor is hidden. */
   mode?: ServerMode;
   /** Required when mode === "code". The raw server.py text. */
   source?: string;
@@ -395,7 +395,7 @@ export const api = {
       body: JSON.stringify({ source }),
     }),
 
-  // Live MCP primitive discovery — used by code-mode servers where our stored spec has no primitives.
+  // Live MCP primitive discovery - used by code-mode servers where our stored spec has no primitives.
   listLiveTools: (serverName: string) =>
     request<{ tools: McpLiveTool[] }>(`/servers/${encodeURIComponent(serverName)}/tools`),
   listLiveResources: (serverName: string) =>

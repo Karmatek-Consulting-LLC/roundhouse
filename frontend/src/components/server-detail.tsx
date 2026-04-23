@@ -374,7 +374,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
             liveLoading ? (
               "Loading primitives from the live server..."
             ) : server.status !== "running" ? (
-              "The server isn't running — start it to discover primitives."
+              "The server isn't running - start it to discover primitives."
             ) : (
               "Server is running but exposes no tools, resources, or prompts yet."
             )
@@ -651,12 +651,12 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
                       <TableRow key={t.task_id}>
                         <TableCell className="font-mono text-xs">{t.state}</TableCell>
                         <TableCell className="text-xs">
-                          {t.node_name ?? (t.node_id || "—")}
+                          {t.node_name ?? (t.node_id || "-")}
                         </TableCell>
                         <TableCell className="font-mono text-xs">{t.task_id.slice(0, 12)}</TableCell>
-                        <TableCell className="text-xs">{t.slot ?? "—"}</TableCell>
+                        <TableCell className="text-xs">{t.slot ?? "-"}</TableCell>
                         <TableCell className="text-xs text-destructive max-w-[180px] truncate">
-                          {t.error ?? "—"}
+                          {t.error ?? "-"}
                         </TableCell>
                       </TableRow>
                     ))}

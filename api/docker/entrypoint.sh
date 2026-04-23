@@ -46,7 +46,7 @@ chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
 # `docker compose down` doesn't leak managed MCP servers.
 child=""
 shutdown() {
-    echo "[entrypoint] shutdown signal received — cleaning up managed MCP servers..."
+    echo "[entrypoint] shutdown signal received - cleaning up managed MCP servers..."
     php artisan mcp:cleanup-managed 2>&1 || true
     if [ -n "$child" ]; then
         kill -TERM "$child" 2>/dev/null || true

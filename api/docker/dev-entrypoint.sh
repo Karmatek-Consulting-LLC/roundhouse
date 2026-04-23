@@ -33,7 +33,7 @@ chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
 # --- Lifecycle cleanup ---
 child=""
 shutdown() {
-    echo "[dev-entrypoint] shutdown signal received — cleaning up managed MCP servers..."
+    echo "[dev-entrypoint] shutdown signal received - cleaning up managed MCP servers..."
     php artisan mcp:cleanup-managed 2>&1 || true
     if [ -n "$child" ]; then
         kill -TERM "$child" 2>/dev/null || true

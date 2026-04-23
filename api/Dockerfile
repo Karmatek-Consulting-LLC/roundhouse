@@ -17,7 +17,7 @@ RUN composer install \
     --no-dev --no-interaction --no-scripts --prefer-dist \
     --no-progress --optimize-autoloader
 
-# ---- Stage 3: Runtime — PHP-FPM + nginx + supervisor ----
+# ---- Stage 3: Runtime - PHP-FPM + nginx + supervisor ----
 FROM php:8.4-fpm-alpine AS runtime
 
 # Install OS + PHP extensions (pdo_pgsql for Postgres; ctype/tokenizer already bundled).
