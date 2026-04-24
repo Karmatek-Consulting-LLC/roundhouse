@@ -13,9 +13,13 @@ return [
     'docker_network' => env('MCP_DOCKER_NETWORK', 'mcp-network'),
 
     /*
-     * Docker daemon unix socket path.
+     * Docker daemon endpoint. Either a unix socket path
+     * (/var/run/docker.sock) or a tcp://host:port URL pointing at a
+     * socket proxy (e.g. tecnativa/docker-socket-proxy).
+     *
+     * MCP_DOCKER_HOST wins; MCP_DOCKER_SOCKET kept for backwards compat.
      */
-    'docker_socket' => env('MCP_DOCKER_SOCKET', '/var/run/docker.sock'),
+    'docker_host' => env('MCP_DOCKER_HOST', env('MCP_DOCKER_SOCKET', '/var/run/docker.sock')),
 
     /*
      * Where ServerSpec JSON files + build contexts live on disk.
