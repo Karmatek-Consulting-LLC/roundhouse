@@ -17,22 +17,12 @@ RUN composer install \
     --no-dev --no-interaction --no-scripts --prefer-dist \
     --no-progress --optimize-autoloader
 
-# ---- Stage 3: Runtime - PHP + Swoole, serving via Laravel Octane ----
-FROM php:8.4-cli-alpine AS runtime
+# ---- Stage 3: Runtime - FrankenPHP (Caddy + PHP) serving via Laravel Octane ----
+FROM dunglas/frankenphp:1-php8.4-alpine AS runtime
 
-# Swoole needs linux-headers + openssl-dev to compile; postgresql-dev for pdo_pgsql.
-# We keep the build deps long enough to pecl-install swoole, then drop them.
-RUN apk add --no-cache \
-        tar netcat-openbsd \
-        postgresql-libs libzip oniguruma brotli-libs libstdc++ \
-    && apk add --no-cache --virtual .build-deps \
-        $PHPIZE_DEPS linux-headers openssl-dev \
-        postgresql-dev libzip-dev oniguruma-dev brotli-dev \
-    && docker-php-ext-install pdo pdo_pgsql bcmath zip opcache pcntl \
-    && pecl install swoole \
-    && docker-php-ext-enable swoole \
-    && apk del .build-deps \
-    && rm -rf /var/cache/apk/* /tmp/pear
+# install-php-extensions ships with the frankenphp image; it pulls and cleans
+# up build deps automatically so the final layer stays slim.
+RUN install-php-extensions pdo_pgsql bcmath zip opcache pcntl
 
 # Composer binary is needed in runtime to dump-autoload after app code lands.
 COPY --from=vendor /usr/bin/composer /usr/local/bin/composer
@@ -71,4 +61,4 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["php", "artisan", "octane:start", "--server=swoole", "--host=0.0.0.0", "--port=8000"]
+CMD ["php", "artisan", "octane:start", "--server=frankenphp", "--host=0.0.0.0", "--port=8000"]
