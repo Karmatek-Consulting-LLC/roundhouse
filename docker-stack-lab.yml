@@ -13,7 +13,8 @@ version: "3.8"
 # backends stay on mcp-network. Both network names are overridable:
 #   STACK_NAME       - stack this is deployed as (default: mcp-platform). Controls {stack}_mcp-network.
 #   INGRESS_NETWORK  - externally-owned ingress overlay name (default: traefik_traefik-public).
-#   DB_NODE          - swarm node hostname pgdata lives on (default: inix21).
+#   MCP_HOSTNAME     - host Traefik routes to platform-api on (default: mcp.localhost).
+#   MCP_BASE_URL     - public URL the platform reports to clients (default: http://localhost).
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
@@ -160,7 +161,7 @@ services:
         - "traefik.enable=true"
         - "traefik.docker.network=${STACK_NAME:-mcp-platform}_mcp-network"
         - "traefik.http.routers.platform-api.entrypoints=web"
-        - "traefik.http.routers.platform-api.rule=PathPrefix(`/`)"
+        - "traefik.http.routers.platform-api.rule=Host(`${MCP_HOSTNAME:-mcp.localhost}`)"
         - "traefik.http.routers.platform-api.priority=1"
         - "traefik.http.services.platform-api.loadbalancer.server.port=8000"
       restart_policy:
