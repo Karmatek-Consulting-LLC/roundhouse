@@ -13,6 +13,7 @@ version: "3.8"
 # backends stay on mcp-network. Both network names are overridable:
 #   STACK_NAME       - stack this is deployed as (default: mcp-platform). Controls {stack}_mcp-network.
 #   INGRESS_NETWORK  - externally-owned ingress overlay name (default: traefik_traefik-public).
+#   DB_NODE          - swarm node hostname pgdata lives on (default: inix21).
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
@@ -97,6 +98,12 @@ services:
       timeout: 3s
       retries: 5
     deploy:
+      # Pin to the node that owns the pgdata volume. Swarm volumes are node-local,
+      # so letting postgres reschedule to a different host would silently start
+      # against an empty volume.
+      placement:
+        constraints:
+          - node.hostname == ${DB_NODE:-inix21}
       restart_policy:
         condition: on-failure
 
