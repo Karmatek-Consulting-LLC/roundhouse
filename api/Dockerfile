@@ -17,17 +17,25 @@ RUN composer install \
     --no-dev --no-interaction --no-scripts --prefer-dist \
     --no-progress --optimize-autoloader
 
-# ---- Stage 3: Runtime - PHP-FPM + nginx + supervisor ----
-FROM php:8.4-fpm-alpine AS runtime
+# ---- Stage 3: Runtime - PHP + Swoole, serving via Laravel Octane ----
+FROM php:8.4-cli-alpine AS runtime
 
-# Install OS + PHP extensions (pdo_pgsql for Postgres; ctype/tokenizer already bundled).
+# Swoole needs linux-headers + openssl-dev to compile; postgresql-dev for pdo_pgsql.
+# We keep the build deps long enough to pecl-install swoole, then drop them.
 RUN apk add --no-cache \
-        nginx supervisor tar netcat-openbsd \
-        postgresql-libs postgresql-dev \
-        libzip-dev oniguruma-dev \
+        tar netcat-openbsd \
+        postgresql-libs libzip oniguruma brotli-libs libstdc++ \
+    && apk add --no-cache --virtual .build-deps \
+        $PHPIZE_DEPS linux-headers openssl-dev \
+        postgresql-dev libzip-dev oniguruma-dev brotli-dev \
     && docker-php-ext-install pdo pdo_pgsql bcmath zip opcache \
-    && apk del postgresql-dev \
-    && rm -rf /var/cache/apk/*
+    && pecl install swoole \
+    && docker-php-ext-enable swoole \
+    && apk del .build-deps \
+    && rm -rf /var/cache/apk/* /tmp/pear
+
+# Composer binary is needed in runtime to dump-autoload after app code lands.
+COPY --from=vendor /usr/bin/composer /usr/local/bin/composer
 
 WORKDIR /var/www/html
 
@@ -41,10 +49,8 @@ COPY api/ /var/www/html/
 COPY --from=frontend-build /build/dist /var/www/html/public/frontend
 COPY templates/ /var/www/html/templates/
 
-# Merge the autoloader now that app code is in place.
-RUN composer dump-autoload --optimize --no-dev --working-dir=/var/www/html
-
 # Writable dirs for Laravel + MCP server specs + Traefik dynamic config.
+# bootstrap/cache must exist before dump-autoload's package:discover runs.
 RUN mkdir -p \
         storage/app/servers \
         storage/app/traefik/dynamic \
@@ -56,15 +62,13 @@ RUN mkdir -p \
         bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache
 
-# Config files.
-COPY api/docker/nginx.conf /etc/nginx/nginx.conf
-COPY api/docker/default.conf /etc/nginx/http.d/default.conf
-COPY api/docker/php-fpm.conf /usr/local/etc/php-fpm.d/zz-mcp.conf
-COPY api/docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# Merge the autoloader now that app code is in place.
+RUN composer dump-autoload --optimize --no-dev --working-dir=/var/www/html
+
 COPY api/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-EXPOSE 9000
+EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["php", "artisan", "octane:start", "--server=swoole", "--host=0.0.0.0", "--port=8000"]

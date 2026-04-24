@@ -155,7 +155,7 @@ services:
         - "traefik.http.routers.platform-api.entrypoints=web"
         - "traefik.http.routers.platform-api.rule=PathPrefix(`/`)"
         - "traefik.http.routers.platform-api.priority=1"
-        - "traefik.http.services.platform-api.loadbalancer.server.port=9000"
+        - "traefik.http.services.platform-api.loadbalancer.server.port=8000"
       restart_policy:
         condition: on-failure
 
