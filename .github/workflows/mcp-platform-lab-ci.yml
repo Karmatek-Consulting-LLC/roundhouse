@@ -9,8 +9,11 @@
 #     STACK_NAME          stack name for `docker stack deploy` (default: mcp-platform)
 #     INGRESS_NETWORK     external ingress overlay traefik attaches to
 #                         (default: traefik_traefik-public)
-#     DB_NODE             swarm node hostname that owns the pgdata volume
-#                         (default: inix21)
+#     MCP_HOSTNAME        host Traefik routes on (default: mcp.localhost)
+#     MCP_BASE_URL        public URL reported to clients (default: http://localhost)
+#
+# Postgres pins to a node via `node.labels.db == true`. Label the target node
+# once: `docker node update --label-add db=true <hostname>`.
 #   Environments:
 #     lab  -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD (only if the
 #             registry requires auth; otherwise leave them unset and the
@@ -66,7 +69,8 @@ jobs:
       MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'mcp-platform' }}
       STACK_NAME: ${{ vars.STACK_NAME || 'mcp-platform' }}
       INGRESS_NETWORK: ${{ vars.INGRESS_NETWORK || 'traefik_traefik-public' }}
-      DB_NODE: ${{ vars.DB_NODE || 'inix21' }}
+      MCP_HOSTNAME: ${{ vars.MCP_HOSTNAME || 'mcp.localhost' }}
+      MCP_BASE_URL: ${{ vars.MCP_BASE_URL || 'http://localhost' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
