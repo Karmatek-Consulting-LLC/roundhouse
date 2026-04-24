@@ -1,26 +1,22 @@
 # MCP Platform Lab CI/CD
 #
-# Full build -> smoke -> push -> swarm deploy on both github.com and GitHub Enterprise.
-# Runner labels are the same in both (self-hosted on a Swarm manager); the difference
-# is the registry - ghcr.io on github.com (via GITHUB_TOKEN) vs internal on Enterprise.
+# Full build -> smoke -> push -> swarm deploy. Works identically on github.com and
+# GitHub Enterprise; only the registry host and runner location differ.
 #
-# Repo configuration:
+# Repo/org configuration:
 #   Variables:
-#     MCP_PLATFORM_IMAGE  full image name (no tag)
-#                         github.com:  ghcr.io/<owner>/mcp-platform
-#                         Enterprise:  <registry-host>/<path>/mcp-platform
+#     MCP_PLATFORM_IMAGE  full image name, no tag (e.g. registry.karmatek.io/mcp-platform)
 #     STACK_NAME          stack name for `docker stack deploy` (default: mcp-platform)
 #     INGRESS_NETWORK     external ingress overlay traefik attaches to
 #                         (default: traefik_traefik-public)
 #   Environments:
-#     lab                 required on Enterprise for REGISTRY_USERNAME/REGISTRY_PASSWORD.
-#                         Not needed on github.com with ghcr.io (GITHUB_TOKEN is auto).
+#     lab  -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD
 #
-# Self-hosted runner requirements (both envs):
+# Self-hosted runner requirements:
 #   Labels: self-hosted, linux, x64, swarm
 #   Host:   a Swarm manager with Docker socket access to run `docker stack deploy`.
 #
-# Swarm prerequisites (both envs):
+# Swarm prerequisites (one-time):
 #   - External secrets: mcp_app_key, mcp_admin_email, mcp_admin_password, mcp_postgres_password
 #   - External network: value of INGRESS_NETWORK (default traefik_traefik-public)
 
@@ -53,7 +49,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write   # ghcr.io push via GITHUB_TOKEN on github.com
 
 jobs:
   build-smoke-push-deploy:
@@ -61,9 +56,8 @@ jobs:
     # Skip untrusted fork PRs (need Docker access).
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, swarm]
-    # `lab` env holds REGISTRY_USERNAME/PASSWORD (Enterprise-only). github.com uses
-    # GITHUB_TOKEN for ghcr and doesn't need this env.
-    environment: ${{ (github.server_url != 'https://github.com') && 'lab' || '' }}
+    # `lab` environment holds REGISTRY_USERNAME/PASSWORD.
+    environment: lab
     env:
       PLATFORM: linux/amd64
       MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'mcp-platform' }}
@@ -160,21 +154,16 @@ jobs:
       - name: Log in to registry
         if: github.event_name != 'pull_request'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ secrets.REGISTRY_USERNAME }}
           REGISTRY_PASS: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
           set -euo pipefail
-          REGISTRY_HOST="${MCP_PLATFORM_IMAGE%%/*}"
-          if [[ "$REGISTRY_HOST" == "ghcr.io" ]]; then
-            echo "$GH_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
-          else
-            if [[ -z "${REGISTRY_USER:-}" || -z "${REGISTRY_PASS:-}" ]]; then
-              echo "::error::Missing REGISTRY_USERNAME or REGISTRY_PASSWORD in 'lab' environment."
-              exit 1
-            fi
-            echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
+          if [[ -z "${REGISTRY_USER:-}" || -z "${REGISTRY_PASS:-}" ]]; then
+            echo "::error::Missing REGISTRY_USERNAME or REGISTRY_PASSWORD in 'lab' environment."
+            exit 1
           fi
+          REGISTRY_HOST="${MCP_PLATFORM_IMAGE%%/*}"
+          echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
 
       - name: Push image (immutable tag)
         if: github.event_name != 'pull_request'
