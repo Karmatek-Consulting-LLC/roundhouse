@@ -1,21 +1,33 @@
 # MCP Platform Lab CI/CD
-# - Build app image (from api/Dockerfile)
-# - Smoke test startup with ephemeral Postgres
-# - Push image to internal registry
-# - Deploy Swarm stack (docker-stack-lab.yml)
 #
-# Configure in GitHub -> Settings:
+# Full build -> smoke -> push -> swarm deploy. Works identically on github.com and
+# GitHub Enterprise; only the registry host and runner location differ.
+#
+# Repo/org configuration:
 #   Variables:
-#     MCP_PLATFORM_IMAGE (optional)
-#       Example: registry.example.com/cns-swarm-stack-crrc/mcp-platform
-#   Environments:
-#     lab
-#       Secrets:
-#         REGISTRY_USERNAME
-#         REGISTRY_PASSWORD
+#     MCP_PLATFORM_IMAGE  full image name, no tag (e.g. registry.karmatek.io/mcp-platform)
+#     STACK_NAME          stack name for `docker stack deploy` (default: mcp-platform)
+#     INGRESS_NETWORK     external ingress overlay traefik attaches to
+#                         (default: traefik_traefik-public)
+#     MCP_HOSTNAME        host Traefik routes on (default: mcp.localhost).
+#                         Also seeds the public URL reported to clients as
+#                         http://${MCP_HOSTNAME} until the admin UI overrides
+#                         it (Settings -> Hostname + TLS).
 #
-# Swarm: stack expects external secrets (see docker-stack-lab.yml):
-#   mcp_app_key, mcp_admin_email, mcp_admin_password, mcp_postgres_password
+# Postgres pins to a node via `node.labels.db == true`. Label the target node
+# once: `docker node update --label-add db=true <hostname>`.
+#   Environments:
+#     lab  -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD (only if the
+#             registry requires auth; otherwise leave them unset and the
+#             login step skips cleanly)
+#
+# Self-hosted runner requirements:
+#   Labels: self-hosted, swarm  (matches the labels the karmatek-services workflows use)
+#   Host:   a Swarm manager with Docker socket access to run `docker stack deploy`.
+#
+# Swarm prerequisites (one-time):
+#   - External secrets: mcp_app_key, mcp_admin_email, mcp_admin_password, mcp_postgres_password
+#   - External network: value of INGRESS_NETWORK (default traefik_traefik-public)
 
 name: MCP Platform Lab CI
 
@@ -49,18 +61,17 @@ permissions:
 
 jobs:
   build-smoke-push-deploy:
-    name: Build, smoke test, push (lab tags), deploy
-    # Only run on GitHub Enterprise (customer site). Skip cleanly on github.com
-    # pushes where the lab registry and self-hosted runners don't exist.
-    # Also skip untrusted fork PRs on the org runner (Docker socket access).
-    if: >-
-      github.server_url != 'https://github.com'
-      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    name: Build, smoke test, push, deploy
+    # Skip untrusted fork PRs (need Docker access).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, swarm]
     environment: lab
-    runs-on: [self-hosted, linux, x64, swarm]
     env:
       PLATFORM: linux/amd64
-      MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'registry.example.com/swarm-stack/mcp-platform' }}
+      MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'mcp-platform' }}
+      STACK_NAME: ${{ vars.STACK_NAME || 'mcp-platform' }}
+      INGRESS_NETWORK: ${{ vars.INGRESS_NETWORK || 'traefik_traefik-public' }}
+      MCP_HOSTNAME: ${{ vars.MCP_HOSTNAME || 'mcp.localhost' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -128,7 +139,7 @@ jobs:
             -e MCP_BASE_URL=http://localhost \
             "mcp-platform-ci:${LAB_SHA_TAG}" >/dev/null
 
-          # Health probe via /api/health - FastCGI/nginx are in the container, use curl.
+          # Health probe via /api/health - Octane serves on :8000.
           for i in $(seq 1 120); do
             RUNNING="$(docker inspect -f '{{.State.Running}}' "$APP" 2>/dev/null || echo false)"
             if [[ "$RUNNING" != "true" ]]; then
@@ -138,7 +149,7 @@ jobs:
               exit 1
             fi
             if docker run --rm --network "$NET" curlimages/curl:latest \
-              -fsS "http://${APP}:9000/api/health" >/dev/null 2>&1; then
+              -fsS "http://${APP}:8000/api/health" >/dev/null 2>&1; then
               echo "Smoke OK (/api/health)"
               exit 0
             fi
@@ -149,19 +160,22 @@ jobs:
           docker logs "$APP" 2>&1 || true
           exit 1
 
-      - name: Log in to internal registry
+      - name: Log in to registry
         if: github.event_name != 'pull_request'
         env:
           REGISTRY_USER: ${{ secrets.REGISTRY_USERNAME }}
           REGISTRY_PASS: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [[ -z "${REGISTRY_USER:-}" || -z "${REGISTRY_PASS:-}" ]]; then
-            echo "::error::Missing REGISTRY_USERNAME or REGISTRY_PASSWORD."
+          REGISTRY_HOST="${MCP_PLATFORM_IMAGE%%/*}"
+          if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
+            echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
+          elif [[ -z "${REGISTRY_USER:-}" && -z "${REGISTRY_PASS:-}" ]]; then
+            echo "No REGISTRY_USERNAME/PASSWORD set - assuming unauthenticated registry at ${REGISTRY_HOST}."
+          else
+            echo "::error::Only one of REGISTRY_USERNAME/REGISTRY_PASSWORD is set. Provide both, or neither."
             exit 1
           fi
-          REGISTRY_HOST="${MCP_PLATFORM_IMAGE%%/*}"
-          echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
 
       - name: Push image (immutable tag)
         if: github.event_name != 'pull_request'
@@ -188,4 +202,4 @@ jobs:
             --with-registry-auth \
             --resolve-image always \
             -c docker-stack-lab.yml \
-            mcp-platform
+            "$STACK_NAME"

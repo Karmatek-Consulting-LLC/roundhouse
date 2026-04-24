@@ -5,6 +5,11 @@
 data/
 frontend/node_modules/
 frontend/dist/
+# Regenerated inside the image by composer dump-autoload; copying the
+# local cache pulls in dev packages (e.g. laravel/pail) and breaks --no-dev builds.
+api/bootstrap/cache/
+api/vendor/
+api/node_modules/
 __pycache__
 *.pyc
 *.log

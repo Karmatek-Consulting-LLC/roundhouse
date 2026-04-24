@@ -16,7 +16,7 @@ WORKDIR /var/www/html
 COPY api/docker/dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
 RUN chmod +x /usr/local/bin/dev-entrypoint.sh
 
-EXPOSE 9000
+EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/dev-entrypoint.sh"]
-CMD ["php", "-S", "0.0.0.0:9000", "-t", "public"]
+CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
