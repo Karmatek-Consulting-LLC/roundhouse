@@ -9,8 +9,9 @@
 #     STACK_NAME          stack name for `docker stack deploy` (default: mcp-platform)
 #     INGRESS_NETWORK     external ingress overlay traefik attaches to
 #                         (default: traefik_traefik-public)
-#   Environments (optional - only if the registry requires auth):
-#     lab  -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD
+# If the registry requires auth, add these as repo-level secrets
+# (or move them into an environment and re-add `environment: <name>` on the job):
+#   REGISTRY_USERNAME, REGISTRY_PASSWORD
 #
 # Self-hosted runner requirements:
 #   Labels: self-hosted, swarm  (matches the labels the karmatek-services workflows use)
@@ -56,9 +57,6 @@ jobs:
     # Skip untrusted fork PRs (need Docker access).
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, swarm]
-    # `lab` is used only to scope REGISTRY_USERNAME/PASSWORD when the registry
-    # requires auth. With an unauthenticated registry the secrets can be omitted.
-    environment: lab
     env:
       PLATFORM: linux/amd64
       MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'mcp-platform' }}
