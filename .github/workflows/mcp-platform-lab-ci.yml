@@ -13,7 +13,7 @@
 #     lab  -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD
 #
 # Self-hosted runner requirements:
-#   Labels: self-hosted, linux, x64, swarm
+#   Labels: self-hosted, swarm  (matches the labels the karmatek-services workflows use)
 #   Host:   a Swarm manager with Docker socket access to run `docker stack deploy`.
 #
 # Swarm prerequisites (one-time):
@@ -55,7 +55,7 @@ jobs:
     name: Build, smoke test, push, deploy
     # Skip untrusted fork PRs (need Docker access).
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64, swarm]
+    runs-on: [self-hosted, swarm]
     # `lab` is used only to scope REGISTRY_USERNAME/PASSWORD when the registry
     # requires auth. With an unauthenticated registry the secrets can be omitted.
     environment: lab
