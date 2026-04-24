@@ -14,7 +14,9 @@ version: "3.8"
 #   STACK_NAME       - stack this is deployed as (default: mcp-platform). Controls {stack}_mcp-network.
 #   INGRESS_NETWORK  - externally-owned ingress overlay name (default: traefik_traefik-public).
 #   MCP_HOSTNAME     - host Traefik routes to platform-api on (default: mcp.localhost).
-#   MCP_BASE_URL     - public URL the platform reports to clients (default: http://localhost).
+#                      Also drives the public URL reported to clients as
+#                      http://${MCP_HOSTNAME}, until the admin Settings UI's
+#                      hostname/TLS toggle overrides it at runtime.
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
@@ -120,7 +122,7 @@ services:
       - APP_NAME=MCP Platform
       - APP_ENV=production
       - APP_DEBUG=false
-      - APP_URL=${MCP_BASE_URL:-http://localhost}
+      - APP_URL=http://${MCP_HOSTNAME:-mcp.localhost}
       - LOG_CHANNEL=stderr
       - LOG_LEVEL=info
 
@@ -145,7 +147,7 @@ services:
       - MCP_DOCKER_NETWORK=${STACK_NAME:-mcp-platform}_mcp-network
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       - MCP_TRAEFIK_ENTRYPOINTS=web
-      - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
+      - MCP_BASE_URL=http://${MCP_HOSTNAME:-mcp.localhost}
       - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
       - MCP_TEMPLATES_DIR=/var/www/html/templates
       - MCP_TRAEFIK_DYNAMIC_DIR=/var/www/html/storage/app/traefik/dynamic
