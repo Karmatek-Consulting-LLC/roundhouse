@@ -138,7 +138,7 @@ jobs:
               exit 1
             fi
             if docker run --rm --network "$NET" curlimages/curl:latest \
-              -fsS "http://${APP}:9000/api/health" >/dev/null 2>&1; then
+              -fsS "http://${APP}:8000/api/health" >/dev/null 2>&1; then
               echo "Smoke OK (/api/health)"
               exit 0
             fi
