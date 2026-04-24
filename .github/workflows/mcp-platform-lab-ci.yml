@@ -9,8 +9,10 @@
 #     STACK_NAME          stack name for `docker stack deploy` (default: mcp-platform)
 #     INGRESS_NETWORK     external ingress overlay traefik attaches to
 #                         (default: traefik_traefik-public)
-#     MCP_HOSTNAME        host Traefik routes on (default: mcp.localhost)
-#     MCP_BASE_URL        public URL reported to clients (default: http://localhost)
+#     MCP_HOSTNAME        host Traefik routes on (default: mcp.localhost).
+#                         Also seeds the public URL reported to clients as
+#                         http://${MCP_HOSTNAME} until the admin UI overrides
+#                         it (Settings -> Hostname + TLS).
 #
 # Postgres pins to a node via `node.labels.db == true`. Label the target node
 # once: `docker node update --label-add db=true <hostname>`.
@@ -70,7 +72,6 @@ jobs:
       STACK_NAME: ${{ vars.STACK_NAME || 'mcp-platform' }}
       INGRESS_NETWORK: ${{ vars.INGRESS_NETWORK || 'traefik_traefik-public' }}
       MCP_HOSTNAME: ${{ vars.MCP_HOSTNAME || 'mcp.localhost' }}
-      MCP_BASE_URL: ${{ vars.MCP_BASE_URL || 'http://localhost' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
