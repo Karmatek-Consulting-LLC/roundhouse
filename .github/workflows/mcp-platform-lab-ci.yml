@@ -9,6 +9,8 @@
 #     STACK_NAME          stack name for `docker stack deploy` (default: mcp-platform)
 #     INGRESS_NETWORK     external ingress overlay traefik attaches to
 #                         (default: traefik_traefik-public)
+#     DB_NODE             swarm node hostname that owns the pgdata volume
+#                         (default: inix21)
 #   Environments:
 #     lab  -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD (only if the
 #             registry requires auth; otherwise leave them unset and the
@@ -64,6 +66,7 @@ jobs:
       MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'mcp-platform' }}
       STACK_NAME: ${{ vars.STACK_NAME || 'mcp-platform' }}
       INGRESS_NETWORK: ${{ vars.INGRESS_NETWORK || 'traefik_traefik-public' }}
+      DB_NODE: ${{ vars.DB_NODE || 'inix21' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
