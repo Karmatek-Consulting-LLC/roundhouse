@@ -156,12 +156,14 @@ services:
       - MCP_MAX_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
     networks:
       - mcp-network
+      - ingress-public
     # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     deploy:
       labels:
         - "traefik.enable=true"
-        - "traefik.docker.network=${STACK_NAME:-mcp-platform}_mcp-network"
+        # Tell the swarm-wide Traefik which network to dial platform-api on.
+        - "traefik.docker.network=${INGRESS_NETWORK:-traefik_traefik-public}"
         - "traefik.http.routers.platform-api.entrypoints=websecure"
         - "traefik.http.routers.platform-api.rule=Host(`${MCP_HOSTNAME:-mcp.localhost}`)"
         - "traefik.http.routers.platform-api.tls.certresolver=letsencrypt"
