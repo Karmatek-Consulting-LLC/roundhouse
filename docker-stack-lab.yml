@@ -13,10 +13,55 @@ version: "3.8"
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
+  # Read-only docker API for Traefik (discovery only - no POST, no BUILD).
+  # Must run on a manager so /var/run/docker.sock exposes the Swarm API.
+  docker-socket-proxy-traefik:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      SERVICES: 1
+      TASKS: 1
+      INFO: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mcp-network
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
+  # Scoped docker API for platform-api - needs POST + BUILD for container/service
+  # CRUD and image builds. Still much smaller attack surface than a raw socket mount.
+  docker-socket-proxy-api:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      INFO: 1
+      CONTAINERS: 1
+      SERVICES: 1
+      TASKS: 1
+      NODES: 1
+      NETWORKS: 1
+      IMAGES: 1
+      BUILD: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mcp-network
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+
   traefik:
     image: traefik:v3.6
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
       - traefik-certs:/etc/traefik/certs:ro
     configs:
@@ -25,6 +70,8 @@ services:
     networks:
       - mcp-network
       - caddy_caddy
+    depends_on:
+      - docker-socket-proxy-traefik
     deploy:
       restart_policy:
         condition: on-failure
@@ -58,7 +105,6 @@ services:
       - mcp_admin_password
       - mcp_postgres_password
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - server-data:/var/www/html/storage/app/servers
       - traefik-dynamic:/var/www/html/storage/app/traefik/dynamic
       - traefik-certs:/var/www/html/storage/app/traefik/certs
@@ -89,7 +135,7 @@ services:
 
       # Must match `docker network ls` overlay: {stack}_mcp-network.
       - MCP_DOCKER_NETWORK=mcp-platform_mcp-network
-      - MCP_DOCKER_SOCKET=/var/run/docker.sock
+      - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       - MCP_TRAEFIK_ENTRYPOINTS=web
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
       - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
@@ -127,7 +173,7 @@ configs:
   traefik-config:
     # Swarm configs cannot be updated in place; change the name (e.g. v4) when
     # editing traefik/traefik.swarm.yml, then `docker config rm` the old one if unused.
-    name: mcp-platform_traefik-static-v3
+    name: mcp-platform_traefik-static-v4
     file: ./traefik/traefik.swarm.yml
 
 networks:
