@@ -28,7 +28,7 @@ RUN apk add --no-cache \
     && apk add --no-cache --virtual .build-deps \
         $PHPIZE_DEPS linux-headers openssl-dev \
         postgresql-dev libzip-dev oniguruma-dev brotli-dev \
-    && docker-php-ext-install pdo pdo_pgsql bcmath zip opcache \
+    && docker-php-ext-install pdo pdo_pgsql bcmath zip opcache pcntl \
     && pecl install swoole \
     && docker-php-ext-enable swoole \
     && apk del .build-deps \
