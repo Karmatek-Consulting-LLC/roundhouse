@@ -10,7 +10,9 @@ entryPoints:
 
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    # Talks to docker-socket-proxy-traefik (tecnativa/docker-socket-proxy) over
+    # the mcp-network instead of the raw /var/run/docker.sock.
+    endpoint: "tcp://docker-socket-proxy-traefik:2375"
     exposedByDefault: false
     network: mcp-network
   file:

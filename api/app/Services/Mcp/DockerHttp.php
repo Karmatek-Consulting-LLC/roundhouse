@@ -8,7 +8,9 @@ use GuzzleHttp\Exception\RequestException;
 use Psr\Http\Message\ResponseInterface;
 
 /**
- * Low-level Docker Engine HTTP API client over a unix socket.
+ * Low-level Docker Engine HTTP API client.
+ * Accepts either a unix socket path (/var/run/docker.sock) or a
+ * tcp://host:port / http(s)://host:port endpoint (e.g. docker-socket-proxy).
  * Mirrors the functions of the Python ``docker`` SDK we actually need.
  */
 class DockerHttp
@@ -17,15 +19,24 @@ class DockerHttp
 
     private Client $http;
 
-    public function __construct(string $socketPath)
+    public function __construct(string $endpoint)
     {
-        $this->http = new Client([
-            'base_uri' => 'http://docker/'.self::API_VERSION.'/',
+        $config = [
             'http_errors' => false,
-            'curl' => [CURLOPT_UNIX_SOCKET_PATH => $socketPath],
             'timeout' => 120,
             'connect_timeout' => 10,
-        ]);
+        ];
+
+        if (preg_match('#^(tcp|http|https)://#', $endpoint)) {
+            // tcp:// is the Docker-convention scheme; Guzzle/cURL want http://.
+            $baseHost = preg_replace('#^tcp://#', 'http://', $endpoint);
+            $config['base_uri'] = rtrim($baseHost, '/').'/'.self::API_VERSION.'/';
+        } else {
+            $config['base_uri'] = 'http://docker/'.self::API_VERSION.'/';
+            $config['curl'] = [CURLOPT_UNIX_SOCKET_PATH => $endpoint];
+        }
+
+        $this->http = new Client($config);
     }
 
     /** @param array<string, mixed> $options */

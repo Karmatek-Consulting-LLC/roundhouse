@@ -20,7 +20,7 @@ class DockerClient
 
     public function __construct(?DockerHttp $http = null)
     {
-        $this->http = $http ?? new DockerHttp((string) config('mcp.docker_socket'));
+        $this->http = $http ?? new DockerHttp((string) config('mcp.docker_host'));
     }
 
     public function swarmMode(): bool
@@ -28,13 +28,12 @@ class DockerClient
         if ($this->swarmModeCache !== null) {
             return $this->swarmModeCache;
         }
-        try {
-            $info = $this->http->get('info');
-            $state = $info['Swarm']['LocalNodeState'] ?? null;
-            $this->swarmModeCache = $state === 'active';
-        } catch (\Throwable) {
-            $this->swarmModeCache = false;
-        }
+        // Let connection errors bubble. Previously this swallowed them and
+        // defaulted to "standalone", which silently broke Swarm callers with
+        // a misleading log line when the daemon endpoint was unreachable.
+        $info = $this->http->get('info');
+        $state = $info['Swarm']['LocalNodeState'] ?? null;
+        $this->swarmModeCache = $state === 'active';
         Log::info('Docker mode: '.($this->swarmModeCache ? 'swarm' : 'standalone'));
         return $this->swarmModeCache;
     }

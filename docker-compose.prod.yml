@@ -1,16 +1,51 @@
 services:
+  # Read-only docker API for Traefik - discovery only, no POST, no BUILD.
+  docker-socket-proxy-traefik:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      SERVICES: 1
+      TASKS: 1
+      INFO: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
+  # Scoped docker API for platform-api - POST + BUILD for container/image ops.
+  docker-socket-proxy-api:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    environment:
+      INFO: 1
+      CONTAINERS: 1
+      SERVICES: 1
+      TASKS: 1
+      NODES: 1
+      NETWORKS: 1
+      IMAGES: 1
+      BUILD: 1
+      POST: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - mcp-network
+    restart: unless-stopped
+
   traefik:
     image: traefik:v3.3
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
       - traefik-certs:/etc/traefik/certs:ro
     networks:
       - mcp-network
+    depends_on:
+      - docker-socket-proxy-traefik
     restart: unless-stopped
 
   postgres:
@@ -37,10 +72,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      docker-socket-proxy-api:
+        condition: service_started
     # Give the SIGTERM trap time to clean up every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - server-data:/var/www/html/storage/app/servers
       - traefik-dynamic:/var/www/html/storage/app/traefik/dynamic
       - traefik-certs:/var/www/html/storage/app/traefik/certs
@@ -70,7 +106,7 @@ services:
 
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
       - MCP_DOCKER_NETWORK=mcp-network
-      - MCP_DOCKER_SOCKET=/var/run/docker.sock
+      - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
       - MCP_TEMPLATES_DIR=/var/www/html/templates
       - MCP_TRAEFIK_DYNAMIC_DIR=/var/www/html/storage/app/traefik/dynamic
