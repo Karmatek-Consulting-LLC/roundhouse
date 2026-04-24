@@ -164,6 +164,7 @@ services:
         - "traefik.docker.network=${STACK_NAME:-mcp-platform}_mcp-network"
         - "traefik.http.routers.platform-api.entrypoints=websecure"
         - "traefik.http.routers.platform-api.rule=Host(`${MCP_HOSTNAME:-mcp.localhost}`)"
+        - "traefik.http.routers.platform-api.tls.certresolver=letsencrypt"
         - "traefik.http.routers.platform-api.priority=1"
         - "traefik.http.services.platform-api.loadbalancer.server.port=8000"
       restart_policy:
