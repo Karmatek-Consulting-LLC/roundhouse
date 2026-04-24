@@ -9,7 +9,14 @@ version: "3.8"
 #   docker secret create mcp_admin_password <file>    # optional - seeded on first boot
 #   docker secret create mcp_postgres_password <file>
 #
-# Traefik is on the external `caddy` network for ingress from Caddy; backends stay on mcp-network.
+# Traefik is on an external ingress network so a parent reverse proxy can reach it;
+# backends stay on mcp-network. Both network names are overridable:
+#   STACK_NAME       - stack this is deployed as (default: mcp-platform). Controls {stack}_mcp-network.
+#   INGRESS_NETWORK  - externally-owned ingress overlay name (default: traefik_traefik-public).
+#   MCP_HOSTNAME     - host Traefik routes to platform-api on (default: mcp.localhost).
+#                      Also drives the public URL reported to clients as
+#                      http://${MCP_HOSTNAME}, until the admin Settings UI's
+#                      hostname/TLS toggle overrides it at runtime.
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
@@ -69,7 +76,7 @@ services:
         target: /etc/traefik/traefik.yml
     networks:
       - mcp-network
-      - caddy_caddy
+      - ingress-public
     depends_on:
       - docker-socket-proxy-traefik
     deploy:
@@ -94,6 +101,9 @@ services:
       timeout: 3s
       retries: 5
     deploy:
+      placement:
+        constraints:
+          - node.labels.db == true
       restart_policy:
         condition: on-failure
 
@@ -112,7 +122,7 @@ services:
       - APP_NAME=MCP Platform
       - APP_ENV=production
       - APP_DEBUG=false
-      - APP_URL=${MCP_BASE_URL:-http://localhost}
+      - APP_URL=http://${MCP_HOSTNAME:-mcp.localhost}
       - LOG_CHANNEL=stderr
       - LOG_LEVEL=info
 
@@ -134,10 +144,10 @@ services:
       - SANCTUM_TOKEN_EXPIRATION=1440
 
       # Must match `docker network ls` overlay: {stack}_mcp-network.
-      - MCP_DOCKER_NETWORK=mcp-platform_mcp-network
+      - MCP_DOCKER_NETWORK=${STACK_NAME:-mcp-platform}_mcp-network
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       - MCP_TRAEFIK_ENTRYPOINTS=web
-      - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
+      - MCP_BASE_URL=http://${MCP_HOSTNAME:-mcp.localhost}
       - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
       - MCP_TEMPLATES_DIR=/var/www/html/templates
       - MCP_TRAEFIK_DYNAMIC_DIR=/var/www/html/storage/app/traefik/dynamic
@@ -146,16 +156,19 @@ services:
       - MCP_MAX_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
     networks:
       - mcp-network
+      - ingress-public
     # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     deploy:
       labels:
         - "traefik.enable=true"
-        - "traefik.docker.network=mcp-platform_mcp-network"
-        - "traefik.http.routers.platform-api.entrypoints=web"
-        - "traefik.http.routers.platform-api.rule=PathPrefix(`/`)"
+        # Tell the swarm-wide Traefik which network to dial platform-api on.
+        - "traefik.docker.network=${INGRESS_NETWORK:-traefik_traefik-public}"
+        - "traefik.http.routers.platform-api.entrypoints=websecure"
+        - "traefik.http.routers.platform-api.rule=Host(`${MCP_HOSTNAME:-mcp.localhost}`)"
+        - "traefik.http.routers.platform-api.tls.certresolver=letsencrypt"
         - "traefik.http.routers.platform-api.priority=1"
-        - "traefik.http.services.platform-api.loadbalancer.server.port=9000"
+        - "traefik.http.services.platform-api.loadbalancer.server.port=8000"
       restart_policy:
         condition: on-failure
 
@@ -180,8 +193,9 @@ networks:
   mcp-network:
     driver: overlay
     attachable: true
-  caddy_caddy:
+  ingress-public:
     external: true
+    name: ${INGRESS_NETWORK:-traefik_traefik-public}
 
 volumes:
   pgdata:
