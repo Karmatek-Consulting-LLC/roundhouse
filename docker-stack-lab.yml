@@ -98,12 +98,9 @@ services:
       timeout: 3s
       retries: 5
     deploy:
-      # Pin to the node that owns the pgdata volume. Swarm volumes are node-local,
-      # so letting postgres reschedule to a different host would silently start
-      # against an empty volume.
       placement:
         constraints:
-          - node.hostname == ${DB_NODE:-inix21}
+          - node.labels.db == true
       restart_policy:
         condition: on-failure
 
