@@ -9,7 +9,7 @@
 #     STACK_NAME          stack name for `docker stack deploy` (default: mcp-platform)
 #     INGRESS_NETWORK     external ingress overlay traefik attaches to
 #                         (default: traefik_traefik-public)
-#   Environments:
+#   Environments (optional - only if the registry requires auth):
 #     lab  -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD
 #
 # Self-hosted runner requirements:
@@ -56,7 +56,8 @@ jobs:
     # Skip untrusted fork PRs (need Docker access).
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, swarm]
-    # `lab` environment holds REGISTRY_USERNAME/PASSWORD.
+    # `lab` is used only to scope REGISTRY_USERNAME/PASSWORD when the registry
+    # requires auth. With an unauthenticated registry the secrets can be omitted.
     environment: lab
     env:
       PLATFORM: linux/amd64
@@ -158,12 +159,15 @@ jobs:
           REGISTRY_PASS: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [[ -z "${REGISTRY_USER:-}" || -z "${REGISTRY_PASS:-}" ]]; then
-            echo "::error::Missing REGISTRY_USERNAME or REGISTRY_PASSWORD in 'lab' environment."
+          REGISTRY_HOST="${MCP_PLATFORM_IMAGE%%/*}"
+          if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
+            echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
+          elif [[ -z "${REGISTRY_USER:-}" && -z "${REGISTRY_PASS:-}" ]]; then
+            echo "No REGISTRY_USERNAME/PASSWORD set - assuming unauthenticated registry at ${REGISTRY_HOST}."
+          else
+            echo "::error::Only one of REGISTRY_USERNAME/REGISTRY_PASSWORD is set. Provide both, or neither."
             exit 1
           fi
-          REGISTRY_HOST="${MCP_PLATFORM_IMAGE%%/*}"
-          echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
 
       - name: Push image (immutable tag)
         if: github.event_name != 'pull_request'
