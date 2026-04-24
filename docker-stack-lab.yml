@@ -9,10 +9,9 @@ version: "3.8"
 #   docker secret create mcp_admin_password <file>    # optional - seeded on first boot
 #   docker secret create mcp_postgres_password <file>
 #
-# Traefik is on an external ingress network so a parent reverse proxy can reach it;
-# backends stay on mcp-network. Both network names are overridable:
-#   STACK_NAME       - stack this is deployed as (default: mcp-platform). Controls {stack}_mcp-network.
-#   INGRESS_NETWORK  - externally-owned ingress overlay name (default: traefik_traefik-public).
+# Traefik is on the external `traefik_traefik-public` network so a parent reverse
+# proxy can reach it; backends stay on mcp-network.
+#   STACK_NAME  - stack this is deployed as (default: mcp-platform). Controls {stack}_mcp-network.
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
@@ -185,7 +184,7 @@ networks:
     attachable: true
   ingress-public:
     external: true
-    name: ${INGRESS_NETWORK:-traefik_traefik-public}
+    name: traefik_traefik-public
 
 volumes:
   pgdata:

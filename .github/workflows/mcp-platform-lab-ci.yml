@@ -8,7 +8,6 @@
 #   Variables (repo-level):
 #     MCP_PLATFORM_IMAGE  e.g. registry.example.com/swarm-stack/mcp-platform
 #     STACK_NAME          e.g. mcp-platform  (default if unset)
-#     INGRESS_NETWORK     e.g. traefik_traefik-public  (default if unset)
 #   Environments:
 #     lab -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD
 #
@@ -59,7 +58,6 @@ jobs:
       IS_ENTERPRISE: ${{ github.server_url != 'https://github.com' }}
       MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'mcp-platform' }}
       STACK_NAME: ${{ vars.STACK_NAME || 'mcp-platform' }}
-      INGRESS_NETWORK: ${{ vars.INGRESS_NETWORK || 'traefik_traefik-public' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
