@@ -9,7 +9,10 @@ version: "3.8"
 #   docker secret create mcp_admin_password <file>    # optional - seeded on first boot
 #   docker secret create mcp_postgres_password <file>
 #
-# Traefik is on the external `caddy` network for ingress from Caddy; backends stay on mcp-network.
+# Traefik is on an external ingress network so a parent reverse proxy can reach it;
+# backends stay on mcp-network. Both network names are overridable:
+#   STACK_NAME       - stack this is deployed as (default: mcp-platform). Controls {stack}_mcp-network.
+#   INGRESS_NETWORK  - externally-owned ingress overlay name (default: traefik_traefik-public).
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
@@ -69,7 +72,7 @@ services:
         target: /etc/traefik/traefik.yml
     networks:
       - mcp-network
-      - caddy_caddy
+      - ingress-public
     depends_on:
       - docker-socket-proxy-traefik
     deploy:
@@ -134,7 +137,7 @@ services:
       - SANCTUM_TOKEN_EXPIRATION=1440
 
       # Must match `docker network ls` overlay: {stack}_mcp-network.
-      - MCP_DOCKER_NETWORK=mcp-platform_mcp-network
+      - MCP_DOCKER_NETWORK=${STACK_NAME:-mcp-platform}_mcp-network
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       - MCP_TRAEFIK_ENTRYPOINTS=web
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost}
@@ -151,7 +154,7 @@ services:
     deploy:
       labels:
         - "traefik.enable=true"
-        - "traefik.docker.network=mcp-platform_mcp-network"
+        - "traefik.docker.network=${STACK_NAME:-mcp-platform}_mcp-network"
         - "traefik.http.routers.platform-api.entrypoints=web"
         - "traefik.http.routers.platform-api.rule=PathPrefix(`/`)"
         - "traefik.http.routers.platform-api.priority=1"
@@ -180,8 +183,9 @@ networks:
   mcp-network:
     driver: overlay
     attachable: true
-  caddy_caddy:
+  ingress-public:
     external: true
+    name: ${INGRESS_NETWORK:-traefik_traefik-public}
 
 volumes:
   pgdata:

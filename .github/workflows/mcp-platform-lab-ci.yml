@@ -1,20 +1,18 @@
 # MCP Platform Lab CI/CD
-# - Build app image (from api/Dockerfile)
-# - Smoke test startup with ephemeral Postgres
-# - Push image to internal registry
-# - Deploy Swarm stack (docker-stack-lab.yml)
 #
-# Configure in GitHub -> Settings:
-#   Variables:
-#     MCP_PLATFORM_IMAGE (optional)
-#       Example: registry.example.com/cns-swarm-stack-crrc/mcp-platform
+# Runs on both github.com AND GitHub Enterprise, with different depth:
+#   - github.com          -> build + smoke test on ubuntu-latest (fast sanity check)
+#   - GitHub Enterprise   -> build + smoke + push to internal registry + swarm deploy
+#
+# Configure the Enterprise side in repo -> Settings:
+#   Variables (repo-level):
+#     MCP_PLATFORM_IMAGE  e.g. registry.example.com/swarm-stack/mcp-platform
+#     STACK_NAME          e.g. mcp-platform  (default if unset)
+#     INGRESS_NETWORK     e.g. traefik_traefik-public  (default if unset)
 #   Environments:
-#     lab
-#       Secrets:
-#         REGISTRY_USERNAME
-#         REGISTRY_PASSWORD
+#     lab -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD
 #
-# Swarm: stack expects external secrets (see docker-stack-lab.yml):
+# Swarm expects external secrets (see docker-stack-lab.yml):
 #   mcp_app_key, mcp_admin_email, mcp_admin_password, mcp_postgres_password
 
 name: MCP Platform Lab CI
@@ -49,18 +47,19 @@ permissions:
 
 jobs:
   build-smoke-push-deploy:
-    name: Build, smoke test, push (lab tags), deploy
-    # Only run on GitHub Enterprise (customer site). Skip cleanly on github.com
-    # pushes where the lab registry and self-hosted runners don't exist.
-    # Also skip untrusted fork PRs on the org runner (Docker socket access).
-    if: >-
-      github.server_url != 'https://github.com'
-      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    environment: lab
-    runs-on: [self-hosted, linux, x64, swarm]
+    name: Build, smoke test, push, deploy
+    # Skip untrusted fork PRs (need Docker access).
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Enterprise has a self-hosted swarm runner; github.com falls back to GitHub-hosted.
+    runs-on: ${{ (github.server_url == 'https://github.com') && 'ubuntu-latest' || fromJSON('["self-hosted","linux","x64","swarm"]') }}
+    # `lab` environment holds REGISTRY_USERNAME/PASSWORD; only needed on Enterprise.
+    environment: ${{ (github.server_url != 'https://github.com') && 'lab' || '' }}
     env:
       PLATFORM: linux/amd64
-      MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'registry.example.com/swarm-stack/mcp-platform' }}
+      IS_ENTERPRISE: ${{ github.server_url != 'https://github.com' }}
+      MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'mcp-platform' }}
+      STACK_NAME: ${{ vars.STACK_NAME || 'mcp-platform' }}
+      INGRESS_NETWORK: ${{ vars.INGRESS_NETWORK || 'traefik_traefik-public' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -128,7 +127,7 @@ jobs:
             -e MCP_BASE_URL=http://localhost \
             "mcp-platform-ci:${LAB_SHA_TAG}" >/dev/null
 
-          # Health probe via /api/health - FastCGI/nginx are in the container, use curl.
+          # Health probe via /api/health - Octane serves on :8000.
           for i in $(seq 1 120); do
             RUNNING="$(docker inspect -f '{{.State.Running}}' "$APP" 2>/dev/null || echo false)"
             if [[ "$RUNNING" != "true" ]]; then
@@ -150,28 +149,28 @@ jobs:
           exit 1
 
       - name: Log in to internal registry
-        if: github.event_name != 'pull_request'
+        if: env.IS_ENTERPRISE == 'true' && github.event_name != 'pull_request'
         env:
           REGISTRY_USER: ${{ secrets.REGISTRY_USERNAME }}
           REGISTRY_PASS: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
           set -euo pipefail
           if [[ -z "${REGISTRY_USER:-}" || -z "${REGISTRY_PASS:-}" ]]; then
-            echo "::error::Missing REGISTRY_USERNAME or REGISTRY_PASSWORD."
+            echo "::error::Missing REGISTRY_USERNAME or REGISTRY_PASSWORD in 'lab' environment."
             exit 1
           fi
           REGISTRY_HOST="${MCP_PLATFORM_IMAGE%%/*}"
           echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
 
       - name: Push image (immutable tag)
-        if: github.event_name != 'pull_request'
+        if: env.IS_ENTERPRISE == 'true' && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           LAB_SHA_TAG="lab-${GITHUB_SHA}"
           docker push "${MCP_PLATFORM_IMAGE}:${LAB_SHA_TAG}"
 
       - name: Tag and push lab-latest
-        if: github.event_name != 'pull_request'
+        if: env.IS_ENTERPRISE == 'true' && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           LAB_SHA_TAG="lab-${GITHUB_SHA}"
@@ -179,7 +178,7 @@ jobs:
           docker push "${MCP_PLATFORM_IMAGE}:lab-latest"
 
       - name: Deploy stack
-        if: github.event_name != 'pull_request'
+        if: env.IS_ENTERPRISE == 'true' && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           docker info --format '{{.Swarm.LocalNodeState}} {{.Swarm.ControlAvailable}}'
@@ -188,4 +187,4 @@ jobs:
             --with-registry-auth \
             --resolve-image always \
             -c docker-stack-lab.yml \
-            mcp-platform
+            "$STACK_NAME"
