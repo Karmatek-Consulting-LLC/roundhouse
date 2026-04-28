@@ -4,15 +4,8 @@
 # GitHub Enterprise; only the registry host and runner location differ.
 #
 # Repo/org configuration:
-#   Variables:
-#     MCP_PLATFORM_IMAGE  full image name, no tag (e.g. registry.karmatek.io/mcp-platform)
-#     STACK_NAME          stack name for `docker stack deploy` (default: mcp-platform)
-#     INGRESS_NETWORK     external ingress overlay traefik attaches to
-#                         (default: traefik_traefik-public)
-#     MCP_HOSTNAME        host Traefik routes on (default: mcp.localhost).
-#                         Also seeds the public URL reported to clients as
-#                         http://${MCP_HOSTNAME} until the admin UI overrides
-#                         it (Settings -> Hostname + TLS).
+#   Deploy stack name is fixed: mcp-platform (must match docker-stack-lab.yml / traefik.swarm.yml network prefix).
+#   Registry image path is inlined in build/push steps; keep in sync with docker-stack-lab.yml platform-api image.
 #
 # Postgres pins to a node via `node.labels.db == true`. Label the target node
 # once: `docker node update --label-add db=true <hostname>`.
@@ -27,7 +20,7 @@
 #
 # Swarm prerequisites (one-time):
 #   - External secrets: mcp_app_key, mcp_admin_email, mcp_admin_password, mcp_postgres_password
-#   - External network: value of INGRESS_NETWORK (default traefik_traefik-public)
+#   - External overlay traefik_traefik-public (see docker-stack-lab.yml networks.traefik_edge)
 
 name: MCP Platform Lab CI
 
@@ -68,10 +61,6 @@ jobs:
     environment: lab
     env:
       PLATFORM: linux/amd64
-      MCP_PLATFORM_IMAGE: ${{ vars.MCP_PLATFORM_IMAGE || 'mcp-platform' }}
-      STACK_NAME: ${{ vars.STACK_NAME || 'mcp-platform' }}
-      INGRESS_NETWORK: ${{ vars.INGRESS_NETWORK || 'traefik_traefik-public' }}
-      MCP_HOSTNAME: ${{ vars.MCP_HOSTNAME || 'mcp.localhost' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,7 +74,7 @@ jobs:
             --platform "$PLATFORM" \
             -f api/Dockerfile \
             -t "mcp-platform-ci:${LAB_SHA_TAG}" \
-            -t "${MCP_PLATFORM_IMAGE}:${LAB_SHA_TAG}" \
+            -t "registry.example.com/mcp-platform-stack/mcp-platform:${LAB_SHA_TAG}" \
             .
 
       - name: Smoke test (platform + ephemeral Postgres)
@@ -167,7 +156,7 @@ jobs:
           REGISTRY_PASS: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
           set -euo pipefail
-          REGISTRY_HOST="${MCP_PLATFORM_IMAGE%%/*}"
+          REGISTRY_HOST="registry.example.com"
           if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
             echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
           elif [[ -z "${REGISTRY_USER:-}" && -z "${REGISTRY_PASS:-}" ]]; then
@@ -182,24 +171,25 @@ jobs:
         run: |
           set -euo pipefail
           LAB_SHA_TAG="lab-${GITHUB_SHA}"
-          docker push "${MCP_PLATFORM_IMAGE}:${LAB_SHA_TAG}"
+          docker push "registry.example.com/mcp-platform-stack/mcp-platform:${LAB_SHA_TAG}"
 
       - name: Tag and push lab-latest
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           LAB_SHA_TAG="lab-${GITHUB_SHA}"
-          docker tag "${MCP_PLATFORM_IMAGE}:${LAB_SHA_TAG}" "${MCP_PLATFORM_IMAGE}:lab-latest"
-          docker push "${MCP_PLATFORM_IMAGE}:lab-latest"
+          docker tag \
+            "registry.example.com/mcp-platform-stack/mcp-platform:${LAB_SHA_TAG}" \
+            "registry.example.com/mcp-platform-stack/mcp-platform:lab-latest"
+          docker push "registry.example.com/mcp-platform-stack/mcp-platform:lab-latest"
 
       - name: Deploy stack
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           docker info --format '{{.Swarm.LocalNodeState}} {{.Swarm.ControlAvailable}}'
-          export PLATFORM_IMAGE="${MCP_PLATFORM_IMAGE}:lab-latest"
           docker stack deploy \
             --with-registry-auth \
             --resolve-image always \
             -c docker-stack-lab.yml \
-            "$STACK_NAME"
+            mcp-platform

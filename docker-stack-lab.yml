@@ -9,14 +9,13 @@ version: "3.8"
 #   docker secret create mcp_admin_password <file>    # optional - seeded on first boot
 #   docker secret create mcp_postgres_password <file>
 #
-# Traefik is on an external ingress network so a parent reverse proxy can reach it;
-# backends stay on mcp-network. Both network names are overridable:
-#   STACK_NAME       - stack this is deployed as (default: mcp-platform). Controls {stack}_mcp-network.
-#   INGRESS_NETWORK  - externally-owned ingress overlay name (default: traefik_traefik-public).
-#   MCP_HOSTNAME     - host Traefik routes to platform-api on (default: mcp.localhost).
-#                      Also drives the public URL reported to clients as
-#                      http://${MCP_HOSTNAME}, until the admin Settings UI's
-#                      hostname/TLS toggle overrides it at runtime.
+# Traefik is on an external ingress network so cluster ingress Traefik can reach it.
+# Ingress terminates TLS (websecure) and forwards HTTP to this stack's traefik:80
+# (e.g. mcp-traefik-svc -> http://mcp-platform_traefik:80). This embedded Traefik
+# only listens on :80 (entrypoint `web`); it does not terminate TLS or use Let's Encrypt.
+# Backends stay on mcp-network. The external ingress overlay is fixed in `networks` (traefik_traefik-public).
+#   Stack name is fixed at `mcp-platform` (see workflow + traefik.swarm.yml network name).
+#   Host() for platform + SPA is lab.mcp.example.com (must match cluster ingress Host()).
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
@@ -108,7 +107,7 @@ services:
         condition: on-failure
 
   platform-api:
-    image: registry.example.com/mcp-platform-stack/mcp-platform:latest
+    image: registry.example.com/mcp-platform-stack/mcp-platform:lab-latest
     secrets:
       - mcp_app_key
       - mcp_admin_email
@@ -147,7 +146,8 @@ services:
       - MCP_DOCKER_NETWORK=mcp-platform_mcp-network
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       - MCP_TRAEFIK_ENTRYPOINTS=web
-      - MCP_BASE_URL=${APP_URL}
+      # Same origin as APP_URL (Compose does not expand sibling keys like MCP_BASE_URL=${APP_URL}).
+      - MCP_BASE_URL=https://lab.mcp.example.com
       - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
       - MCP_TEMPLATES_DIR=/var/www/html/templates
       - MCP_TRAEFIK_DYNAMIC_DIR=/var/www/html/storage/app/traefik/dynamic
@@ -161,12 +161,11 @@ services:
     deploy:
       labels:
         - "traefik.enable=true"
-        # Tell the swarm-wide Traefik which network to dial platform-api on.
-        - "traefik.docker.network=traefik_edge"
-        - "traefik.http.routers.platform-api.entrypoints=websecure"
-        - "traefik.http.routers.platform-api.rule=Host(`${MCP_HOSTNAME:-mcp.localhost}`)"
-        - "traefik.http.routers.platform-api.tls.certresolver=letsencrypt"
-        - "traefik.http.routers.platform-api.priority=1"
+        # Dial platform-api on the overlay it attaches to (must match provider network / docker network ls).
+        - "traefik.docker.network=mcp-platform_mcp-network"
+        # Plain HTTP only — TLS is at cluster ingress. !PathPrefix(`/s/`) leaves /s/{server} to MCP services.
+        - "traefik.http.routers.platform-api.entrypoints=web"
+        - "traefik.http.routers.platform-api.rule=Host(`lab.mcp.example.com`) && !PathPrefix(`/s/`)"
         - "traefik.http.services.platform-api.loadbalancer.server.port=8000"
       restart_policy:
         condition: on-failure
@@ -193,6 +192,7 @@ networks:
     driver: overlay
     attachable: true
   traefik_edge:
+    name: traefik_traefik-public
     external: true
 
 volumes:
