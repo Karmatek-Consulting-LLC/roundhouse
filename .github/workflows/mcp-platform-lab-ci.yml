@@ -79,9 +79,9 @@ jobs:
       - name: Build image
         run: |
           set -euo pipefail
-          export DOCKER_BUILDKIT=1
           LAB_SHA_TAG="lab-${GITHUB_SHA}"
-          docker build \
+          docker buildx build \
+            --load \
             --platform "$PLATFORM" \
             -f api/Dockerfile \
             -t "mcp-platform-ci:${LAB_SHA_TAG}" \
