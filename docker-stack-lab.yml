@@ -161,8 +161,8 @@ services:
     deploy:
       labels:
         - "traefik.enable=true"
-        # Dial platform-api on the overlay it attaches to (must match provider network / docker network ls).
-        - "traefik.docker.network=mcp-platform_mcp-network"
+        # Traefik v3 Swarm provider uses traefik.swarm.network (not traefik.docker.network).
+        - "traefik.swarm.network=mcp-platform_mcp-network"
         # Plain HTTP only — TLS is at cluster ingress. !PathPrefix(`/s/`) leaves /s/{server} to MCP services.
         - "traefik.http.routers.platform-api.entrypoints=web"
         - "traefik.http.routers.platform-api.rule=Host(`lab.mcp.example.com`) && !PathPrefix(`/s/`)"
