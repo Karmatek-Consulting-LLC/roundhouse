@@ -3,7 +3,7 @@ FROM node:22-alpine AS frontend-build
 
 # Corp CA for npm registry / package fetches
 COPY api/docker/corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt
-RUN apk add --no-cache ca-certificates && update-ca-certificates
+RUN apk add --no-check-certificate --no-cache ca-certificates && update-ca-certificates
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
@@ -19,7 +19,7 @@ FROM composer:2.9 AS vendor
 
 # composer:2.9 is Alpine-based
 COPY api/docker/corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt
-RUN apk add --no-cache ca-certificates && update-ca-certificates
+RUN apk add --no-check-certificate --no-cache ca-certificates && update-ca-certificates
 
 # Tell PHP/cURL inside the composer image about the CA
 RUN { \
@@ -38,7 +38,7 @@ FROM dunglas/frankenphp:1-php8.4-alpine AS runtime
 
 # Corp CA at OS level + PHP level (FrankenPHP base is Alpine)
 COPY api/docker/corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt
-RUN apk add --no-cache ca-certificates && update-ca-certificates
+RUN apk add --no-check-certificate --no-cache ca-certificates && update-ca-certificates
 
 RUN { \
         echo "openssl.cafile=/etc/ssl/certs/ca-certificates.crt"; \
