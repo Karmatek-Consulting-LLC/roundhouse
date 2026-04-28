@@ -13,7 +13,7 @@ version: "3.8"
 # Ingress terminates TLS (websecure) and forwards HTTP to this stack's traefik:80
 # (e.g. mcp-traefik-svc -> http://mcp-platform_traefik:80). This embedded Traefik
 # only listens on :80 (entrypoint `web`); it does not terminate TLS or use Let's Encrypt.
-# Backends stay on mcp-network. The external ingress overlay is fixed in `networks` (traefik_traefik-public).
+# Backends stay on mcp-network. The external ingress overlay is fixed in `networks` (traefik_edge).
 #   Stack name is fixed at `mcp-platform` (see workflow + traefik.swarm.yml network name).
 #   Host() for platform + SPA is lab.mcp.example.com (must match cluster ingress Host()).
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
@@ -192,7 +192,6 @@ networks:
     driver: overlay
     attachable: true
   traefik_edge:
-    name: traefik_traefik-public
     external: true
 
 volumes:
