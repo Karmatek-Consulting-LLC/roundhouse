@@ -24,6 +24,9 @@ services:
   docker-socket-proxy-traefik:
     image: tecnativa/docker-socket-proxy:0.3.0
     environment:
+      # SWARM: required for Traefik providers.swarm (GET /v…/swarm); denied by default in the proxy.
+      SWARM: 1
+      NODES: 1
       CONTAINERS: 1
       NETWORKS: 1
       SERVICES: 1
