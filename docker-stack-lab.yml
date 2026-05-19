@@ -82,6 +82,9 @@ services:
     depends_on:
       - docker-socket-proxy-traefik
     deploy:
+      placement:
+        constraints:
+          - node.labels.db == true
       restart_policy:
         condition: on-failure
 
@@ -162,6 +165,9 @@ services:
     # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     deploy:
+      placement:
+        constraints:
+          - node.labels.db == true
       labels:
         - "traefik.enable=true"
         # Traefik v3 Swarm provider uses traefik.swarm.network (not traefik.docker.network).
