@@ -78,7 +78,7 @@ services:
         target: /etc/traefik/traefik.yml
     networks:
       - mcp-network
-      - traefik-public
+      - traefik_traefik-public
     depends_on:
       - docker-socket-proxy-traefik
     deploy:
@@ -200,7 +200,7 @@ networks:
   mcp-network:
     driver: overlay
     attachable: true
-  traefik-public:
+  traefik_traefik-public:
     external: true
 
 volumes:
