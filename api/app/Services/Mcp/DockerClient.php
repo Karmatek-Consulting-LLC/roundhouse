@@ -127,7 +127,7 @@ class DockerClient
     {
         $tag = $this->buildImage($serverName, $buildContext, $registryPrefix, $registryAuth);
         if ($this->swarmMode()) {
-            return $this->createService($serverName, $tag, $templateName, $envVars, $replicas);
+            return $this->createService($serverName, $tag, $templateName, $envVars, $replicas, $registryAuth);
         }
         return $this->createContainer($serverName, $tag, $templateName, $envVars);
     }
@@ -388,8 +388,12 @@ class DockerClient
 
     // ---- Swarm mode ----
 
-    /** @param array<string, string> $envVars @return array<string, mixed> */
-    private function createService(string $serverName, string $tag, string $templateName, array $envVars, int $replicas): array
+    /**
+     * @param array<string, string> $envVars
+     * @param array{username:string,password:string}|null $registryAuth
+     * @return array<string, mixed>
+     */
+    private function createService(string $serverName, string $tag, string $templateName, array $envVars, int $replicas, ?array $registryAuth = null): array
     {
         $name = $this->containerName($serverName);
         $labels = $this->allLabels($serverName, $templateName);
@@ -412,7 +416,11 @@ class DockerClient
             'Mode' => ['Replicated' => ['Replicas' => $replicas]],
             'EndpointSpec' => ['Mode' => 'vip'],
         ];
-        $this->http->post('services/create', [], $spec);
+        // X-Registry-Auth on /services/create is the API equivalent of CLI
+        // `--with-registry-auth`: Swarm embeds the cred in the service spec so
+        // worker nodes can pull the image without their own login.
+        $headers = $registryAuth ? ['X-Registry-Auth' => $this->encodeAuth($registryAuth)] : [];
+        $this->http->post('services/create', [], $spec, $headers);
         $got = $this->getService($serverName);
         if (! $got) {
             throw new DockerException("Swarm service {$name} missing after create");
