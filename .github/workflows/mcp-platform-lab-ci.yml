@@ -5,7 +5,13 @@
 #
 # Repo/org configuration:
 #   Deploy stack name is fixed: mcp-platform (must match docker-stack-lab.yml / traefik.swarm.yml network prefix).
-#   Registry image path is inlined in build/push steps; keep in sync with docker-stack-lab.yml platform-api image.
+#   Registry image path is built from the `lab` environment vars:
+#     REGISTRY_HOST       (required) - used for docker login, e.g. registry.example.com
+#     REGISTRY_NAMESPACE  (optional) - project/org segment, e.g. mcp-platform-stack.
+#                                      Leave unset for flat registries with no namespace.
+#   The "Compute image repo" step combines them into IMAGE_REPO and exports it via
+#   $GITHUB_ENV. docker stack deploy then interpolates ${IMAGE_REPO} into
+#   docker-stack-lab.yml's platform-api `image:` field.
 #
 # Postgres pins to a node via `node.labels.db == true`. Label the target node
 # once: `docker node update --label-add db=true <hostname>`.
@@ -61,9 +67,24 @@ jobs:
     environment: lab
     env:
       PLATFORM: linux/amd64
+      REGISTRY_HOST: ${{ vars.REGISTRY_HOST }}
+      REGISTRY_NAMESPACE: ${{ vars.REGISTRY_NAMESPACE }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Compute image repo
+        run: |
+          set -euo pipefail
+          : "${REGISTRY_HOST:?REGISTRY_HOST not set on the lab environment}"
+          # REGISTRY_NAMESPACE is optional - flat registries (no project segment) leave it unset.
+          if [[ -n "${REGISTRY_NAMESPACE:-}" ]]; then
+            IMAGE_REPO="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/mcp-platform"
+          else
+            IMAGE_REPO="${REGISTRY_HOST}/mcp-platform"
+          fi
+          echo "IMAGE_REPO=${IMAGE_REPO}" >> "$GITHUB_ENV"
+          echo "Using image repo: ${IMAGE_REPO}"
 
       - name: Build image
         run: |
@@ -74,7 +95,7 @@ jobs:
             --platform "$PLATFORM" \
             -f api/Dockerfile \
             -t "mcp-platform-ci:${LAB_SHA_TAG}" \
-            -t "registry.example.com/mcp-platform-stack/mcp-platform:${LAB_SHA_TAG}" \
+            -t "${IMAGE_REPO}:${LAB_SHA_TAG}" \
             .
 
       - name: Smoke test (platform + ephemeral Postgres)
@@ -156,7 +177,6 @@ jobs:
           REGISTRY_PASS: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
           set -euo pipefail
-          REGISTRY_HOST="registry.example.com"
           if [[ -n "${REGISTRY_USER:-}" && -n "${REGISTRY_PASS:-}" ]]; then
             echo "$REGISTRY_PASS" | docker login "$REGISTRY_HOST" -u "$REGISTRY_USER" --password-stdin
           elif [[ -z "${REGISTRY_USER:-}" && -z "${REGISTRY_PASS:-}" ]]; then
@@ -171,7 +191,7 @@ jobs:
         run: |
           set -euo pipefail
           LAB_SHA_TAG="lab-${GITHUB_SHA}"
-          docker push "registry.example.com/mcp-platform-stack/mcp-platform:${LAB_SHA_TAG}"
+          docker push "${IMAGE_REPO}:${LAB_SHA_TAG}"
 
       - name: Tag and push lab-latest
         if: github.event_name != 'pull_request'
@@ -179,15 +199,17 @@ jobs:
           set -euo pipefail
           LAB_SHA_TAG="lab-${GITHUB_SHA}"
           docker tag \
-            "registry.example.com/mcp-platform-stack/mcp-platform:${LAB_SHA_TAG}" \
-            "registry.example.com/mcp-platform-stack/mcp-platform:lab-latest"
-          docker push "registry.example.com/mcp-platform-stack/mcp-platform:lab-latest"
+            "${IMAGE_REPO}:${LAB_SHA_TAG}" \
+            "${IMAGE_REPO}:lab-latest"
+          docker push "${IMAGE_REPO}:lab-latest"
 
       - name: Deploy stack
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           docker info --format '{{.Swarm.LocalNodeState}} {{.Swarm.ControlAvailable}}'
+          # IMAGE_REPO (from $GITHUB_ENV) is interpolated into docker-stack-lab.yml's
+          # platform-api image: field by docker stack deploy.
           docker stack deploy \
             --with-registry-auth \
             --resolve-image always \
