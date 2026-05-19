@@ -200,7 +200,7 @@ networks:
   mcp-network:
     driver: overlay
     attachable: true
-  traefik_edge:
+  traefik-public:
     external: true
 
 volumes:
