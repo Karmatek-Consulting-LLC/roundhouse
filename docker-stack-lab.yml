@@ -113,7 +113,7 @@ services:
         condition: on-failure
 
   platform-api:
-    image: registry.example.com/mcp-platform-stack/mcp-platform:lab-latest
+    image: ${IMAGE_REPO}:lab-latest
     secrets:
       - mcp_app_key
       - mcp_admin_email
