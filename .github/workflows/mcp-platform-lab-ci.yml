@@ -69,7 +69,8 @@ jobs:
         run: |
           set -euo pipefail
           LAB_SHA_TAG="lab-${GITHUB_SHA}"
-          docker buildx build \
+          export DOCKER_BUILDKIT=0
+          docker build \
             --load \
             --platform "$PLATFORM" \
             -f api/Dockerfile \
