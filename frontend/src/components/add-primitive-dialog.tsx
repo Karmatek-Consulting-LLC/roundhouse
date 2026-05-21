@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api, type Primitive, type ToolParameter } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, type Primitive, type ServerScope, type ToolParameter } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -71,8 +71,22 @@ export function AddPrimitiveDialog({
   const [returnType, setReturnType] = useState<"str" | "dict">(
     existing?.kind === "tool" && existing.return_type === "dict" ? "dict" : "str",
   );
+  const [scopes, setScopes] = useState<string[]>(existing?.scopes ?? []);
+  const [availableScopes, setAvailableScopes] = useState<ServerScope[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Lazily load the server's scope list when the dialog first opens.
+  useEffect(() => {
+    if (!open) return;
+    api.listScopes(serverName).then(setAvailableScopes).catch(() => setAvailableScopes([]));
+  }, [open, serverName]);
+
+  function toggleScope(scope: string) {
+    setScopes((prev) =>
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
+    );
+  }
 
   function reset() {
     if (!isEdit) {
@@ -84,6 +98,7 @@ export function AddPrimitiveDialog({
       setMimeType("text/plain");
       setParams([]);
       setReturnType("str");
+      setScopes([]);
     }
     setError(null);
   }
@@ -112,6 +127,7 @@ export function AddPrimitiveDialog({
   }
 
   function buildPrimitive(): Primitive {
+    const s = scopes.length ? scopes : undefined;
     switch (kind) {
       case "tool":
         return {
@@ -121,13 +137,14 @@ export function AddPrimitiveDialog({
           parameters: params,
           code,
           return_type: returnType,
+          scopes: s,
         };
       case "resource":
-        return { kind: "resource", name, uri, description, mime_type: mimeType, code };
+        return { kind: "resource", name, uri, description, mime_type: mimeType, code, scopes: s };
       case "resource_template":
-        return { kind: "resource_template", name, uri_template: uri, description, mime_type: mimeType, code };
+        return { kind: "resource_template", name, uri_template: uri, description, mime_type: mimeType, code, scopes: s };
       case "prompt":
-        return { kind: "prompt", name, description, parameters: params, code };
+        return { kind: "prompt", name, description, parameters: params, code, scopes: s };
     }
   }
 
@@ -394,6 +411,39 @@ export function AddPrimitiveDialog({
                 }}
               />
             </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label>Required scopes</Label>
+            <p className="text-xs text-muted-foreground">
+              The caller's bearer token must hold <strong>all</strong> selected scopes to invoke this primitive.
+              No selection = any valid token can call it. Takes effect after the next deploy.
+            </p>
+            {availableScopes.length === 0 ? (
+              <p className="text-xs italic text-muted-foreground">
+                No scopes defined for this server yet. Add some under the <strong>Auth</strong> tab.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {availableScopes.map((s) => {
+                  const on = scopes.includes(s.name);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => toggleScope(s.name)}
+                      className={`rounded-full border px-3 py-1 text-xs transition ${
+                        on
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background hover:bg-muted"
+                      }`}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}

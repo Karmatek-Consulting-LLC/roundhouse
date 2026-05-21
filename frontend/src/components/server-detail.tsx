@@ -15,6 +15,7 @@ import { AddPrimitiveDialog } from "@/components/add-primitive-dialog";
 import { TestPrimitiveDialog } from "@/components/test-primitive-dialog";
 import { ImportsEditor } from "@/components/imports-editor";
 import { PackageManager } from "@/components/package-manager";
+import { ServerAuthPanel } from "@/components/server-auth-panel";
 import {
   ServerEnvBindingsEditor,
   type ServerEnvBindings,
@@ -264,9 +265,26 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         </Button>
       </div>
 
+      {server.auth_rebuild_required_at && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100 flex items-center justify-between gap-3">
+          <span>
+            <strong>Rebuild required.</strong> Scope or token changes are pending — they take effect after a redeploy.
+          </span>
+          <Button
+            size="sm"
+            disabled={redeploying}
+            onClick={handleRedeploy}
+          >
+            {redeploying ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Rocket className="mr-1 h-3 w-3" />}
+            {redeploying ? "Rebuilding..." : "Rebuild & deploy"}
+          </Button>
+        </div>
+      )}
+
       <Tabs defaultValue="details" className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2 sm:inline-flex sm:w-auto">
+        <TabsList className="grid w-full max-w-2xl grid-cols-3 sm:inline-flex sm:w-auto">
           <TabsTrigger value="details">Details</TabsTrigger>
+          {!isCodeMode && <TabsTrigger value="auth">Auth</TabsTrigger>}
           <TabsTrigger value="runtime">Deployment &amp; logs</TabsTrigger>
         </TabsList>
 
@@ -545,6 +563,12 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         </div>
       )}
         </TabsContent>
+
+        {!isCodeMode && (
+          <TabsContent value="auth" className="mt-6 space-y-6">
+            <ServerAuthPanel serverName={serverName} onMutated={refresh} />
+          </TabsContent>
+        )}
 
         <TabsContent value="runtime" className="mt-6 space-y-6">
           <div className="rounded-lg border p-4 space-y-3">
