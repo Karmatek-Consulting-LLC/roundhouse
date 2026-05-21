@@ -44,6 +44,7 @@ beforeEach(function () {
         store: $realStore,
         templates: $this->app->make(\App\Services\Mcp\TemplateEngine::class),
         globals: $this->app->make(\App\Services\Mcp\GlobalEnvVars::class),
+        auth: new \App\Services\Mcp\ServerAuthService($realStore),
     ));
 });
 
@@ -179,5 +180,5 @@ test('Codegen writeBuildContext writes source verbatim in code mode', function (
 
     expect(file_get_contents($dir.'/server.py'))->toBe("import foo\nmcp = ...");
     // Dockerfile still generated from pipPackages.
-    expect(file_get_contents($dir.'/Dockerfile'))->toContain('pip install --no-cache-dir fastmcp requests');
+    expect(file_get_contents($dir.'/Dockerfile'))->toContain('pip install --no-cache-dir fastmcp=='.Codegen::FASTMCP_VERSION.' requests');
 });

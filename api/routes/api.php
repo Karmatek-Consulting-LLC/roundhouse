@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\InvokeController;
 use App\Http\Controllers\Api\PypiController;
 use App\Http\Controllers\Api\ServerController;
+use App\Http\Controllers\Api\ServerScopeController;
+use App\Http\Controllers\Api\ServerTokenController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\TemplateController;
@@ -68,6 +70,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/servers/{name}/env', [ServerController::class, 'updateEnv']);
     Route::put('/servers/{name}/config', [ServerController::class, 'updateConfig']);
     Route::put('/servers/{name}/source', [ServerController::class, 'updateSource']);
+
+    // Server runtime auth (FastMCP StaticTokenVerifier + require_scopes).
+    Route::get('/servers/{name}/scopes', [ServerScopeController::class, 'index']);
+    Route::post('/servers/{name}/scopes', [ServerScopeController::class, 'store']);
+    Route::put('/servers/{name}/scopes/{scope_name}', [ServerScopeController::class, 'update']);
+    Route::delete('/servers/{name}/scopes/{scope_name}', [ServerScopeController::class, 'destroy']);
+    Route::get('/servers/{name}/tokens', [ServerTokenController::class, 'index']);
+    Route::post('/servers/{name}/tokens', [ServerTokenController::class, 'store']);
+    Route::delete('/servers/{name}/tokens/{id}', [ServerTokenController::class, 'destroy'])->whereNumber('id');
 
     // Invoke live MCP primitives (JSON-RPC pass-through, gated by ServerPermissions).
     Route::get('/servers/{name}/tools', [InvokeController::class, 'listTools']);

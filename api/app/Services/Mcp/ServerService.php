@@ -18,6 +18,7 @@ class ServerService
         public readonly ServerStore $store,
         public readonly TemplateEngine $templates,
         public readonly GlobalEnvVars $globals,
+        public readonly ServerAuthService $auth,
     ) {}
 
     public function effectiveReplicas(?ServerSpec $spec): int
@@ -48,13 +49,17 @@ class ServerService
     /** @return array<string, mixed> */
     public function buildAndDeploy(ServerSpec $spec): array
     {
+        // Hydrate plaintext tokens for codegen only - they don't survive into
+        // ServerSpec::toArray, so the on-disk spec never holds plaintext.
+        $spec->tokens = $this->auth->tokensForCodegen($spec->name);
+
         $buildContext = $this->codegen->writeBuildContext(
             $spec,
             $this->store->serverDir($spec->name),
         );
         $this->store->save($spec);
 
-        return $this->docker->buildAndStart(
+        $result = $this->docker->buildAndStart(
             serverName: $spec->name,
             buildContext: $buildContext,
             templateName: 'custom',
@@ -63,6 +68,9 @@ class ServerService
             registryPrefix: $this->registryPrefix(),
             registryAuth: $this->registryAuth(),
         );
+
+        $this->auth->clearRebuildRequired($spec->name);
+        return $result;
     }
 
     /** @return array<string, mixed> */

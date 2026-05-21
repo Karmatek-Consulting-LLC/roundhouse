@@ -19,20 +19,44 @@ class Codegen
 
     public function generateServerPy(ServerSpec $spec): string
     {
+        // Auth is opt-in per server: enabled iff at least one token exists.
+        // Without tokens, primitive-level require_scopes() would have no verifier
+        // and the server is published unauthenticated.
+        $authEnabled = ! empty($spec->tokens);
+        $anyScopedPrimitive = $authEnabled && $this->anyPrimitiveHasScopes($spec->primitives);
+
         $primitives = [];
         foreach ($spec->primitives as $p) {
-            $primitives[] = $this->generatePrimitive($p);
+            $primitives[] = $this->generatePrimitive($p, $authEnabled);
         }
         $primitivesCode = trim(implode("\n", $primitives));
 
-        $importLines = implode("\n", $spec->imports);
-
-        $lines = ['from fastmcp import FastMCP'];
-        if ($importLines !== '') {
-            $lines[] = $importLines;
+        $importLines = [];
+        $importLines[] = 'from fastmcp import FastMCP';
+        $authImports = [];
+        if ($authEnabled) {
+            $authImports[] = 'StaticTokenVerifier';
         }
+        if ($anyScopedPrimitive) {
+            $authImports[] = 'require_scopes';
+        }
+        if ($authImports) {
+            $importLines[] = 'from fastmcp.server.auth import '.implode(', ', $authImports);
+        }
+        foreach ($spec->imports as $extra) {
+            if ($extra !== '') {
+                $importLines[] = $extra;
+            }
+        }
+
+        $mcpArgs = [$this->pyString($spec->name)];
+        if ($authEnabled) {
+            $mcpArgs[] = 'auth=StaticTokenVerifier(tokens='.$this->pyDict($this->tokensMap($spec->tokens)).')';
+        }
+
+        $lines = $importLines;
         $lines[] = '';
-        $lines[] = 'mcp = FastMCP('.$this->pyString($spec->name).')';
+        $lines[] = 'mcp = FastMCP('.implode(', ', $mcpArgs).')';
         $lines[] = '';
         $lines[] = $primitivesCode;
         $lines[] = '';
@@ -48,9 +72,53 @@ class Codegen
         return implode("\n", $lines);
     }
 
+    /** @param array<int, array<string, mixed>> $primitives */
+    private function anyPrimitiveHasScopes(array $primitives): bool
+    {
+        foreach ($primitives as $p) {
+            if (! empty($p['scopes']) && is_array($p['scopes'])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Build the StaticTokenVerifier tokens map.
+     * Shape: { "<plaintext-token>": {"client_id": "<token name>", "scopes": [...]} }
+     *
+     * @param array<int, array{name:string, token:string, scopes:string[]}> $tokens
+     * @return array<string, array{client_id:string, scopes:string[]}>
+     */
+    private function tokensMap(array $tokens): array
+    {
+        $map = [];
+        foreach ($tokens as $t) {
+            $plain = (string) ($t['token'] ?? '');
+            if ($plain === '') {
+                continue;
+            }
+            $map[$plain] = [
+                'client_id' => (string) ($t['name'] ?? ''),
+                'scopes' => array_values(array_filter(
+                    (array) ($t['scopes'] ?? []),
+                    fn ($s) => is_string($s) && $s !== '',
+                )),
+            ];
+        }
+        return $map;
+    }
+
+    /**
+     * fastmcp version pinned to a known-good release that exposes
+     * StaticTokenVerifier and require_scopes at fastmcp.server.auth.
+     * Bump deliberately - generated server.py is coupled to this API surface.
+     */
+    public const FASTMCP_VERSION = '3.3.1';
+
     public function generateDockerfile(ServerSpec $spec): string
     {
-        $pipInstall = 'fastmcp';
+        $pipInstall = 'fastmcp=='.self::FASTMCP_VERSION;
         if ($spec->pipPackages) {
             $pipInstall .= ' '.implode(' ', $spec->pipPackages);
         }
@@ -85,18 +153,55 @@ class Codegen
     }
 
     /** @param array<string, mixed> $p */
-    private function generatePrimitive(array $p): string
+    private function generatePrimitive(array $p, bool $authEnabled): string
     {
         return match ($p['kind'] ?? '') {
-            'tool' => $this->generateTool($p),
-            'resource' => $this->generateResource($p),
-            'resource_template' => $this->generateResourceTemplate($p),
-            'prompt' => $this->generatePrompt($p),
+            'tool' => $this->generateTool($p, $authEnabled),
+            'resource' => $this->generateResource($p, $authEnabled),
+            'resource_template' => $this->generateResourceTemplate($p, $authEnabled),
+            'prompt' => $this->generatePrompt($p, $authEnabled),
             default => '',
         };
     }
 
-    private function generateTool(array $t): string
+    /**
+     * Decorator args for primitive-level scope enforcement.
+     * Returns '' when auth is disabled or the primitive has no scopes;
+     * otherwise 'auth=require_scopes("a", "b")'.
+     *
+     * @param array<string, mixed> $p
+     */
+    private function authClause(array $p, bool $authEnabled): string
+    {
+        if (! $authEnabled || empty($p['scopes']) || ! is_array($p['scopes'])) {
+            return '';
+        }
+        $scopeArgs = [];
+        foreach ($p['scopes'] as $s) {
+            if (is_string($s) && $s !== '') {
+                $scopeArgs[] = $this->pyString($s);
+            }
+        }
+        if (! $scopeArgs) {
+            return '';
+        }
+        return 'auth=require_scopes('.implode(', ', $scopeArgs).')';
+    }
+
+    /** Join leading-positional decorator args with an optional auth= clause. */
+    private function decoratorArgs(string $positional, string $auth): string
+    {
+        $parts = [];
+        if ($positional !== '') {
+            $parts[] = $positional;
+        }
+        if ($auth !== '') {
+            $parts[] = $auth;
+        }
+        return implode(', ', $parts);
+    }
+
+    private function generateTool(array $t, bool $authEnabled): string
     {
         $sig = $this->paramSignature($t['parameters'] ?? []);
         $retPy = ($t['return_type'] ?? 'str') === 'dict' ? 'dict' : 'str';
@@ -107,10 +212,11 @@ class Codegen
         }
         $doc = $this->pyString(($t['description'] ?? '') ?: ($t['name'] ?? ''));
         $name = $t['name'] ?? '';
-        return "\n@mcp.tool()\ndef {$name}({$sig}) -> {$retPy}:\n    {$doc}\n".$this->indent($body)."\n";
+        $args = $this->decoratorArgs('', $this->authClause($t, $authEnabled));
+        return "\n@mcp.tool({$args})\ndef {$name}({$sig}) -> {$retPy}:\n    {$doc}\n".$this->indent($body)."\n";
     }
 
-    private function generateResource(array $r): string
+    private function generateResource(array $r, bool $authEnabled): string
     {
         $body = trim((string) ($r['code'] ?? ''));
         if ($body === '') {
@@ -119,10 +225,11 @@ class Codegen
         $doc = $this->pyString(($r['description'] ?? '') ?: ($r['name'] ?? ''));
         $uri = $this->pyString((string) ($r['uri'] ?? ''));
         $name = $r['name'] ?? '';
-        return "\n@mcp.resource({$uri})\ndef {$name}() -> str:\n    {$doc}\n".$this->indent($body)."\n";
+        $args = $this->decoratorArgs($uri, $this->authClause($r, $authEnabled));
+        return "\n@mcp.resource({$args})\ndef {$name}() -> str:\n    {$doc}\n".$this->indent($body)."\n";
     }
 
-    private function generateResourceTemplate(array $rt): string
+    private function generateResourceTemplate(array $rt, bool $authEnabled): string
     {
         $template = (string) ($rt['uri_template'] ?? '');
         preg_match_all('/\{(\w+)\}/', $template, $m);
@@ -136,10 +243,11 @@ class Codegen
         $doc = $this->pyString(($rt['description'] ?? '') ?: ($rt['name'] ?? ''));
         $uri = $this->pyString($template);
         $name = $rt['name'] ?? '';
-        return "\n@mcp.resource({$uri})\ndef {$name}({$sig}) -> str:\n    {$doc}\n".$this->indent($body)."\n";
+        $args = $this->decoratorArgs($uri, $this->authClause($rt, $authEnabled));
+        return "\n@mcp.resource({$args})\ndef {$name}({$sig}) -> str:\n    {$doc}\n".$this->indent($body)."\n";
     }
 
-    private function generatePrompt(array $p): string
+    private function generatePrompt(array $p, bool $authEnabled): string
     {
         $sig = $this->paramSignature($p['parameters'] ?? []);
         $body = trim((string) ($p['code'] ?? ''));
@@ -148,7 +256,8 @@ class Codegen
         }
         $doc = $this->pyString(($p['description'] ?? '') ?: ($p['name'] ?? ''));
         $name = $p['name'] ?? '';
-        return "\n@mcp.prompt()\ndef {$name}({$sig}) -> str:\n    {$doc}\n".$this->indent($body)."\n";
+        $args = $this->decoratorArgs('', $this->authClause($p, $authEnabled));
+        return "\n@mcp.prompt({$args})\ndef {$name}({$sig}) -> str:\n    {$doc}\n".$this->indent($body)."\n";
     }
 
     /** @param array<int, array<string, mixed>> $params */
@@ -176,6 +285,24 @@ class Codegen
     private function pyString(string $s): string
     {
         return json_encode($s, JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Produce a Python dict literal from a PHP array containing only strings,
+     * ints, and nested arrays of the same. JSON is a valid Python literal for
+     * this shape (we don't emit bools/null in the auth tokens map).
+     *
+     * Relies on PHP's natural list-vs-object inference: sequential int keys
+     * become JSON arrays (Python lists), string keys become JSON objects
+     * (Python dicts). Do NOT add JSON_FORCE_OBJECT here - it would turn nested
+     * scopes lists into dicts like {"0":"read"} and break AccessToken
+     * validation at runtime.
+     *
+     * @param array<mixed, mixed> $a
+     */
+    private function pyDict(array $a): string
+    {
+        return json_encode($a, JSON_UNESCAPED_SLASHES);
     }
 
     private function indent(string $code, int $level = 1): string

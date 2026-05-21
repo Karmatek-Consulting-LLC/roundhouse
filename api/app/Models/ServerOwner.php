@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['server_name', 'owner_id'])]
+#[Fillable(['server_name', 'owner_id', 'auth_rebuild_required_at'])]
 class ServerOwner extends Model
 {
     protected $table = 'server_owners';
@@ -23,6 +23,7 @@ class ServerOwner extends Model
     {
         return [
             'created_at' => 'datetime',
+            'auth_rebuild_required_at' => 'datetime',
         ];
     }
 

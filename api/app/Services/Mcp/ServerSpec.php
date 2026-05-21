@@ -20,6 +20,8 @@ final class ServerSpec
      * @param EnvVar[] $envVars
      * @param 'structured'|'code' $mode
      * @param ?string $source Raw server.py text - only used when mode === 'code'
+     * @param array<int, array{name:string, token:string, scopes:string[]}> $tokens
+     *        Hydrated at codegen time only - not persisted in the on-disk spec.
      */
     public function __construct(
         public string $name,
@@ -32,6 +34,7 @@ final class ServerSpec
         public ?int $replicas = null,
         public string $mode = self::MODE_STRUCTURED,
         public ?string $source = null,
+        public array $tokens = [],
     ) {}
 
     public function isCodeMode(): bool

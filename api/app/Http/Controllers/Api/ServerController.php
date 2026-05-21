@@ -297,6 +297,7 @@ class ServerController extends Controller
     {
         $primitive = $this->validatePrimitive($request);
         $this->assertAccess($request->user(), $name);
+        $this->assertScopesExist($name, $primitive['scopes'] ?? []);
         $spec = $this->ensureSpec($name);
         $this->assertStructuredMode($spec, 'add primitives');
 
@@ -314,6 +315,7 @@ class ServerController extends Controller
     {
         $primitive = $this->validatePrimitive($request);
         $this->assertAccess($request->user(), $name);
+        $this->assertScopesExist($name, $primitive['scopes'] ?? []);
         $spec = $this->ensureSpec($name);
         $this->assertStructuredMode($spec, 'update primitives');
 
@@ -425,8 +427,28 @@ class ServerController extends Controller
             'primitive.uri' => ['sometimes', 'string'],
             'primitive.uri_template' => ['sometimes', 'string'],
             'primitive.mime_type' => ['sometimes', 'string'],
+            // Runtime scope gating - the codegen wraps the primitive in
+            // @mcp.<kind>(auth=require_scopes(...)) at deploy time.
+            'primitive.scopes' => ['sometimes', 'array'],
+            'primitive.scopes.*' => ['string', 'max:64'],
         ]);
         return $data['primitive'];
+    }
+
+    /** @param string[] $scopes */
+    private function assertScopesExist(string $server, array $scopes): void
+    {
+        if (! $scopes) {
+            return;
+        }
+        $known = \App\Models\ServerScope::where('server_name', $server)
+            ->whereIn('name', $scopes)
+            ->pluck('name')
+            ->all();
+        $unknown = array_values(array_diff($scopes, $known));
+        if ($unknown) {
+            throw new HttpException(422, 'Unknown scopes for this server: '.implode(', ', $unknown));
+        }
     }
 
     private function validateEnvRequest(Request $request): array
@@ -580,6 +602,7 @@ class ServerController extends Controller
             'global_env' => array_map(fn (EnvVar $v) => $v->toArray(), $this->globals->all()),
             'owner_id' => $owner ? (string) $owner->owner_id : null,
             'owner_email' => $owner?->owner?->email,
+            'auth_rebuild_required_at' => $owner?->auth_rebuild_required_at?->toIso8601String(),
             'created_at' => $server['created_at'] ?? null,
             'replicas_desired' => $this->service->effectiveReplicas($spec),
             'replicas_running' => (int) ($server['replicas_running'] ?? 0),
