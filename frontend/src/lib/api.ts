@@ -14,6 +14,8 @@ export interface ToolPrimitive {
   code: string;
   /** FastMCP: str → structured { result }; dict → structured object matches your keys */
   return_type?: "str" | "dict";
+  /** Scope names required to invoke. Empty/absent = no scope check (token-only). */
+  scopes?: string[];
 }
 
 export interface ResourcePrimitive {
@@ -23,6 +25,7 @@ export interface ResourcePrimitive {
   description: string;
   mime_type: string;
   code: string;
+  scopes?: string[];
 }
 
 export interface ResourceTemplatePrimitive {
@@ -32,6 +35,7 @@ export interface ResourceTemplatePrimitive {
   description: string;
   mime_type: string;
   code: string;
+  scopes?: string[];
 }
 
 export interface PromptPrimitive {
@@ -40,6 +44,7 @@ export interface PromptPrimitive {
   description: string;
   parameters: ToolParameter[];
   code: string;
+  scopes?: string[];
 }
 
 export type Primitive =
@@ -178,6 +183,29 @@ export interface Server {
   replicas_running: number;
   docker_swarm_mode: boolean;
   placement: PlacementTask[];
+  /** ISO-8601 timestamp set when scope/token changes need a redeploy; null otherwise. */
+  auth_rebuild_required_at?: string | null;
+}
+
+export interface ServerScope {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface ServerTokenSummary {
+  id: number;
+  name: string;
+  display_prefix: string;
+  scopes: string[];
+  created_at: string | null;
+}
+
+/** mintToken response: same shape as ServerTokenSummary plus the one-time plaintext. */
+export interface MintedToken extends ServerTokenSummary {
+  token: string;
 }
 
 export interface AuthUser {
@@ -420,6 +448,40 @@ export const api = {
     request<McpPromptResult>(`/servers/${encodeURIComponent(serverName)}/prompts/get`, {
       method: "POST",
       body: JSON.stringify({ prompt, arguments: args }),
+    }),
+
+  // Per-server runtime auth (scopes + tokens for the FastMCP StaticTokenVerifier).
+  listScopes: (serverName: string) =>
+    request<ServerScope[]>(`/servers/${encodeURIComponent(serverName)}/scopes`),
+  createScope: (serverName: string, body: { name: string; description?: string | null }) =>
+    request<ServerScope>(`/servers/${encodeURIComponent(serverName)}/scopes`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateScope: (
+    serverName: string,
+    scopeName: string,
+    body: { name?: string; description?: string | null },
+  ) =>
+    request<ServerScope>(
+      `/servers/${encodeURIComponent(serverName)}/scopes/${encodeURIComponent(scopeName)}`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+  deleteScope: (serverName: string, scopeName: string) =>
+    request<void>(
+      `/servers/${encodeURIComponent(serverName)}/scopes/${encodeURIComponent(scopeName)}`,
+      { method: "DELETE" },
+    ),
+  listTokens: (serverName: string) =>
+    request<ServerTokenSummary[]>(`/servers/${encodeURIComponent(serverName)}/tokens`),
+  mintToken: (serverName: string, body: { name: string; scopes?: string[] }) =>
+    request<MintedToken>(`/servers/${encodeURIComponent(serverName)}/tokens`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  revokeToken: (serverName: string, id: number) =>
+    request<void>(`/servers/${encodeURIComponent(serverName)}/tokens/${id}`, {
+      method: "DELETE",
     }),
 
   // PyPI
