@@ -1,0 +1,121 @@
+# Local development stack. Plain HTTP, hot reload, single Docker daemon.
+# For Swarm/lab/customer deploys see docker-stack-lab.yml.
+
+services:
+  traefik:
+    image: traefik:v3.6
+    ports:
+      - "${HTTP_PORT:-3080}:80"
+      - "${DASHBOARD_PORT:-3081}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - traefik-dynamic:/etc/traefik/dynamic:ro
+    networks:
+      - mcp-network
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcp}
+      POSTGRES_DB: ${POSTGRES_DB:-mcp}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - mcp-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcp"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  platform-api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Give the SIGTERM trap time to cleanup every spawned MCP server before SIGKILL.
+    stop_grace_period: 60s
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./api:/var/www/html
+      - ./templates:/var/www/html/templates:ro
+      - platform_vendor:/var/www/html/vendor
+      - server-data:/var/www/html/storage/app/servers
+      - traefik-dynamic:/var/www/html/storage/app/traefik/dynamic
+    environment:
+      - APP_NAME=MCP Platform
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=${MCP_BASE_URL:-http://localhost:3080}
+      - LOG_CHANNEL=stderr
+      - LOG_LEVEL=debug
+
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=${POSTGRES_DB:-mcp}
+      - DB_USERNAME=${POSTGRES_USER:-mcp}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-mcp}
+
+      - SESSION_DRIVER=array
+      - CACHE_STORE=database
+      - QUEUE_CONNECTION=database
+      - SANCTUM_TOKEN_EXPIRATION=1440
+
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+
+      - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:3080}
+      - MCP_DOCKER_NETWORK=${DOCKER_NETWORK:-mcp-network}
+      - MCP_DOCKER_SOCKET=/var/run/docker.sock
+      - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
+      - MCP_TEMPLATES_DIR=/var/www/html/templates
+      - MCP_TRAEFIK_DYNAMIC_DIR=/var/www/html/storage/app/traefik/dynamic
+      # Cert upload via Platform Settings writes here; nothing consumes it
+      # locally (no TLS), so uploads are inert but don't error out.
+      - MCP_TRAEFIK_CERTS_DIR=/var/www/html/storage/app/traefik/certs
+      - MCP_DEFAULT_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
+      - MCP_MAX_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
+    networks:
+      - mcp-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.platform-api.entrypoints=web"
+      - "traefik.http.routers.platform-api.rule=PathPrefix(`/api`)"
+      - "traefik.http.services.platform-api.loadbalancer.server.port=8000"
+
+  frontend:
+    build: ./frontend
+    environment:
+      - CI=true
+      - API_PROXY_TARGET=http://platform-api:8000
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_pnpm_store:/var/cache/pnpm-store
+    networks:
+      - mcp-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      # Lower priority than the /api router so /api/* lands on platform-api.
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=5173"
+
+networks:
+  mcp-network:
+    name: mcp-network
+    driver: bridge
+
+volumes:
+  pgdata:
+  server-data:
+  traefik-dynamic:
+  platform_vendor:
+  frontend_node_modules:
+  frontend_pnpm_store:
