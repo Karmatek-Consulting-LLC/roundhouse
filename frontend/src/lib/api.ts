@@ -172,6 +172,8 @@ export interface Server {
   imports: string[];
   primitives: Primitive[];
   pip_packages: string[];
+  /** OS-level (apt) packages installed into the container image before pip. */
+  apt_packages: string[];
   env_global_imports?: string[];
   env_vars: EnvVar[];
   /** Platform-wide catalog for picking global imports. */
@@ -396,6 +398,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ pip_packages }),
     }),
+  updateAptPackages: (serverName: string, apt_packages: string[]) =>
+    request<Server>(`/servers/${serverName}/apt-packages`, {
+      method: "PUT",
+      body: JSON.stringify({ apt_packages }),
+    }),
   updateEnvVars: (serverName: string, cfg: ServerEnvConfig) =>
     request<Server>(`/servers/${serverName}/env`, {
       method: "PUT",
@@ -405,6 +412,7 @@ export const api = {
     serverName: string,
     imports: string[],
     pip_packages: string[],
+    apt_packages: string[],
     env: ServerEnvConfig,
   ) =>
     request<Server>(`/servers/${serverName}/config`, {
@@ -412,6 +420,7 @@ export const api = {
       body: JSON.stringify({
         imports,
         pip_packages,
+        apt_packages,
         env_global_imports: env.env_global_imports,
         env_vars: env.env_vars,
       }),
@@ -529,7 +538,18 @@ export const api = {
     docker_registry_effective: string;
     docker_registry_username: string;
     docker_registry_password_configured: boolean;
+    /** PEM contents never come back over the wire; this just reflects presence. */
+    custom_ca_cert_configured: boolean;
   }>("/settings"),
+  updateCustomCa: (cert: string) =>
+    request<{ custom_ca_cert_configured: boolean }>("/settings/custom-ca", {
+      method: "PUT",
+      body: JSON.stringify({ cert }),
+    }),
+  deleteCustomCa: () =>
+    request<{ custom_ca_cert_configured: boolean }>("/settings/custom-ca", {
+      method: "DELETE",
+    }),
   updateDockerRegistry: (body: {
     registry: string;
     username?: string;

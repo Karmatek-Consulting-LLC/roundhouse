@@ -46,6 +46,13 @@ class ServerService
         return $merged;
     }
 
+    /** Platform-wide custom CA PEM bundle, baked into every spawned image. */
+    public function customCaCert(): ?string
+    {
+        $raw = (string) PlatformSetting::get('custom_ca_cert', '');
+        return trim($raw) === '' ? null : $raw;
+    }
+
     /** @return array<string, mixed> */
     public function buildAndDeploy(ServerSpec $spec): array
     {
@@ -56,6 +63,7 @@ class ServerService
         $buildContext = $this->codegen->writeBuildContext(
             $spec,
             $this->store->serverDir($spec->name),
+            $this->customCaCert(),
         );
         $this->store->save($spec);
 

@@ -116,29 +116,56 @@ class Codegen
      */
     public const FASTMCP_VERSION = '3.3.1';
 
-    public function generateDockerfile(ServerSpec $spec): string
+    /**
+     * @param ?string $customCa  PEM bundle to install as a trusted root before
+     *                           any network call. When non-null, the Dockerfile
+     *                           expects a sibling `custom-ca.crt` in the build
+     *                           context (writeBuildContext handles this).
+     */
+    public function generateDockerfile(ServerSpec $spec, ?string $customCa = null): string
     {
+        $lines = [
+            'FROM python:3.12-slim',
+            'WORKDIR /app',
+        ];
+
+        if ($this->hasCustomCa($customCa)) {
+            // Append the corp CA to the existing trust bundle BEFORE any
+            // network call. python:3.12-slim inherits ca-certificates from
+            // debian-slim, so /etc/ssl/certs/ca-certificates.crt already
+            // exists - we just edit it. This avoids the chicken-and-egg of
+            // needing TLS to apt-install ca-certificates to enable TLS.
+            $lines[] = 'COPY custom-ca.crt /usr/local/share/ca-certificates/custom-ca.crt';
+            $lines[] = 'RUN cat /usr/local/share/ca-certificates/custom-ca.crt >> /etc/ssl/certs/ca-certificates.crt \\';
+            $lines[] = '    && update-ca-certificates';
+            $lines[] = 'ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \\';
+            $lines[] = '    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \\';
+            $lines[] = '    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt';
+        }
+
+        if ($spec->aptPackages) {
+            $apt = implode(' ', $spec->aptPackages);
+            $lines[] = "RUN apt-get update && apt-get install -y --no-install-recommends {$apt} && rm -rf /var/lib/apt/lists/*";
+        }
+
         $pipInstall = 'fastmcp=='.self::FASTMCP_VERSION;
         if ($spec->pipPackages) {
             $pipInstall .= ' '.implode(' ', $spec->pipPackages);
         }
-        $lines = [
-            'FROM python:3.12-slim',
-            'WORKDIR /app',
-            "RUN pip install --no-cache-dir {$pipInstall}",
-            'COPY server.py .',
-            'EXPOSE 8000',
-            'CMD ["python", "server.py"]',
-            '',
-        ];
+        $lines[] = "RUN pip install --no-cache-dir {$pipInstall}";
+        $lines[] = 'COPY server.py .';
+        $lines[] = 'EXPOSE 8000';
+        $lines[] = 'CMD ["python", "server.py"]';
+        $lines[] = '';
         return implode("\n", $lines);
     }
 
     /**
-     * Write server.py and Dockerfile into a build-context directory.
-     * In code mode, the user's source is written verbatim (no codegen).
+     * Write server.py, Dockerfile, and optionally custom-ca.crt into a
+     * build-context directory. In code mode, the user's source is written
+     * verbatim (no codegen).
      */
-    public function writeBuildContext(ServerSpec $spec, string $outputDir): string
+    public function writeBuildContext(ServerSpec $spec, string $outputDir, ?string $customCa = null): string
     {
         if (! is_dir($outputDir)) {
             mkdir($outputDir, 0755, true);
@@ -148,8 +175,22 @@ class Codegen
             : $this->generateServerPy($spec);
 
         file_put_contents($outputDir.'/server.py', $serverPy);
-        file_put_contents($outputDir.'/Dockerfile', $this->generateDockerfile($spec));
+        file_put_contents($outputDir.'/Dockerfile', $this->generateDockerfile($spec, $customCa));
+
+        $caPath = $outputDir.'/custom-ca.crt';
+        if ($this->hasCustomCa($customCa)) {
+            file_put_contents($caPath, $customCa);
+        } else {
+            // Drop stale CA from a prior build so the Dockerfile and context stay in sync.
+            @unlink($caPath);
+        }
+
         return $outputDir;
+    }
+
+    private function hasCustomCa(?string $ca): bool
+    {
+        return $ca !== null && trim($ca) !== '';
     }
 
     /** @param array<string, mixed> $p */

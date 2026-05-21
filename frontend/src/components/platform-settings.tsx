@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -13,7 +14,7 @@ import {
 } from "@/components/ui/card";
 import { EnvVarsEditor } from "@/components/env-vars-editor";
 import type { EnvVar } from "@/lib/api";
-import { ArrowLeft, Boxes, Container, Globe, Lock, Save, Shield, Trash2, Upload, Variable } from "lucide-react";
+import { ArrowLeft, Boxes, Container, Globe, KeyRound, Lock, Save, Shield, Trash2, Upload, Variable } from "lucide-react";
 
 interface PlatformSettingsProps {
   onBack: () => void;
@@ -36,6 +37,10 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
   const [registryPassword, setRegistryPassword] = useState("");
   const [passwordClearRequested, setPasswordClearRequested] = useState(false);
   const [registryPasswordConfigured, setRegistryPasswordConfigured] = useState(false);
+  const [customCaConfigured, setCustomCaConfigured] = useState(false);
+  const [customCaInput, setCustomCaInput] = useState("");
+  const [savingCustomCa, setSavingCustomCa] = useState(false);
+  const [customCaError, setCustomCaError] = useState<string | null>(null);
   const [globalEnvVars, setGlobalEnvVars] = useState<EnvVar[]>([]);
   const [savedGlobalEnvVars, setSavedGlobalEnvVars] = useState<EnvVar[]>([]);
   const [savingGlobalEnv, setSavingGlobalEnv] = useState(false);
@@ -66,6 +71,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       setRegistryPasswordConfigured(data.docker_registry_password_configured);
       setRegistryPassword("");
       setPasswordClearRequested(false);
+      setCustomCaConfigured(data.custom_ca_cert_configured);
       try {
         const envData = await api.getMcpEnvSettings();
         setGlobalEnvVars(envData.env_vars);
@@ -180,6 +186,33 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete");
+    }
+  }
+
+  async function handleSaveCustomCa() {
+    setCustomCaError(null);
+    setSavingCustomCa(true);
+    try {
+      const r = await api.updateCustomCa(customCaInput);
+      setCustomCaConfigured(r.custom_ca_cert_configured);
+      setCustomCaInput("");
+    } catch (e) {
+      setCustomCaError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSavingCustomCa(false);
+    }
+  }
+
+  async function handleDeleteCustomCa() {
+    if (!confirm("Remove the platform CA bundle? Subsequent server builds won't trust it.")) {
+      return;
+    }
+    setCustomCaError(null);
+    try {
+      const r = await api.deleteCustomCa();
+      setCustomCaConfigured(r.custom_ca_cert_configured);
+    } catch (e) {
+      setCustomCaError(e instanceof Error ? e.message : "Failed to delete");
     }
   }
 
@@ -441,6 +474,58 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
               >
                 <Trash2 className="mr-1 h-4 w-4" />
                 Remove Certificate
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5" />
+            Custom CA bundle
+          </CardTitle>
+          <CardDescription>
+            Baked into every spawned MCP server image so apt-get, pip, and the server's
+            own outbound HTTPS calls trust your corporate root or proxy CA. Paste a PEM
+            bundle (one or more <code className="rounded bg-muted px-1">-----BEGIN CERTIFICATE-----</code>{" "}
+            blocks). Takes effect on the next server rebuild.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Badge variant={customCaConfigured ? "default" : "secondary"}>
+              <Shield className="mr-1 h-3 w-3" />
+              {customCaConfigured ? "CA installed" : "No custom CA"}
+            </Badge>
+          </div>
+
+          <div className="grid gap-2">
+            <Label>PEM bundle</Label>
+            <Textarea
+              className="min-h-[160px] font-mono text-xs"
+              placeholder={"-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----"}
+              value={customCaInput}
+              onChange={(e) => setCustomCaInput(e.target.value)}
+            />
+          </div>
+
+          {customCaError && <p className="text-sm text-destructive">{customCaError}</p>}
+
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={handleSaveCustomCa}
+              disabled={savingCustomCa || !customCaInput.trim()}
+              size="sm"
+            >
+              <Save className="mr-1 h-4 w-4" />
+              {savingCustomCa ? "Saving..." : customCaConfigured ? "Replace CA bundle" : "Save CA bundle"}
+            </Button>
+            {customCaConfigured && (
+              <Button variant="destructive" size="sm" onClick={handleDeleteCustomCa}>
+                <Trash2 className="mr-1 h-4 w-4" />
+                Remove CA bundle
               </Button>
             )}
           </div>

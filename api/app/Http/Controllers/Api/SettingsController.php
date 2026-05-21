@@ -19,6 +19,7 @@ class SettingsController extends Controller
     public const SETTING_DOCKER_REGISTRY = 'docker_registry';
     public const SETTING_DOCKER_REGISTRY_USERNAME = 'docker_registry_username';
     public const SETTING_DOCKER_REGISTRY_PASSWORD = 'docker_registry_password';
+    public const SETTING_CUSTOM_CA_CERT = 'custom_ca_cert';
 
     public function __construct(
         private readonly DockerClient $docker,
@@ -43,7 +44,28 @@ class SettingsController extends Controller
             'docker_registry_effective' => $this->dockerRegistryPrefix() ?? '',
             'docker_registry_username' => (string) PlatformSetting::get(self::SETTING_DOCKER_REGISTRY_USERNAME, ''),
             'docker_registry_password_configured' => $this->dockerRegistryPasswordConfigured(),
+            // Don't return the PEM contents - just whether one is configured.
+            // The cert is public by nature, but the index endpoint is for confirmation
+            // not retrieval - keeps the payload small.
+            'custom_ca_cert_configured' => trim((string) PlatformSetting::get(self::SETTING_CUSTOM_CA_CERT, '')) !== '',
         ]);
+    }
+
+    public function updateCustomCa(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'cert' => ['required', 'string', 'max:262144'],
+        ]);
+        // Permissive: store whatever bytes the user pastes. Build-time errors
+        // surface clearly if the content isn't a valid PEM bundle.
+        PlatformSetting::put(self::SETTING_CUSTOM_CA_CERT, $data['cert']);
+        return response()->json(['custom_ca_cert_configured' => true]);
+    }
+
+    public function deleteCustomCa(): JsonResponse
+    {
+        PlatformSetting::put(self::SETTING_CUSTOM_CA_CERT, '');
+        return response()->json(['custom_ca_cert_configured' => false]);
     }
 
     public function getMcpEnv(): JsonResponse

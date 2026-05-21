@@ -95,6 +95,67 @@ test('Dockerfile lists pip packages alongside pinned fastmcp', function () {
     expect($df)->toContain('CMD ["python", "server.py"]');
 });
 
+test('Dockerfile: no CA + no apt packages produces the minimal stack (regression)', function () {
+    $cg = new Codegen();
+    $spec = ServerSpec::fromArray(['name' => 'demo']);
+    $df = $cg->generateDockerfile($spec);
+    expect($df)->not->toContain('custom-ca.crt');
+    expect($df)->not->toContain('apt-get');
+    expect($df)->not->toContain('PIP_CERT');
+});
+
+test('Dockerfile: apt packages install with --no-install-recommends and cache cleanup', function () {
+    $cg = new Codegen();
+    $spec = ServerSpec::fromArray([
+        'name' => 'demo',
+        'apt_packages' => ['git', 'curl'],
+    ]);
+    $df = $cg->generateDockerfile($spec);
+    expect($df)->toContain('RUN apt-get update && apt-get install -y --no-install-recommends git curl && rm -rf /var/lib/apt/lists/*');
+});
+
+test('Dockerfile: custom CA trust is established before any network call', function () {
+    $cg = new Codegen();
+    $spec = ServerSpec::fromArray([
+        'name' => 'demo',
+        'apt_packages' => ['git'],
+        'pip_packages' => ['requests'],
+    ]);
+    $df = $cg->generateDockerfile($spec, "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
+
+    // Sequence matters: COPY CA -> append to bundle -> ENV -> apt -> pip
+    $caCopy  = strpos($df, 'COPY custom-ca.crt');
+    $bundle  = strpos($df, 'cat /usr/local/share/ca-certificates/custom-ca.crt >> /etc/ssl/certs/ca-certificates.crt');
+    $envPip  = strpos($df, 'PIP_CERT=/etc/ssl/certs/ca-certificates.crt');
+    $apt     = strpos($df, 'apt-get update');
+    $pip     = strpos($df, 'pip install');
+
+    expect($caCopy)->toBeLessThan($bundle);
+    expect($bundle)->toBeLessThan($envPip);
+    expect($envPip)->toBeLessThan($apt);
+    expect($apt)->toBeLessThan($pip);
+    expect($df)->toContain('REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt');
+    expect($df)->toContain('SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt');
+});
+
+test('writeBuildContext writes custom-ca.crt only when CA is set, removes stale CA otherwise', function () {
+    $cg = new Codegen();
+    $spec = ServerSpec::fromArray(['name' => 'demo']);
+    $dir = sys_get_temp_dir().'/codegen-ca-'.bin2hex(random_bytes(4));
+
+    $pem = "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n";
+    $cg->writeBuildContext($spec, $dir, $pem);
+    expect(file_get_contents($dir.'/custom-ca.crt'))->toBe($pem);
+
+    // Rebuild with CA removed - stale file should be cleaned up.
+    $cg->writeBuildContext($spec, $dir, null);
+    expect(file_exists($dir.'/custom-ca.crt'))->toBeFalse();
+
+    @unlink($dir.'/server.py');
+    @unlink($dir.'/Dockerfile');
+    @rmdir($dir);
+});
+
 test('no auth: no auth imports and no auth= arg on FastMCP', function () {
     $cg = new Codegen();
     $spec = ServerSpec::fromArray([

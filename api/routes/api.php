@@ -67,6 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/servers/{name}/primitives/{prim_name}', [ServerController::class, 'updatePrimitive']);
     Route::delete('/servers/{name}/primitives/{prim_name}', [ServerController::class, 'deletePrimitive']);
     Route::put('/servers/{name}/packages', [ServerController::class, 'updatePackages']);
+    Route::put('/servers/{name}/apt-packages', [ServerController::class, 'updateAptPackages']);
     Route::put('/servers/{name}/env', [ServerController::class, 'updateEnv']);
     Route::put('/servers/{name}/config', [ServerController::class, 'updateConfig']);
     Route::put('/servers/{name}/source', [ServerController::class, 'updateSource']);
@@ -98,6 +99,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/settings/docker-registry', [SettingsController::class, 'updateDockerRegistry']);
         Route::post('/settings/certificate', [SettingsController::class, 'uploadCertificate']);
         Route::delete('/settings/certificate', [SettingsController::class, 'deleteCertificate']);
+        Route::put('/settings/custom-ca', [SettingsController::class, 'updateCustomCa']);
+        Route::delete('/settings/custom-ca', [SettingsController::class, 'deleteCustomCa']);
         Route::get('/settings/mcp-env', [SettingsController::class, 'getMcpEnv']);
         Route::put('/settings/mcp-env', [SettingsController::class, 'putMcpEnv']);
     });

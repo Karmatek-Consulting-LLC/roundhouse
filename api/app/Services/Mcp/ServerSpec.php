@@ -35,6 +35,7 @@ final class ServerSpec
         public string $mode = self::MODE_STRUCTURED,
         public ?string $source = null,
         public array $tokens = [],
+        public array $aptPackages = [],
     ) {}
 
     public function isCodeMode(): bool
@@ -78,6 +79,7 @@ final class ServerSpec
             replicas: $replicas,
             mode: $mode,
             source: $source,
+            aptPackages: self::stringList($data['apt_packages'] ?? []),
         );
     }
 
@@ -94,6 +96,7 @@ final class ServerSpec
             'replicas' => $this->replicas,
             'mode' => $this->mode,
             'source' => $this->source,
+            'apt_packages' => $this->aptPackages,
         ];
     }
 

@@ -381,6 +381,8 @@ class ServerController extends Controller
             'imports.*' => ['string'],
             'pip_packages' => ['sometimes', 'array'],
             'pip_packages.*' => ['string'],
+            'apt_packages' => ['sometimes', 'array'],
+            'apt_packages.*' => ['string', 'regex:/^[a-zA-Z0-9][a-zA-Z0-9+._:=~-]*$/'],
             'env_global_imports' => ['sometimes', 'array'],
             'env_global_imports.*' => ['string'],
             'env_vars' => ['sometimes', 'array'],
@@ -395,8 +397,23 @@ class ServerController extends Controller
         $this->assertStructuredMode($spec, 'update config (imports)');
         $spec->imports = array_values($data['imports'] ?? []);
         $spec->pipPackages = array_values($data['pip_packages'] ?? []);
+        $spec->aptPackages = array_values($data['apt_packages'] ?? []);
         $spec->envGlobalImports = ServerSpec::normalizeEnvImports($data['env_global_imports'] ?? []);
         $spec->envVars = $this->parseEnvVars($data['env_vars'] ?? []);
+        return $this->redeployAndRespond($spec);
+    }
+
+    public function updateAptPackages(Request $request, string $name): JsonResponse
+    {
+        $data = $request->validate([
+            'apt_packages' => ['required', 'array'],
+            // Tight enough to keep this off the apt CLI's argv-injection surface
+            // while still permitting versioned package names like libpq5=15.4-1.
+            'apt_packages.*' => ['string', 'regex:/^[a-zA-Z0-9][a-zA-Z0-9+._:=~-]*$/'],
+        ]);
+        $this->assertAccess($request->user(), $name);
+        $spec = $this->ensureSpec($name);
+        $spec->aptPackages = array_values($data['apt_packages']);
         return $this->redeployAndRespond($spec);
     }
 
@@ -597,6 +614,7 @@ class ServerController extends Controller
             'imports' => $spec?->imports ?? [],
             'primitives' => $spec?->primitives ?? [],
             'pip_packages' => $spec?->pipPackages ?? [],
+            'apt_packages' => $spec?->aptPackages ?? [],
             'env_global_imports' => $spec?->envGlobalImports ?? [],
             'env_vars' => array_map(fn (EnvVar $v) => $v->toArray(), $spec?->envVars ?? []),
             'global_env' => array_map(fn (EnvVar $v) => $v->toArray(), $this->globals->all()),
