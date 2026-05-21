@@ -8,6 +8,13 @@ namespace App\Services\Mcp;
  */
 class Codegen
 {
+    /**
+     * Optional formatter applied to the generated server.py. Null in unit tests
+     * (so assertions match raw codegen output); Laravel auto-resolves the real
+     * PythonFormatter via the container in production.
+     */
+    public function __construct(public readonly ?PythonFormatter $formatter = null) {}
+
     private const PYTHON_TYPE_MAP = [
         'str' => 'str',
         'int' => 'int',
@@ -69,7 +76,8 @@ class Codegen
         $lines[] = '        json_response=True,';
         $lines[] = '    )';
         $lines[] = '';
-        return implode("\n", $lines);
+        $output = implode("\n", $lines);
+        return $this->formatter?->format($output) ?? $output;
     }
 
     /** @param array<int, array<string, mixed>> $primitives */

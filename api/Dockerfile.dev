@@ -5,6 +5,7 @@ RUN apk add --no-cache \
         tar netcat-openbsd git unzip \
         postgresql-libs postgresql-dev \
         libzip-dev oniguruma-dev \
+        ruff \
     && docker-php-ext-install pdo pdo_pgsql bcmath zip opcache \
     && apk del postgresql-dev \
     && rm -rf /var/cache/apk/*

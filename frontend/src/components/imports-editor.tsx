@@ -29,7 +29,7 @@ export function ImportsEditor({ imports, onChange }: ImportsEditorProps) {
         <Label className="text-sm font-medium">Python Imports</Label>
       </div>
       <p className="text-xs text-muted-foreground">
-        Import statements available to all primitives. One per line.
+        Import statements and global vars available to all primitives. One per line.
       </p>
       <div className="rounded-md border overflow-hidden">
         <CodeMirror

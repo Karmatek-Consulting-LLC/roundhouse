@@ -53,6 +53,10 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
 # up build deps automatically so the final layer stays slim.
 RUN install-php-extensions pdo_pgsql bcmath zip opcache pcntl
 
+# ruff is used by Codegen to format generated server.py files. Native binary,
+# no Python dependency; missing it degrades to unformatted output, not failure.
+RUN apk add --no-cache ruff
+
 # Composer binary is needed in runtime to dump-autoload after app code lands.
 COPY --from=vendor /usr/bin/composer /usr/local/bin/composer
 
@@ -73,7 +77,6 @@ COPY templates/ /var/www/html/templates/
 RUN mkdir -p \
         storage/app/servers \
         storage/app/traefik/dynamic \
-        storage/app/traefik/certs \
         storage/framework/cache \
         storage/framework/sessions \
         storage/framework/views \
