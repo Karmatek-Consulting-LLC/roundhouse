@@ -6,10 +6,12 @@ import react from "@vitejs/plugin-react"
 const apiProxyTarget =
   process.env.API_PROXY_TARGET ?? "http://127.0.0.1:8000"
 
-export default defineConfig({
-  // Built assets are served from /frontend/* so they don't collide with
-  // Laravel's own public/ files (favicon.ico, robots.txt, index.php).
-  base: "/frontend/",
+export default defineConfig(({ command }) => ({
+  // Production build: assets land in public/frontend/* so they don't collide
+  // with Laravel's own public/ files (favicon.ico, robots.txt, index.php).
+  // Dev server: serve at /, since Traefik routes /* straight to Vite and
+  // there is no Laravel shell HTML to anchor a /frontend/ prefix off of.
+  base: command === "build" ? "/frontend/" : "/",
   plugins: [react()],
   resolve: {
     alias: {
@@ -29,4 +31,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))
