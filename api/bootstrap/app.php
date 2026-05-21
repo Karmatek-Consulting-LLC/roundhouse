@@ -22,6 +22,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [ForceJsonResponse::class]);
         // Preserve raw Python source byte-for-byte (trailing newlines matter).
         $middleware->trimStrings(except: ['source']);
+        // The server-management endpoints carry user-authored code, imports
+        // (with intentional blank-line separators), and other free-form text
+        // where "" is meaningfully distinct from null. Skip the middleware
+        // that would otherwise rewrite "" → null before validation runs.
+        $middleware->convertEmptyStringsToNull(except: [
+            fn (Request $request) => $request->is('api/servers/*'),
+        ]);
         $middleware->alias([
             'superadmin' => RequireSuperadmin::class,
         ]);

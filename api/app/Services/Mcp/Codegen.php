@@ -50,10 +50,12 @@ class Codegen
         if ($authImports) {
             $importLines[] = 'from fastmcp.server.auth import '.implode(', ', $authImports);
         }
+        // Keep blank lines - this field now holds imports + module-level vars,
+        // and the vertical spacing between them is user-meaningful (ruff format
+        // normalizes the exact gap, but we have to preserve the *presence* of
+        // a separator line).
         foreach ($spec->imports as $extra) {
-            if ($extra !== '') {
-                $importLines[] = $extra;
-            }
+            $importLines[] = $extra;
         }
 
         $mcpArgs = [$this->pyString($spec->name)];

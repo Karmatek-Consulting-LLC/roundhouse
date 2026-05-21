@@ -156,6 +156,21 @@ test('writeBuildContext writes custom-ca.crt only when CA is set, removes stale 
     @rmdir($dir);
 });
 
+test('imports field preserves blank lines between imports and module-level statements', function () {
+    // Regression: codegen used to filter empty strings out of $spec->imports,
+    // collapsing user-intended separators (e.g. between imports and a global
+    // var) into a single block.
+    $cg = new Codegen();
+    $spec = ServerSpec::fromArray([
+        'name' => 'demo',
+        'imports' => ['import os', 'import pymongo', '', 'GLOBAL_FOO = "BAR"'],
+    ]);
+    $py = $cg->generateServerPy($spec);
+    assertValidPython($py, 'imports with blank line');
+    // The blank line between the last import and GLOBAL_FOO survives codegen.
+    expect($py)->toMatch('/import pymongo\n\nGLOBAL_FOO = "BAR"/');
+});
+
 test('no auth: no auth imports and no auth= arg on FastMCP', function () {
     $cg = new Codegen();
     $spec = ServerSpec::fromArray([

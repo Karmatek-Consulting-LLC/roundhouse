@@ -201,8 +201,10 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
     setDeployError(null);
     try {
       const filteredLocals = localEnvBindings.env_vars.filter((v) => v.name.trim());
-      const cleanImports = localImports.filter((i) => i.trim());
-      await api.deployConfig(serverName, cleanImports, localPackages, localAptPackages, {
+      // Pass imports through verbatim - blank lines are intentional separators
+      // between imports and module-level statements (globals etc.). Codegen +
+      // ruff format handle final spacing.
+      await api.deployConfig(serverName, localImports, localPackages, localAptPackages, {
         env_global_imports: localEnvBindings.env_global_imports,
         env_vars: filteredLocals,
       });
