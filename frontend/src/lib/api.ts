@@ -528,8 +528,8 @@ export const api = {
   // Settings
   getSettings: () => request<{
     hostname: string;
-    tls_enabled: boolean;
-    has_certificate: boolean;
+    /** True when public URLs use https:// (TLS terminated upstream). */
+    external_https: boolean;
     base_url: string;
     default_mcp_server_replicas: number;
     max_mcp_server_replicas: number;
@@ -564,36 +564,15 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-  updateHostname: async (hostname: string) => {
-    const token = localStorage.getItem("token");
-    const form = new FormData();
-    form.append("hostname", hostname);
-    const res = await fetch("/api/settings/hostname", {
+  updateHostname: (hostname: string, external_https: boolean) =>
+    request<{
+      hostname: string;
+      external_https: boolean;
+      base_url: string;
+    }>("/settings/hostname", {
       method: "PUT",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    });
-    if (!res.ok) throw new Error("Failed to update hostname");
-    return res.json();
-  },
-  uploadCertificate: async (cert: File, key: File) => {
-    const token = localStorage.getItem("token");
-    const form = new FormData();
-    form.append("cert", cert);
-    form.append("key", key);
-    const res = await fetch("/api/settings/certificate", {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail ?? "Failed to upload certificate");
-    }
-    return res.json();
-  },
-  deleteCertificate: () =>
-    request<{ tls_enabled: boolean }>("/settings/certificate", { method: "DELETE" }),
+      body: JSON.stringify({ hostname, external_https }),
+    }),
   getMcpEnvSettings: () => request<{ env_vars: EnvVar[] }>("/settings/mcp-env"),
   putMcpEnvSettings: (env_vars: EnvVar[]) =>
     request<{ env_vars: EnvVar[] }>("/settings/mcp-env", {

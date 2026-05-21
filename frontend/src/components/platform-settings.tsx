@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,14 @@ import {
 } from "@/components/ui/card";
 import { EnvVarsEditor } from "@/components/env-vars-editor";
 import type { EnvVar } from "@/lib/api";
-import { ArrowLeft, Boxes, Container, Globe, KeyRound, Lock, Save, Shield, Trash2, Upload, Variable } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ArrowLeft, Boxes, Container, Globe, KeyRound, Save, Shield, Trash2, Variable } from "lucide-react";
 
 interface PlatformSettingsProps {
   onBack: () => void;
@@ -23,8 +30,8 @@ interface PlatformSettingsProps {
 export function PlatformSettings({ onBack }: PlatformSettingsProps) {
   const [hostname, setHostname] = useState("");
   const [savedHostname, setSavedHostname] = useState("");
-  const [tlsEnabled, setTlsEnabled] = useState(false);
-  const [hasCert, setHasCert] = useState(false);
+  const [scheme, setScheme] = useState<"http" | "https">("http");
+  const [savedScheme, setSavedScheme] = useState<"http" | "https">("http");
   const [baseUrl, setBaseUrl] = useState("");
   const [defaultReplicas, setDefaultReplicas] = useState<number | null>(null);
   const [maxReplicas, setMaxReplicas] = useState<number | null>(null);
@@ -47,18 +54,16 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingRegistry, setSavingRegistry] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const certRef = useRef<HTMLInputElement>(null);
-  const keyRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     try {
       const data = await api.getSettings();
       setHostname(data.hostname);
       setSavedHostname(data.hostname);
-      setTlsEnabled(data.tls_enabled);
-      setHasCert(data.has_certificate);
+      const initialScheme = data.external_https ? "https" : "http";
+      setScheme(initialScheme);
+      setSavedScheme(initialScheme);
       setBaseUrl(data.base_url);
       setDefaultReplicas(data.default_mcp_server_replicas);
       setMaxReplicas(data.max_mcp_server_replicas);
@@ -144,48 +149,14 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
     setSaving(true);
     setError(null);
     try {
-      const data = await api.updateHostname(hostname);
+      const data = await api.updateHostname(hostname, scheme === "https");
       setSavedHostname(hostname);
+      setSavedScheme(scheme);
       setBaseUrl(data.base_url);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleUploadCert() {
-    const certFile = certRef.current?.files?.[0];
-    const keyFile = keyRef.current?.files?.[0];
-    if (!certFile || !keyFile) {
-      setError("Select both certificate and key files");
-      return;
-    }
-    setUploading(true);
-    setError(null);
-    try {
-      const data = await api.uploadCertificate(certFile, keyFile);
-      setTlsEnabled(data.tls_enabled);
-      setHasCert(true);
-      setBaseUrl(data.base_url);
-      if (certRef.current) certRef.current.value = "";
-      if (keyRef.current) keyRef.current.value = "";
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to upload");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handleDeleteCert() {
-    setError(null);
-    try {
-      const data = await api.deleteCertificate();
-      setTlsEnabled(data.tls_enabled);
-      setHasCert(false);
-      refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete");
     }
   }
 
@@ -400,11 +371,23 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
             Hostname
           </CardTitle>
           <CardDescription>
-            Set the public hostname used in MCP server URLs.
+            Public hostname and scheme used to build URLs for MCP servers. TLS
+            is terminated upstream of this stack; pick <code className="rounded bg-muted px-1">https</code>{" "}
+            when an external Traefik or cluster ingress fronts this app with a cert.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={scheme} onValueChange={(v) => setScheme(v as "http" | "https")}>
+              <SelectTrigger className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="http">http</SelectItem>
+                <SelectItem value="https">https</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground">://</span>
             <Input
               placeholder="mcp.yourcompany.com"
               value={hostname}
@@ -413,7 +396,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
             />
             <Button
               onClick={handleSaveHostname}
-              disabled={saving || hostname === savedHostname}
+              disabled={saving || (hostname === savedHostname && scheme === savedScheme)}
               size="sm"
             >
               <Save className="mr-1 h-4 w-4" />
@@ -425,57 +408,6 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
               {baseUrl}
             </code>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lock className="h-5 w-5" />
-            TLS Certificate
-          </CardTitle>
-          <CardDescription>
-            Upload a TLS certificate and private key for HTTPS. Traefik picks up changes automatically.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Badge variant={tlsEnabled ? "default" : "secondary"}>
-              <Shield className="mr-1 h-3 w-3" />
-              {tlsEnabled ? "TLS Enabled" : "TLS Disabled"}
-            </Badge>
-            {hasCert && (
-              <Badge variant="outline">Certificate installed</Badge>
-            )}
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label>Certificate (PEM)</Label>
-              <Input ref={certRef} type="file" accept=".pem,.crt,.cer" />
-            </div>
-            <div className="grid gap-2">
-              <Label>Private Key (PEM)</Label>
-              <Input ref={keyRef} type="file" accept=".pem,.key" />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button onClick={handleUploadCert} disabled={uploading} size="sm">
-              <Upload className="mr-1 h-4 w-4" />
-              {uploading ? "Uploading..." : "Upload & Enable TLS"}
-            </Button>
-            {hasCert && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleDeleteCert}
-              >
-                <Trash2 className="mr-1 h-4 w-4" />
-                Remove Certificate
-              </Button>
-            )}
           </div>
         </CardContent>
       </Card>

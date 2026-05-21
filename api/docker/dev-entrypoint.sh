@@ -27,7 +27,7 @@ fi
 
 php artisan migrate --force --seed || true
 
-mkdir -p storage/app/servers storage/app/traefik/dynamic storage/app/traefik/certs
+mkdir -p storage/app/servers storage/app/traefik/dynamic
 chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
 
 # --- Lifecycle cleanup ---

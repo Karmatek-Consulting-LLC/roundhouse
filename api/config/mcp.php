@@ -34,19 +34,16 @@ return [
         : base_path('../templates'),
 
     /*
-     * Directory Traefik watches for dynamic config (TLS etc.).
+     * Directory Traefik watches for dynamic config (per-server routes).
      */
     'traefik_dynamic_dir' => env('MCP_TRAEFIK_DYNAMIC_DIR', storage_path('app/traefik/dynamic')),
 
     /*
-     * Directory where uploaded TLS certs are staged for Traefik.
+     * Traefik entrypoints applied to generated per-server routers. TLS is
+     * terminated upstream of this stack (cluster ingress / frontend Traefik),
+     * so the embedded Traefik only listens on `web` and forwards plain HTTP.
      */
-    'traefik_certs_dir' => env('MCP_TRAEFIK_CERTS_DIR', storage_path('app/traefik/certs')),
-
-    /*
-     * Traefik entrypoints applied to generated routers.
-     */
-    'traefik_entrypoints' => env('MCP_TRAEFIK_ENTRYPOINTS', 'web,websecure'),
+    'traefik_entrypoints' => env('MCP_TRAEFIK_ENTRYPOINTS', 'web'),
 
     /*
      * Replica bounds for Swarm-mode services.

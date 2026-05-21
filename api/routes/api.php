@@ -97,8 +97,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/settings', [SettingsController::class, 'index']);
         Route::put('/settings/hostname', [SettingsController::class, 'updateHostname']);
         Route::put('/settings/docker-registry', [SettingsController::class, 'updateDockerRegistry']);
-        Route::post('/settings/certificate', [SettingsController::class, 'uploadCertificate']);
-        Route::delete('/settings/certificate', [SettingsController::class, 'deleteCertificate']);
         Route::put('/settings/custom-ca', [SettingsController::class, 'updateCustomCa']);
         Route::delete('/settings/custom-ca', [SettingsController::class, 'deleteCustomCa']);
         Route::get('/settings/mcp-env', [SettingsController::class, 'getMcpEnv']);

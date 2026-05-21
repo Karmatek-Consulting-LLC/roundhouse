@@ -10,12 +10,11 @@ use App\Services\Mcp\GlobalEnvVars;
 use App\Services\Mcp\ServerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class SettingsController extends Controller
 {
     public const SETTING_HOSTNAME = 'hostname';
-    public const SETTING_TLS_ENABLED = 'tls_enabled';
+    public const SETTING_EXTERNAL_HTTPS = 'external_https';
     public const SETTING_DOCKER_REGISTRY = 'docker_registry';
     public const SETTING_DOCKER_REGISTRY_USERNAME = 'docker_registry_username';
     public const SETTING_DOCKER_REGISTRY_PASSWORD = 'docker_registry_password';
@@ -29,13 +28,12 @@ class SettingsController extends Controller
 
     public function index(): JsonResponse
     {
-        $certsDir = config('mcp.traefik_certs_dir');
-        $hasCert = is_file(rtrim((string) $certsDir, '/').'/cert.pem');
-
         return response()->json([
             'hostname' => (string) PlatformSetting::get(self::SETTING_HOSTNAME, ''),
-            'tls_enabled' => PlatformSetting::get(self::SETTING_TLS_ENABLED, '') === 'true',
-            'has_certificate' => $hasCert,
+            // True when the public URL is HTTPS (TLS terminated upstream by
+            // cluster ingress / frontend Traefik / whatever). Drives the
+            // scheme in generated server URLs.
+            'external_https' => PlatformSetting::get(self::SETTING_EXTERNAL_HTTPS, '') === 'true',
             'base_url' => $this->baseUrl(),
             'default_mcp_server_replicas' => (int) config('mcp.default_server_replicas'),
             'max_mcp_server_replicas' => (int) config('mcp.max_server_replicas'),
@@ -100,12 +98,19 @@ class SettingsController extends Controller
     {
         $data = $request->validate([
             'hostname' => ['required', 'string'],
+            // Optional - the UI saves scheme + hostname together so the
+            // public base URL stays consistent.
+            'external_https' => ['sometimes', 'boolean'],
         ]);
         $hostname = trim($data['hostname']);
         PlatformSetting::put(self::SETTING_HOSTNAME, $hostname);
+        if (array_key_exists('external_https', $data)) {
+            PlatformSetting::put(self::SETTING_EXTERNAL_HTTPS, $data['external_https'] ? 'true' : 'false');
+        }
 
         return response()->json([
             'hostname' => $hostname,
+            'external_https' => PlatformSetting::get(self::SETTING_EXTERNAL_HTTPS, '') === 'true',
             'base_url' => $this->baseUrl(),
         ]);
     }
@@ -134,66 +139,14 @@ class SettingsController extends Controller
         ]);
     }
 
-    public function uploadCertificate(Request $request): JsonResponse
-    {
-        $request->validate([
-            'cert' => ['required', 'file'],
-            'key' => ['required', 'file'],
-        ]);
-
-        $certContent = $request->file('cert')->get();
-        $keyContent = $request->file('key')->get();
-
-        if (! str_contains($certContent, 'BEGIN CERTIFICATE')) {
-            throw new HttpException(400, 'Invalid certificate file (expected PEM format)');
-        }
-        if (! str_contains($keyContent, 'PRIVATE KEY')) {
-            throw new HttpException(400, 'Invalid key file (expected PEM format)');
-        }
-
-        $certsDir = (string) config('mcp.traefik_certs_dir');
-        if (! is_dir($certsDir)) {
-            mkdir($certsDir, 0755, true);
-        }
-        file_put_contents($certsDir.'/cert.pem', $certContent);
-        file_put_contents($certsDir.'/key.pem', $keyContent);
-
-        PlatformSetting::put(self::SETTING_TLS_ENABLED, 'true');
-        $this->writeTraefikTlsConfig();
-
-        return response()->json([
-            'tls_enabled' => true,
-            'base_url' => $this->baseUrl(),
-        ]);
-    }
-
-    public function deleteCertificate(): JsonResponse
-    {
-        $certsDir = (string) config('mcp.traefik_certs_dir');
-        foreach (['cert.pem', 'key.pem'] as $f) {
-            $path = $certsDir.'/'.$f;
-            if (is_file($path)) {
-                @unlink($path);
-            }
-        }
-
-        PlatformSetting::put(self::SETTING_TLS_ENABLED, 'false');
-        $this->writeTraefikTlsConfig();
-
-        return response()->json([
-            'tls_enabled' => false,
-            'base_url' => $this->baseUrl(),
-        ]);
-    }
-
     private function baseUrl(): string
     {
         $hostname = (string) PlatformSetting::get(self::SETTING_HOSTNAME, '');
         if ($hostname === '') {
             return (string) config('mcp.base_url');
         }
-        $tls = PlatformSetting::get(self::SETTING_TLS_ENABLED, '') === 'true';
-        $scheme = $tls ? 'https' : 'http';
+        $https = PlatformSetting::get(self::SETTING_EXTERNAL_HTTPS, '') === 'true';
+        $scheme = $https ? 'https' : 'http';
         return "{$scheme}://{$hostname}";
     }
 
@@ -213,31 +166,4 @@ class SettingsController extends Controller
         return trim((string) PlatformSetting::get(self::SETTING_DOCKER_REGISTRY_PASSWORD, '')) !== '';
     }
 
-    private function writeTraefikTlsConfig(): void
-    {
-        $certsDir = (string) config('mcp.traefik_certs_dir');
-        $dynamicDir = (string) config('mcp.traefik_dynamic_dir');
-
-        $configPath = $dynamicDir.'/tls.yml';
-        $certExists = is_file($certsDir.'/cert.pem') && is_file($certsDir.'/key.pem');
-
-        if (! $certExists) {
-            if (is_file($configPath)) {
-                @unlink($configPath);
-            }
-            return;
-        }
-
-        if (! is_dir($dynamicDir)) {
-            mkdir($dynamicDir, 0755, true);
-        }
-
-        $yaml = "tls:\n"
-            ."  stores:\n"
-            ."    default:\n"
-            ."      defaultCertificate:\n"
-            ."        certFile: /etc/traefik/certs/cert.pem\n"
-            ."        keyFile: /etc/traefik/certs/key.pem\n";
-        file_put_contents($configPath, $yaml);
-    }
 }

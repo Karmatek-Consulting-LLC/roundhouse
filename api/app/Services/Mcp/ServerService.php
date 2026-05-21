@@ -139,8 +139,8 @@ class ServerService
         if ($hostname === '') {
             return (string) config('mcp.base_url');
         }
-        $tls = PlatformSetting::get('tls_enabled', '') === 'true';
-        $scheme = $tls ? 'https' : 'http';
+        $https = PlatformSetting::get('external_https', '') === 'true';
+        $scheme = $https ? 'https' : 'http';
         return "{$scheme}://{$hostname}";
     }
 }
