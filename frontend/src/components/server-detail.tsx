@@ -15,6 +15,7 @@ import { AddPrimitiveDialog } from "@/components/add-primitive-dialog";
 import { TestPrimitiveDialog } from "@/components/test-primitive-dialog";
 import { ImportsEditor } from "@/components/imports-editor";
 import { PackageManager } from "@/components/package-manager";
+import { AptPackageManager } from "@/components/apt-package-manager";
 import { ServerAuthPanel } from "@/components/server-auth-panel";
 import {
   ServerEnvBindingsEditor,
@@ -66,6 +67,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
   // Local config state (not yet deployed)
   const [localImports, setLocalImports] = useState<string[]>([]);
   const [localPackages, setLocalPackages] = useState<string[]>([]);
+  const [localAptPackages, setLocalAptPackages] = useState<string[]>([]);
   const [localEnvBindings, setLocalEnvBindings] = useState<ServerEnvBindings>({
     env_global_imports: [],
     env_vars: [],
@@ -100,6 +102,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
       setLocalDesc(data.description ?? "");
       setLocalImports(data.imports ?? []);
       setLocalPackages(data.pip_packages ?? []);
+      setLocalAptPackages(data.apt_packages ?? []);
       setLocalEnvBindings({
         env_global_imports: data.env_global_imports ?? [],
         env_vars: data.env_vars ?? [],
@@ -169,6 +172,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
     server !== null &&
     (JSON.stringify(localImports) !== JSON.stringify(server.imports ?? []) ||
       JSON.stringify(localPackages) !== JSON.stringify(server.pip_packages ?? []) ||
+      JSON.stringify(localAptPackages) !== JSON.stringify(server.apt_packages ?? []) ||
       JSON.stringify(localEnvBindings) !== JSON.stringify(savedEnv));
 
   const sourceDirty = isCodeMode && localSource !== (server?.source ?? "");
@@ -198,7 +202,7 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
     try {
       const filteredLocals = localEnvBindings.env_vars.filter((v) => v.name.trim());
       const cleanImports = localImports.filter((i) => i.trim());
-      await api.deployConfig(serverName, cleanImports, localPackages, {
+      await api.deployConfig(serverName, cleanImports, localPackages, localAptPackages, {
         env_global_imports: localEnvBindings.env_global_imports,
         env_vars: filteredLocals,
       });
@@ -470,11 +474,17 @@ export function ServerDetail({ serverName, onBack }: ServerDetailProps) {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
         <div className="rounded-lg border p-4">
           <PackageManager
             packages={localPackages}
             onChange={setLocalPackages}
+          />
+        </div>
+        <div className="rounded-lg border p-4">
+          <AptPackageManager
+            packages={localAptPackages}
+            onChange={setLocalAptPackages}
           />
         </div>
         <div className="rounded-lg border p-4">
