@@ -1,0 +1,979 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { api, type Primitive, type Server } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/status-badge";
+import { PrimitiveForm } from "@/components/primitive-form";
+import { ImportsEditor } from "@/components/imports-editor";
+import { PackageManager } from "@/components/package-manager";
+import { AptPackageManager } from "@/components/apt-package-manager";
+import {
+  ServerEnvBindingsEditor,
+  type ServerEnvBindings,
+} from "@/components/server-env-bindings-editor";
+import { ServerAuthPanel } from "@/components/server-auth-panel";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import CodeMirror from "@uiw/react-codemirror";
+import { python } from "@codemirror/lang-python";
+import { useTheme } from "@/hooks/use-theme";
+import {
+  ArrowLeft,
+  Boxes,
+  FileCode,
+  FileText,
+  KeyRound,
+  Loader2,
+  Package,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Rocket,
+  Settings,
+  Trash2,
+  Variable,
+} from "lucide-react";
+
+interface ServerEditProps {
+  serverName: string;
+}
+
+/**
+ * URL-driven selection. Selection paths kept short and human-readable so
+ * deep links are usable:
+ *   primitives/{name}   → a specific primitive
+ *   imports             → imports + globals block
+ *   packages            → PyPI packages (pip)
+ *   apt-packages        → OS packages (apt) - Dockerfile context
+ *   env                 → environment variables (no file context)
+ *   auth                → scopes + tokens (no file context)
+ */
+type Selection =
+  | { kind: "overview" }
+  | { kind: "primitive"; name: string }
+  | { kind: "primitive-new" }
+  | { kind: "imports" }
+  | { kind: "packages" }
+  | { kind: "apt-packages" }
+  | { kind: "env" }
+  | { kind: "auth" }
+  | { kind: "logs" }
+  | { kind: "source" };
+
+function parseSelection(path: string): Selection {
+  // Empty path defaults to overview - that's the editor's home base.
+  if (!path) return { kind: "overview" };
+  if (path === "overview") return { kind: "overview" };
+  if (path === "primitives:new") return { kind: "primitive-new" };
+  if (path.startsWith("primitives/")) {
+    return { kind: "primitive", name: decodeURIComponent(path.slice("primitives/".length)) };
+  }
+  if (path === "imports") return { kind: "imports" };
+  if (path === "packages") return { kind: "packages" };
+  if (path === "apt-packages") return { kind: "apt-packages" };
+  if (path === "env") return { kind: "env" };
+  if (path === "auth") return { kind: "auth" };
+  if (path === "logs") return { kind: "logs" };
+  if (path === "source") return { kind: "source" };
+  return { kind: "overview" };
+}
+
+const kindLabels: Record<Primitive["kind"], { label: string; group: string }> = {
+  tool: { label: "Tool", group: "Tools" },
+  resource: { label: "Resource", group: "Resources" },
+  resource_template: { label: "Resource", group: "Resource Templates" },
+  prompt: { label: "Prompt", group: "Prompts" },
+};
+
+const kindDotColor: Record<Primitive["kind"], string> = {
+  tool: "bg-blue-500",
+  resource: "bg-purple-500",
+  resource_template: "bg-indigo-500",
+  prompt: "bg-amber-500",
+};
+
+const groupOrder = ["Tools", "Resources", "Resource Templates", "Prompts"] as const;
+
+// ---------------- Right rail ----------------
+
+interface RightRailProps {
+  serverName: string;
+  server: Server;
+  selection: Selection;
+  onSaved: () => void;
+  /** Called after the server is deleted - parent should navigate home. */
+  onDeleted: () => void;
+  gotoPrimitive: (name: string) => void;
+}
+
+function RightRail({ serverName, server, selection, onSaved, onDeleted, gotoPrimitive }: RightRailProps) {
+  if (selection.kind === "overview") {
+    return (
+      <OverviewRail
+        serverName={serverName}
+        server={server}
+        onSaved={onSaved}
+        onDeleted={onDeleted}
+      />
+    );
+  }
+  if (selection.kind === "logs") {
+    return <LogsRail serverName={serverName} server={server} />;
+  }
+  if (selection.kind === "source") {
+    return <SourceRail serverName={serverName} server={server} onSaved={onSaved} />;
+  }
+  if (selection.kind === "primitive-new") {
+    return (
+      <>
+        <RailHeader>New primitive</RailHeader>
+        <div>
+          <PrimitiveForm
+            serverName={serverName}
+            layout="panel"
+            onSaved={(name) => {
+              onSaved();
+              gotoPrimitive(name);
+            }}
+          />
+        </div>
+      </>
+    );
+  }
+
+  if (selection.kind === "primitive") {
+    const prim = (server.primitives ?? []).find((p) => p.name === selection.name);
+    if (!prim) {
+      return (
+        <p className="text-muted-foreground italic">
+          Primitive <code className="rounded bg-muted px-1">{selection.name}</code> not found.
+        </p>
+      );
+    }
+    return (
+      <>
+        <RailHeader>
+          Editing: <span className="font-mono">{prim.name}</span>
+        </RailHeader>
+        <div>
+          <PrimitiveForm
+            key={prim.name}
+            serverName={serverName}
+            existing={prim}
+            layout="panel"
+            serverRunning={server.status === "running"}
+            onSaved={onSaved}
+          />
+        </div>
+      </>
+    );
+  }
+
+  if (selection.kind === "imports") {
+    return (
+      <ImportsRail serverName={serverName} server={server} onSaved={onSaved} />
+    );
+  }
+  if (selection.kind === "packages") {
+    return (
+      <PackagesRail serverName={serverName} server={server} onSaved={onSaved} />
+    );
+  }
+  if (selection.kind === "apt-packages") {
+    return (
+      <AptPackagesRail serverName={serverName} server={server} onSaved={onSaved} />
+    );
+  }
+  if (selection.kind === "env") {
+    return (
+      <EnvRail serverName={serverName} server={server} onSaved={onSaved} />
+    );
+  }
+  if (selection.kind === "auth") {
+    return (
+      <>
+        <RailHeader>Auth</RailHeader>
+        <div>
+          <ServerAuthPanel serverName={serverName} onMutated={onSaved} />
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <p className="text-muted-foreground italic">
+      Pick a primitive or configuration item on the left.
+    </p>
+  );
+}
+
+// ---- Per-section rails. Each loads initial value from `server`, manages
+// local state, calls its dedicated API endpoint on Save, and refreshes the
+// parent so the center file preview repaints with the new content.
+
+interface RailProps {
+  serverName: string;
+  server: Server;
+  onSaved: () => void;
+}
+
+function SaveBar({
+  dirty,
+  saving,
+  onSave,
+  onReset,
+  error,
+}: {
+  dirty: boolean;
+  saving: boolean;
+  onSave: () => void;
+  onReset: () => void;
+  error: string | null;
+}) {
+  return (
+    <div className="border-t pt-3 pb-1 mt-3 flex items-center gap-2">
+      {error && <p className="text-xs text-destructive flex-1">{error}</p>}
+      {!error && <span className="text-xs text-muted-foreground flex-1">
+        {dirty ? "Unsaved changes" : "Up to date"}
+      </span>}
+      <Button variant="ghost" size="sm" onClick={onReset} disabled={!dirty || saving}>
+        Reset
+      </Button>
+      <Button size="sm" onClick={onSave} disabled={!dirty || saving}>
+        {saving ? "Saving..." : "Save & deploy"}
+      </Button>
+    </div>
+  );
+}
+
+function useDirty<T>(initial: T) {
+  const [value, setValue] = useState(initial);
+  const [savedSnapshot, setSavedSnapshot] = useState(initial);
+  const dirty = JSON.stringify(value) !== JSON.stringify(savedSnapshot);
+  return {
+    value,
+    setValue,
+    dirty,
+    reset: () => setValue(savedSnapshot),
+    markSaved: (v: T) => setSavedSnapshot(v),
+  };
+}
+
+function ImportsRail({ serverName, server, onSaved }: RailProps) {
+  const { value, setValue, dirty, reset, markSaved } = useDirty(server.imports ?? []);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setError(null);
+    setSaving(true);
+    try {
+      // No dedicated /imports endpoint yet - use deployConfig with current
+      // other values so a focused imports save doesn't blow away packages/env.
+      await api.deployConfig(serverName, value, server.pip_packages ?? [], server.apt_packages ?? [], {
+        env_global_imports: server.env_global_imports ?? [],
+        env_vars: server.env_vars ?? [],
+      });
+      markSaved(value);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save imports");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col">
+      <RailHeader>Imports &amp; globals</RailHeader>
+      <div>
+        <ImportsEditor imports={value} onChange={setValue} />
+      </div>
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} error={error} />
+    </div>
+  );
+}
+
+function PackagesRail({ serverName, server, onSaved }: RailProps) {
+  const { value, setValue, dirty, reset, markSaved } = useDirty(server.pip_packages ?? []);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setError(null);
+    setSaving(true);
+    try {
+      await api.updatePipPackages(serverName, value);
+      markSaved(value);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save packages");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col">
+      <RailHeader>PyPI packages</RailHeader>
+      <div>
+        <PackageManager packages={value} onChange={setValue} />
+      </div>
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} error={error} />
+    </div>
+  );
+}
+
+function AptPackagesRail({ serverName, server, onSaved }: RailProps) {
+  const { value, setValue, dirty, reset, markSaved } = useDirty(server.apt_packages ?? []);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setError(null);
+    setSaving(true);
+    try {
+      await api.updateAptPackages(serverName, value);
+      markSaved(value);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save apt packages");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col">
+      <RailHeader>OS packages (apt)</RailHeader>
+      <div>
+        <AptPackageManager packages={value} onChange={setValue} />
+      </div>
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} error={error} />
+    </div>
+  );
+}
+
+function EnvRail({ serverName, server, onSaved }: RailProps) {
+  const initial: ServerEnvBindings = {
+    env_global_imports: server.env_global_imports ?? [],
+    env_vars: server.env_vars ?? [],
+  };
+  const { value, setValue, dirty, reset, markSaved } = useDirty(initial);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setError(null);
+    setSaving(true);
+    try {
+      const filteredLocals = value.env_vars.filter((v) => v.name.trim());
+      await api.updateEnvVars(serverName, {
+        env_global_imports: value.env_global_imports,
+        env_vars: filteredLocals,
+      });
+      markSaved({ env_global_imports: value.env_global_imports, env_vars: filteredLocals });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save env");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col">
+      <RailHeader>Environment variables</RailHeader>
+      <div>
+        <ServerEnvBindingsEditor
+          value={value}
+          onChange={setValue}
+          globalCatalog={server.global_env ?? []}
+        />
+      </div>
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} error={error} />
+    </div>
+  );
+}
+
+function RailHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+// ---------------- Overview rail ----------------
+
+interface OverviewRailProps {
+  serverName: string;
+  server: Server;
+  onSaved: () => void;
+  onDeleted: () => void;
+}
+
+function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailProps) {
+  const [description, setDescription] = useState(server.description ?? "");
+  const [savedDescription, setSavedDescription] = useState(server.description ?? "");
+  const [replicas, setReplicas] = useState<number>(server.replicas_desired ?? 1);
+  const [savedReplicas, setSavedReplicas] = useState<number>(server.replicas_desired ?? 1);
+  const [replicaLimits, setReplicaLimits] = useState<{
+    max_mcp_server_replicas: number;
+    docker_swarm_mode: boolean;
+  } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [lifecycle, setLifecycle] = useState<"" | "start" | "stop" | "redeploy" | "delete">("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getServerReplicaLimits().then(setReplicaLimits).catch(() => setReplicaLimits(null));
+  }, []);
+
+  const descDirty = description !== savedDescription;
+  const replicasDirty = replicas !== savedReplicas;
+  const dirty = descDirty || replicasDirty;
+
+  async function save() {
+    setError(null);
+    setSaving(true);
+    try {
+      const tasks: Promise<unknown>[] = [];
+      if (descDirty) tasks.push(api.updateDescription(serverName, description));
+      if (replicasDirty) tasks.push(api.updateServerReplicas(serverName, replicas));
+      await Promise.all(tasks);
+      setSavedDescription(description);
+      setSavedReplicas(replicas);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function reset() {
+    setDescription(savedDescription);
+    setReplicas(savedReplicas);
+    setError(null);
+  }
+
+  async function lifecycleAction(action: "start" | "stop" | "redeploy" | "delete") {
+    setError(null);
+    if (action === "delete" && !confirm(`Delete server "${serverName}"? This removes the container/service and the stored spec.`)) {
+      return;
+    }
+    setLifecycle(action);
+    try {
+      if (action === "start") await api.startServer(serverName);
+      else if (action === "stop") await api.stopServer(serverName);
+      else if (action === "redeploy") await api.redeployServer(serverName);
+      else {
+        await api.deleteServer(serverName);
+        onDeleted();
+        return;
+      }
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : `Failed to ${action}`);
+    } finally {
+      setLifecycle("");
+    }
+  }
+
+  const maxReplicas = replicaLimits?.max_mcp_server_replicas ?? 32;
+  const showReplicasHelp = replicaLimits?.docker_swarm_mode === false;
+  const statusBad = server.status === "not_deployed" || server.status === "unknown";
+
+  return (
+    <div className="flex flex-col gap-6 max-w-3xl">
+      <RailHeader>Overview</RailHeader>
+
+      {statusBad && (
+        <div
+          className={
+            server.status === "unknown"
+              ? "rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+              : "rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100"
+          }
+        >
+          {server.status === "unknown" ? (
+            <><strong>Docker status unavailable.</strong> Platform could not read this server from Docker.</>
+          ) : (
+            <><strong>Not deployed.</strong> The spec is registered but no service/container exists. Click <strong>Redeploy</strong> below.</>
+          )}
+        </div>
+      )}
+
+      <div className="grid gap-2">
+        <Label>Description</Label>
+        <p className="text-xs text-muted-foreground">
+          Passed to LLMs as context for the server. Describe its purpose and capabilities.
+        </p>
+        <Textarea
+          className="min-h-[100px]"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </div>
+
+      <div className="grid gap-2 max-w-xs">
+        <Label>Replicas</Label>
+        <p className="text-xs text-muted-foreground">
+          Desired number of tasks. Only meaningful in Docker Swarm; standalone Docker always runs 1.
+        </p>
+        <Input
+          type="number"
+          min={1}
+          max={maxReplicas}
+          value={replicas}
+          onChange={(e) => setReplicas(Math.max(1, Math.min(maxReplicas, Number(e.target.value) || 1)))}
+        />
+        {showReplicasHelp && (
+          <p className="text-xs italic text-muted-foreground">
+            Stored but not applied — running in stand-alone Docker.
+          </p>
+        )}
+      </div>
+
+      <div className="border-t pt-4 flex flex-wrap items-center gap-2">
+        <Label className="text-sm font-medium mr-2">Server actions</Label>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!!lifecycle || server.status === "running"}
+          onClick={() => lifecycleAction("start")}
+        >
+          {lifecycle === "start" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Play className="mr-1 h-3 w-3" />}
+          Start
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!!lifecycle || server.status !== "running"}
+          onClick={() => lifecycleAction("stop")}
+        >
+          {lifecycle === "stop" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Pause className="mr-1 h-3 w-3" />}
+          Stop
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!!lifecycle}
+          onClick={() => lifecycleAction("redeploy")}
+        >
+          {lifecycle === "redeploy" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Rocket className="mr-1 h-3 w-3" />}
+          Redeploy
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
+          disabled={!!lifecycle}
+          onClick={() => lifecycleAction("delete")}
+        >
+          {lifecycle === "delete" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Trash2 className="mr-1 h-3 w-3" />}
+          Delete server
+        </Button>
+      </div>
+
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} error={error} />
+    </div>
+  );
+}
+
+// ---------------- Logs rail ----------------
+
+function LogsRail({ serverName, server }: { serverName: string; server: Server }) {
+  const [logs, setLogs] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tail, setTail] = useState(400);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const text = await api.getServerLogs(serverName, tail);
+      setLogs(text.trim() ? text : "(no log lines yet)");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load logs");
+      setLogs(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [serverName, tail]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <div className="flex flex-col gap-3 max-w-5xl">
+      <RailHeader>Logs</RailHeader>
+      <div className="flex items-center gap-2 text-xs">
+        <Label className="text-xs">Tail</Label>
+        <Input
+          type="number"
+          min={50}
+          max={5000}
+          value={tail}
+          onChange={(e) => setTail(Math.max(50, Math.min(5000, Number(e.target.value) || 400)))}
+          className="w-24 h-8"
+        />
+        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
+          {loading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
+          Refresh
+        </Button>
+        {server.status !== "running" && (
+          <span className="ml-2 text-muted-foreground italic">
+            Server is {server.status} - logs may be empty or stale.
+          </span>
+        )}
+      </div>
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+      <pre className="bg-muted/30 border rounded-md p-3 text-xs font-mono whitespace-pre-wrap break-all max-h-[70vh] overflow-y-auto">
+        {logs ?? "(loading...)"}
+      </pre>
+    </div>
+  );
+}
+
+// ---------------- Source rail (code mode) ----------------
+
+function SourceRail({ serverName, server, onSaved }: { serverName: string; server: Server; onSaved: () => void }) {
+  const { value, setValue, dirty, reset, markSaved } = useDirty(server.source ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setError(null);
+    setSaving(true);
+    try {
+      await api.updateSource(serverName, value);
+      markSaved(value);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save source");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <RailHeader>server.py (code-first)</RailHeader>
+      <p className="text-xs text-muted-foreground">
+        The entire generated <code className="rounded bg-muted px-1">server.py</code>. You own this
+        file - imports, FastMCP construction, primitives, everything.
+      </p>
+      <SourceEditor value={value} onChange={setValue} />
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} error={error} />
+    </div>
+  );
+}
+
+function SourceEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { resolvedTheme } = useTheme();
+  return (
+    <div className="rounded-md border overflow-hidden">
+      <CodeMirror
+        value={value}
+        onChange={onChange}
+        theme={resolvedTheme}
+        extensions={[python()]}
+        minHeight="500px"
+        basicSetup={{
+          lineNumbers: true,
+          foldGutter: true,
+          highlightActiveLine: true,
+          indentOnInput: true,
+          bracketMatching: true,
+          autocompletion: true,
+        }}
+      />
+    </div>
+  );
+}
+
+// ---------------- Left nav ----------------
+
+interface LeftNavProps {
+  server: Server;
+  selection: Selection;
+  onSelect: (path: string) => void;
+}
+
+function LeftNav({ server, selection, onSelect }: LeftNavProps) {
+  const isCodeMode = server.mode === "code";
+
+  // Group primitives by their display group.
+  const groups = useMemo(() => {
+    const out = new Map<string, Primitive[]>();
+    for (const g of groupOrder) out.set(g, []);
+    for (const p of server.primitives ?? []) {
+      const g = kindLabels[p.kind]?.group;
+      if (g) out.get(g)!.push(p);
+    }
+    for (const arr of out.values()) {
+      arr.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return out;
+  }, [server.primitives]);
+
+  return (
+    <nav className="flex flex-col py-3">
+      <div className="mb-3">
+        <NavItem
+          icon={<Settings className="h-3.5 w-3.5" />}
+          active={selection.kind === "overview"}
+          onClick={() => onSelect("overview")}
+        >
+          Overview
+        </NavItem>
+      </div>
+
+      {isCodeMode ? (
+        // Code-first mode: single Source entry, no primitive list (those come from the live server).
+        <div className="border-t pt-3 mb-3">
+          <NavHeading>Source</NavHeading>
+          <NavItem
+            icon={<FileCode className="h-3.5 w-3.5" />}
+            active={selection.kind === "source"}
+            onClick={() => onSelect("source")}
+          >
+            server.py
+          </NavItem>
+        </div>
+      ) : (
+        <>
+          {groupOrder.map((group) => {
+            const items = groups.get(group) ?? [];
+            if (items.length === 0) return null;
+            return (
+              <div key={group} className="mb-3 border-t pt-3">
+                <NavHeading>{group}</NavHeading>
+                {items.map((p) => (
+                  <NavItem
+                    key={`${p.kind}:${p.name}`}
+                    active={selection.kind === "primitive" && selection.name === p.name}
+                    onClick={() => onSelect(`primitives/${encodeURIComponent(p.name)}`)}
+                  >
+                    <span className={`mr-2 inline-block h-2 w-2 rounded-full ${kindDotColor[p.kind]}`} />
+                    <span className="font-mono text-xs">{p.name}</span>
+                  </NavItem>
+                ))}
+              </div>
+            );
+          })}
+
+          <div className="px-3 mb-3">
+            <Button
+              size="sm"
+              variant={selection.kind === "primitive-new" ? "default" : "outline"}
+              className="w-full justify-start"
+              onClick={() => onSelect("primitives:new")}
+            >
+              <Plus className="mr-1 h-3 w-3" /> Add primitive
+            </Button>
+          </div>
+        </>
+      )}
+
+      <div className="border-t pt-3">
+        <NavHeading>Configuration</NavHeading>
+        {!isCodeMode && (
+          <NavItem
+            icon={<FileCode className="h-3.5 w-3.5" />}
+            active={selection.kind === "imports"}
+            onClick={() => onSelect("imports")}
+          >
+            Imports &amp; globals
+          </NavItem>
+        )}
+        <NavItem
+          icon={<Package className="h-3.5 w-3.5" />}
+          active={selection.kind === "packages"}
+          onClick={() => onSelect("packages")}
+        >
+          PyPI packages
+        </NavItem>
+        <NavItem
+          icon={<Boxes className="h-3.5 w-3.5" />}
+          active={selection.kind === "apt-packages"}
+          onClick={() => onSelect("apt-packages")}
+        >
+          OS packages
+        </NavItem>
+        <NavItem
+          icon={<Variable className="h-3.5 w-3.5" />}
+          active={selection.kind === "env"}
+          onClick={() => onSelect("env")}
+        >
+          Env vars
+        </NavItem>
+        <NavItem
+          icon={<KeyRound className="h-3.5 w-3.5" />}
+          active={selection.kind === "auth"}
+          onClick={() => onSelect("auth")}
+        >
+          Auth
+        </NavItem>
+        <NavItem
+          icon={<FileText className="h-3.5 w-3.5" />}
+          active={selection.kind === "logs"}
+          onClick={() => onSelect("logs")}
+        >
+          Logs
+        </NavItem>
+      </div>
+    </nav>
+  );
+}
+
+function NavHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function NavItem({
+  active,
+  onClick,
+  icon,
+  children,
+}: {
+  active?: boolean;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+        active
+          ? "bg-primary/10 text-primary border-l-2 border-primary"
+          : "border-l-2 border-transparent hover:bg-muted"
+      }`}
+    >
+      {icon}
+      {children}
+    </button>
+  );
+}
+
+/**
+ * IDE-style editing surface for a structured MCP server.
+ *
+ * Layout:
+ *   ┌──────────┬─────────────────────────────┬──────────────────┐
+ *   │ Left nav │ Read-only server.py preview │ Selection form   │
+ *   │  primi-  │  highlights selected block; │  per-selection   │
+ *   │  tives + │  toggles to Dockerfile for  │  edit form       │
+ *   │  config  │  OS-packages context        │  (right rail)    │
+ *   └──────────┴─────────────────────────────┴──────────────────┘
+ *
+ * Selection state lives in the URL so primitives are deep-linkable
+ * (/servers/{name}/edit/tools/print_env, /edit/imports, etc.).
+ */
+export function ServerEdit({ serverName }: ServerEditProps) {
+  const navigate = useNavigate();
+  const params = useParams();
+  // Wildcard after /servers/:name/ — react-router passes the rest as params["*"].
+  const selectionPath = params["*"] ?? "";
+  const selection = useMemo(() => parseSelection(selectionPath), [selectionPath]);
+
+  const [server, setServer] = useState<Server | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const goto = useCallback(
+    (path: string) => navigate(`/servers/${encodeURIComponent(serverName)}/${path}`),
+    [navigate, serverName],
+  );
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await api.getServer(serverName);
+      setServer(data);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load server");
+    } finally {
+      setLoading(false);
+    }
+  }, [serverName]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading {serverName}...
+      </div>
+    );
+  }
+
+  if (error || !server) {
+    return (
+      <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        {error ?? "Server not found"}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col -mx-4 sm:-mx-6 lg:-mx-8">
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b px-4 sm:px-6 lg:px-8 py-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate("/")}
+        >
+          <ArrowLeft className="mr-1 h-4 w-4" /> Servers
+        </Button>
+        <h2 className="text-lg font-semibold">{server.name}</h2>
+        <StatusBadge status={server.status} />
+        <code className="ml-auto rounded bg-muted px-2 py-1 text-xs font-mono">
+          {server.url}
+        </code>
+      </div>
+
+      {/* Two-pane body: nav + editor. No fixed viewport height - the page
+          scrolls naturally as a whole; nav and form share the same scroll. */}
+      <div className="grid" style={{ gridTemplateColumns: "260px 1fr" }}>
+        <aside className="border-r text-sm">
+          <LeftNav
+            server={server}
+            selection={selection}
+            onSelect={goto}
+          />
+        </aside>
+        <main className="px-6 py-4 text-sm min-w-0">
+          <RightRail
+            serverName={serverName}
+            server={server}
+            selection={selection}
+            onSaved={() => {
+              refresh();
+            }}
+            onDeleted={() => navigate("/")}
+            gotoPrimitive={(name) => goto(`primitives/${encodeURIComponent(name)}`)}
+          />
+        </main>
+      </div>
+    </div>
+  );
+}

@@ -12,7 +12,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useServers } from "@/hooks/use-servers";
 import { ServerTable } from "@/components/server-table";
-import { ServerDetail } from "@/components/server-detail";
+import { ServerEdit } from "@/components/server-edit";
 import { CreateServerDialog } from "@/components/create-server-dialog";
 import { LoginPage } from "@/components/login-page";
 import { UserManagement } from "@/components/user-management";
@@ -190,13 +190,10 @@ function HomePage() {
   );
 }
 
-function ServerDetailRoute() {
+function ServerEditRoute() {
   const { serverName } = useParams();
-  const navigate = useNavigate();
   if (!serverName) return <Navigate to="/" replace />;
-  return (
-    <ServerDetail serverName={serverName} onBack={() => navigate("/")} />
-  );
+  return <ServerEdit serverName={serverName} />;
 }
 
 function UserManagementPage() {
@@ -227,7 +224,7 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/servers/:serverName" element={<ServerDetailRoute />} />
+          <Route path="/servers/:serverName/*" element={<ServerEditRoute />} />
           <Route
             path="/users"
             element={
