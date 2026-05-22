@@ -30,6 +30,8 @@ interface PrimitiveFormProps {
   layout?: "dialog" | "panel";
   /** When true and `existing` is set, show a Run button that opens the test dialog. */
   serverRunning?: boolean;
+  /** When true, show a "testing last deploy" warning next to the Run button. */
+  redeployPending?: boolean;
 }
 
 const EMPTY_PARAM: ToolParameter = {
@@ -52,6 +54,7 @@ export function PrimitiveForm({
   onCancel,
   layout = "dialog",
   serverRunning = false,
+  redeployPending = false,
 }: PrimitiveFormProps) {
   const isEdit = !!existing;
   const { resolvedTheme } = useTheme();
@@ -338,12 +341,20 @@ export function PrimitiveForm({
 
       <div className="border-t pt-3 pb-1 flex items-center justify-end gap-2">
         {isEdit && existing && (
-          <div className="mr-auto">
+          <div className="mr-auto flex items-center gap-2">
             <TestPrimitiveDialog
               serverName={serverName}
               primitive={existing}
               disabled={!serverRunning}
             />
+            {redeployPending && (
+              <span
+                className="text-xs italic text-amber-700 dark:text-amber-300"
+                title="The deployed code may not match what you're editing - redeploy first to test the latest version."
+              >
+                ⚠ testing last deploy
+              </span>
+            )}
           </div>
         )}
         {onCancel && (
