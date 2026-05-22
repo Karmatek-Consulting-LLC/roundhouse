@@ -290,7 +290,7 @@ class ServerController extends Controller
             throw new HttpException(409, 'Cannot set source on a structured server - use the primitive editor instead.');
         }
         $spec->source = $data['source'];
-        return $this->redeployAndRespond($spec);
+        return $this->saveAndRespond($spec);
     }
 
     public function addPrimitive(Request $request, string $name): JsonResponse
@@ -308,7 +308,7 @@ class ServerController extends Controller
         }
         $spec->primitives[] = $primitive;
 
-        return $this->redeployAndRespond($spec);
+        return $this->saveAndRespond($spec);
     }
 
     public function updatePrimitive(Request $request, string $name, string $primName): JsonResponse
@@ -331,7 +331,7 @@ class ServerController extends Controller
         }
         $spec->primitives[$idx] = $primitive;
 
-        return $this->redeployAndRespond($spec);
+        return $this->saveAndRespond($spec);
     }
 
     public function deletePrimitive(Request $request, string $name, string $primName): JsonResponse
@@ -349,7 +349,7 @@ class ServerController extends Controller
             throw new HttpException(404, "Primitive '{$primName}' not found");
         }
 
-        return $this->redeployAndRespond($spec);
+        return $this->saveAndRespond($spec);
     }
 
     public function updatePackages(Request $request, string $name): JsonResponse
@@ -361,7 +361,7 @@ class ServerController extends Controller
         $this->assertAccess($request->user(), $name);
         $spec = $this->ensureSpec($name);
         $spec->pipPackages = array_values($data['pip_packages']);
-        return $this->redeployAndRespond($spec);
+        return $this->saveAndRespond($spec);
     }
 
     public function updateEnv(Request $request, string $name): JsonResponse
@@ -371,7 +371,7 @@ class ServerController extends Controller
         $spec = $this->ensureSpec($name);
         $spec->envGlobalImports = ServerSpec::normalizeEnvImports($data['env_global_imports']);
         $spec->envVars = $data['env_vars'];
-        return $this->redeployAndRespond($spec);
+        return $this->saveAndRespond($spec);
     }
 
     public function updateConfig(Request $request, string $name): JsonResponse
@@ -400,7 +400,7 @@ class ServerController extends Controller
         $spec->aptPackages = array_values($data['apt_packages'] ?? []);
         $spec->envGlobalImports = ServerSpec::normalizeEnvImports($data['env_global_imports'] ?? []);
         $spec->envVars = $this->parseEnvVars($data['env_vars'] ?? []);
-        return $this->redeployAndRespond($spec);
+        return $this->saveAndRespond($spec);
     }
 
     public function updateAptPackages(Request $request, string $name): JsonResponse
@@ -414,18 +414,23 @@ class ServerController extends Controller
         $this->assertAccess($request->user(), $name);
         $spec = $this->ensureSpec($name);
         $spec->aptPackages = array_values($data['apt_packages']);
-        return $this->redeployAndRespond($spec);
+        return $this->saveAndRespond($spec);
     }
 
     // ---- Helpers ----
 
-    private function redeployAndRespond(ServerSpec $spec): JsonResponse
+    /**
+     * Save spec changes to disk + flag the server as needing a redeploy. Does
+     * NOT touch Docker. The user batches edits, then clicks Redeploy to apply.
+     */
+    private function saveAndRespond(ServerSpec $spec): JsonResponse
     {
         try {
-            $server = $this->service->redeploy($spec);
-            return response()->json($this->toResponse($server, $spec));
+            $this->service->saveSpec($spec);
+            $snap = $this->dockerSnapshot($spec->name);
+            return response()->json($this->toResponse($snap, $spec));
         } catch (\Throwable $e) {
-            Log::error("Redeploy failed for '{$spec->name}': {$e->getMessage()}");
+            Log::error("Save failed for '{$spec->name}': {$e->getMessage()}");
             throw new HttpException(500, $e->getMessage());
         }
     }
@@ -620,7 +625,7 @@ class ServerController extends Controller
             'global_env' => array_map(fn (EnvVar $v) => $v->toArray(), $this->globals->all()),
             'owner_id' => $owner ? (string) $owner->owner_id : null,
             'owner_email' => $owner?->owner?->email,
-            'auth_rebuild_required_at' => $owner?->auth_rebuild_required_at?->toIso8601String(),
+            'redeploy_required_at' => $owner?->redeploy_required_at?->toIso8601String(),
             'created_at' => $server['created_at'] ?? null,
             'replicas_desired' => $this->service->effectiveReplicas($spec),
             'replicas_running' => (int) ($server['replicas_running'] ?? 0),

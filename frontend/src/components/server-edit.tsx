@@ -164,6 +164,7 @@ function RightRail({ serverName, server, selection, onSaved, onDeleted, gotoPrim
             existing={prim}
             layout="panel"
             serverRunning={server.status === "running"}
+            redeployPending={!!server.redeploy_required_at}
             onSaved={onSaved}
           />
         </div>
@@ -242,7 +243,7 @@ function SaveBar({
         Reset
       </Button>
       <Button size="sm" onClick={onSave} disabled={!dirty || saving}>
-        {saving ? "Saving..." : "Save & deploy"}
+        {saving ? "Saving..." : "Save"}
       </Button>
     </div>
   );
@@ -394,6 +395,48 @@ function EnvRail({ serverName, server, onSaved }: RailProps) {
         />
       </div>
       <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} error={error} />
+    </div>
+  );
+}
+
+// Sticky banner shown whenever there are saved-but-not-deployed changes.
+function RedeployBanner({
+  serverName,
+  server,
+  onRedeployed,
+}: {
+  serverName: string;
+  server: Server;
+  onRedeployed: () => void;
+}) {
+  const [redeploying, setRedeploying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!server.redeploy_required_at) return null;
+
+  async function redeploy() {
+    setError(null);
+    setRedeploying(true);
+    try {
+      await api.redeployServer(serverName);
+      onRedeployed();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Redeploy failed");
+    } finally {
+      setRedeploying(false);
+    }
+  }
+
+  return (
+    <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-3 text-sm text-amber-950 dark:text-amber-100">
+      <Rocket className="h-4 w-4 flex-shrink-0" />
+      <span className="flex-1">
+        <strong>Changes pending.</strong> Spec is saved; redeploy to apply.
+        {error && <span className="ml-2 text-destructive">— {error}</span>}
+      </span>
+      <Button size="sm" onClick={redeploy} disabled={redeploying}>
+        {redeploying ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Rocket className="mr-1 h-3 w-3" />}
+        {redeploying ? "Redeploying..." : "Redeploy"}
+      </Button>
     </div>
   );
 }
@@ -950,6 +993,8 @@ export function ServerEdit({ serverName }: ServerEditProps) {
           {server.url}
         </code>
       </div>
+
+      <RedeployBanner serverName={serverName} server={server} onRedeployed={refresh} />
 
       {/* Two-pane body: nav + editor. No fixed viewport height - the page
           scrolls naturally as a whole; nav and form share the same scroll. */}

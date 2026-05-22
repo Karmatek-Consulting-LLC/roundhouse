@@ -28,7 +28,7 @@ class ServerAuthService
             'name' => $name,
             'description' => $description,
         ]);
-        $this->markRebuildRequired($server);
+        $this->markRedeployRequired($server);
         return $scope;
     }
 
@@ -55,7 +55,7 @@ class ServerAuthService
             ServerScope::where('server_name', $server)->where('name', $name)->delete();
         });
 
-        $this->markRebuildRequired($server);
+        $this->markRedeployRequired($server);
     }
 
     public function renameScope(string $server, string $oldName, string $newName): void
@@ -78,7 +78,7 @@ class ServerAuthService
                 ->update(['name' => $newName]);
         });
 
-        $this->markRebuildRequired($server);
+        $this->markRedeployRequired($server);
     }
 
     /**
@@ -100,7 +100,7 @@ class ServerAuthService
                 fn ($s) => is_string($s) && $s !== '',
             ))),
         ]);
-        $this->markRebuildRequired($server);
+        $this->markRedeployRequired($server);
         return ['id' => $token->id, 'plaintext' => $plain, 'token' => $token];
     }
 
@@ -108,7 +108,7 @@ class ServerAuthService
     {
         $deleted = ServerToken::where('server_name', $server)->where('id', $id)->delete();
         if ($deleted) {
-            $this->markRebuildRequired($server);
+            $this->markRedeployRequired($server);
         }
         return (bool) $deleted;
     }
@@ -132,16 +132,16 @@ class ServerAuthService
             ->all();
     }
 
-    public function markRebuildRequired(string $server): void
+    public function markRedeployRequired(string $server): void
     {
         ServerOwner::where('server_name', $server)
-            ->update(['auth_rebuild_required_at' => Carbon::now()]);
+            ->update(['redeploy_required_at' => Carbon::now()]);
     }
 
-    public function clearRebuildRequired(string $server): void
+    public function clearRedeployRequired(string $server): void
     {
         ServerOwner::where('server_name', $server)
-            ->update(['auth_rebuild_required_at' => null]);
+            ->update(['redeploy_required_at' => null]);
     }
 
     private function generateTokenString(): string

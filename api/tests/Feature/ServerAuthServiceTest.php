@@ -52,15 +52,15 @@ test('mintToken returns prefixed plaintext, stores it encrypted, sets display_pr
 });
 
 test('mintToken marks the server as needing a rebuild', function () {
-    expect(ServerOwner::find('demo')->auth_rebuild_required_at)->toBeNull();
+    expect(ServerOwner::find('demo')->redeploy_required_at)->toBeNull();
     $this->svc->mintToken('demo', 'CI', []);
-    expect(ServerOwner::find('demo')->auth_rebuild_required_at)->not->toBeNull();
+    expect(ServerOwner::find('demo')->redeploy_required_at)->not->toBeNull();
 });
 
-test('clearRebuildRequired resets the flag', function () {
+test('clearRedeployRequired resets the flag', function () {
     $this->svc->mintToken('demo', 'CI', []);
-    $this->svc->clearRebuildRequired('demo');
-    expect(ServerOwner::find('demo')->auth_rebuild_required_at)->toBeNull();
+    $this->svc->clearRedeployRequired('demo');
+    expect(ServerOwner::find('demo')->redeploy_required_at)->toBeNull();
 });
 
 test('deleteScope cascades into token.scopes and on-disk primitive scopes', function () {

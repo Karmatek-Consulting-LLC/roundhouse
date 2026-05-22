@@ -186,7 +186,7 @@ export interface Server {
   docker_swarm_mode: boolean;
   placement: PlacementTask[];
   /** ISO-8601 timestamp set when scope/token changes need a redeploy; null otherwise. */
-  auth_rebuild_required_at?: string | null;
+  redeploy_required_at?: string | null;
 }
 
 export interface ServerScope {

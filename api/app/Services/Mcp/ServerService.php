@@ -53,6 +53,24 @@ class ServerService
         return trim($raw) === '' ? null : $raw;
     }
 
+    /**
+     * Persist a spec change to disk + flag the server as needing a redeploy.
+     * Does NOT touch Docker - the user batches edits, then runs Redeploy.
+     * Writes the build context too (server.py + Dockerfile) so codegen errors
+     * surface at save time rather than redeploy time.
+     */
+    public function saveSpec(ServerSpec $spec): void
+    {
+        $spec->tokens = $this->auth->tokensForCodegen($spec->name);
+        $this->codegen->writeBuildContext(
+            $spec,
+            $this->store->serverDir($spec->name),
+            $this->customCaCert(),
+        );
+        $this->store->save($spec);
+        $this->auth->markRedeployRequired($spec->name);
+    }
+
     /** @return array<string, mixed> */
     public function buildAndDeploy(ServerSpec $spec): array
     {
@@ -77,7 +95,7 @@ class ServerService
             registryAuth: $this->registryAuth(),
         );
 
-        $this->auth->clearRebuildRequired($spec->name);
+        $this->auth->clearRedeployRequired($spec->name);
         return $result;
     }
 
