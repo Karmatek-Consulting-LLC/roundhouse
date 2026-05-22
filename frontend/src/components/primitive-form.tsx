@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type Primitive, type ServerScope, type ToolParameter } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -123,6 +123,42 @@ export function PrimitiveForm({
     }
   }
 
+  // Snapshot of the last-saved primitive (or the `existing` prop on first
+  // mount) so we can show "Unsaved changes" and a Reset button consistent
+  // with the other rails.
+  const savedSnapshot = useMemo(
+    () => (existing ? JSON.stringify(existing) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [existing?.name],
+  );
+  const [snapshot, setSnapshot] = useState<string | null>(savedSnapshot);
+  const current = JSON.stringify(buildPrimitive());
+  const dirty = snapshot === null ? !!name : current !== snapshot;
+
+  function resetFields() {
+    if (!existing) return;
+    setKind(existing.kind);
+    setName(existing.name);
+    setDescription(existing.description ?? "");
+    setCode(existing.code ?? "");
+    setUri(
+      existing.kind === "resource"
+        ? existing.uri
+        : existing.kind === "resource_template"
+          ? existing.uri_template
+          : "",
+    );
+    setMimeType(
+      existing.kind === "resource" || existing.kind === "resource_template"
+        ? existing.mime_type
+        : "text/plain",
+    );
+    setParams("parameters" in existing ? existing.parameters : []);
+    setReturnType(existing.kind === "tool" && existing.return_type === "dict" ? "dict" : "str");
+    setScopes(existing.scopes ?? []);
+    setError(null);
+  }
+
   async function handleSave() {
     setError(null);
     setSaving(true);
@@ -133,6 +169,7 @@ export function PrimitiveForm({
       } else {
         await api.addPrimitive(serverName, primitive);
       }
+      setSnapshot(JSON.stringify(primitive));
       onSaved(primitive.name);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save primitive");
@@ -336,12 +373,11 @@ export function PrimitiveForm({
           )}
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
 
-      <div className="border-t pt-3 pb-1 flex items-center justify-end gap-2">
+      <div className="border-t pt-3 pb-1 flex items-center gap-2">
         {isEdit && existing && (
-          <div className="mr-auto flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <TestPrimitiveDialog
               serverName={serverName}
               primitive={existing}
@@ -357,13 +393,25 @@ export function PrimitiveForm({
             )}
           </div>
         )}
+        {error ? (
+          <p className="text-xs text-destructive flex-1 text-right">{error}</p>
+        ) : (
+          <span className="text-xs text-muted-foreground flex-1 text-right">
+            {dirty ? "Unsaved changes" : isEdit ? "Up to date" : ""}
+          </span>
+        )}
+        {isEdit && (
+          <Button variant="ghost" size="sm" onClick={resetFields} disabled={!dirty || saving}>
+            Reset
+          </Button>
+        )}
         {onCancel && (
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
             Cancel
           </Button>
         )}
-        <Button onClick={handleSave} disabled={!name || saving} size="sm">
-          {saving ? "Deploying..." : isEdit ? "Update & Deploy" : "Add & Deploy"}
+        <Button onClick={handleSave} disabled={!name || !dirty || saving} size="sm">
+          {saving ? "Saving..." : "Save"}
         </Button>
       </div>
     </div>
