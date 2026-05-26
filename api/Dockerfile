@@ -1,11 +1,6 @@
 # ---- Stage 1: Build the React frontend ----
 FROM node:22-alpine AS frontend-build
 
-COPY api/docker/corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt
-RUN apk add --no-check-certificate --no-cache ca-certificates && update-ca-certificates
-ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
-    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 WORKDIR /build
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml frontend/.npmrc* ./
@@ -15,13 +10,6 @@ RUN pnpm build
 
 # ---- Stage 2: Python runtime ----
 FROM python:3.12-slim AS runtime
-
-COPY api/docker/corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt
-RUN cat /usr/local/share/ca-certificates/corp-ca.crt >> /etc/ssl/certs/ca-certificates.crt \
-    && update-ca-certificates
-ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
-    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
-    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         netcat-openbsd \
