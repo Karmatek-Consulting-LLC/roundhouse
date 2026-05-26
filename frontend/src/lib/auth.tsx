@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api } from "@/lib/api";
+import { api, AUTH_EXPIRED_EVENT } from "@/lib/api";
 
 export interface AuthUser {
   id: string;
@@ -58,6 +58,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("token");
     setToken(null);
     setUser(null);
+  }, []);
+
+  // When any API call sees a 401, the api layer dispatches AUTH_EXPIRED_EVENT.
+  // Clear React state here so RequireAuth flips to <Navigate to="/login" />.
+  useEffect(() => {
+    const onExpired = () => {
+      setToken(null);
+      setUser(null);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
   }, []);
 
   return (

@@ -286,6 +286,16 @@ async function errorDetailFrom401(res: Response): Promise<string | undefined> {
   return typeof d === "string" ? d : undefined;
 }
 
+// Broadcast a session-expired event so AuthProvider can clear React state
+// and let the router redirect to /login. Removing the token from
+// localStorage alone is not enough - the auth context only reads it on mount.
+export const AUTH_EXPIRED_EVENT = "auth:expired";
+
+function signalSessionExpired() {
+  localStorage.removeItem("token");
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("token");
   const headers: Record<string, string> = {
@@ -302,7 +312,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     if (isLoginFailure) {
       throw new Error(detail ?? "Invalid email or password");
     }
-    localStorage.removeItem("token");
+    signalSessionExpired();
     throw new Error(detail ?? "Session expired");
   }
   if (!res.ok) {
@@ -322,7 +332,7 @@ async function requestText(path: string): Promise<string> {
   }
   const res = await fetch(`${BASE}${path}`, { headers });
   if (res.status === 401) {
-    localStorage.removeItem("token");
+    signalSessionExpired();
     throw new Error("Session expired");
   }
   if (!res.ok) {
