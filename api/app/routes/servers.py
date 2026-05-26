@@ -4,7 +4,8 @@ import logging
 import re
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -215,6 +216,72 @@ def logs(
     return Response(content=text, media_type="text/plain; charset=utf-8")
 
 
+@router.get("/{name}/logs/stream")
+def logs_stream(
+    name: str,
+    tail: int = Query(default=100),
+    # EventSource can't set headers, so token comes in via query string.
+    # The Authorization header path also works for non-browser clients.
+    token: str | None = Query(default=None),
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """SSE log stream. Sends each chunk as a `data:` event. The connection
+    stays open until the client closes it or the container exits."""
+    from app.auth import resolve_token
+    header_value = authorization or (f"Bearer {token}" if token else None)
+    user = resolve_token(db, header_value)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Unauthenticated")
+    _assert_access(db, user, name)
+
+    docker = get_docker()
+    if not docker.get_server(name):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Docker service for '{name}'; logs are unavailable until deployed.",
+        )
+
+    async def event_stream():
+        import anyio
+        # Open marker so clients know the stream is alive even before Docker
+        # pushes the first chunk. Also forces uvicorn to flush headers.
+        yield "event: open\ndata: streaming\n\n"
+        try:
+            stream = await anyio.to_thread.run_sync(docker.stream_server_logs, name, tail)
+        except Exception as e:  # noqa: BLE001
+            yield f"event: error\ndata: {e}\n\n"
+            return
+        try:
+            iterator = iter(stream)
+
+            def next_chunk():
+                try:
+                    return next(iterator)
+                except StopIteration:
+                    return None
+
+            while True:
+                chunk = await anyio.to_thread.run_sync(next_chunk)
+                if chunk is None:
+                    break
+                for line in chunk.splitlines():
+                    yield f"data: {line}\n\n"
+        except Exception as e:  # noqa: BLE001
+            yield f"event: error\ndata: {e}\n\n"
+        finally:
+            stream.close()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable nginx-style proxy buffering
+        },
+    )
+
+
 # ---- Create ----
 
 class CreateServerIn(BaseModel):
@@ -391,6 +458,147 @@ def redeploy(
 # ---- Export / Import ----
 
 EXPORT_VERSION = 1
+
+
+# ---- Deploy from a Git URL ----
+
+import shutil
+import subprocess
+from urllib.parse import urlparse
+
+
+def _looks_like_git_url(url: str) -> bool:
+    if url.startswith(("git@", "ssh://")):
+        return True
+    try:
+        parsed = urlparse(url)
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    except ValueError:
+        return False
+
+
+class GitDeployIn(BaseModel):
+    name: str
+    description: str | None = ""
+    git_url: str
+    # Optional branch/tag/commit ref. Falls back to the remote's default branch.
+    ref: str | None = None
+    replicas: int | None = None
+
+
+@router.post("/from-git", status_code=201)
+def deploy_from_git(
+    payload: GitDeployIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Clone a git repo and deploy it as a code-mode server. The repo must
+    contain `server.py` at its root (and may include a `Dockerfile`; if
+    absent, codegen synthesizes one from any pip_packages declared in the
+    spec - but for git-deploy the simplest path is: bring your own
+    Dockerfile)."""
+    cfg = get_settings()
+    name = payload.name
+    if not _SERVER_NAME_RE.match(name):
+        raise HTTPException(status_code=422, detail="Invalid server name")
+    if not _looks_like_git_url(payload.git_url):
+        raise HTTPException(status_code=422, detail="git_url doesn't look like a git URL")
+    if payload.replicas is not None and not (1 <= payload.replicas <= cfg.mcp_max_server_replicas):
+        raise HTTPException(
+            status_code=422,
+            detail=f"replicas must be between 1 and {cfg.mcp_max_server_replicas}",
+        )
+
+    docker = get_docker()
+    service = get_server_service()
+    if docker.get_server(name):
+        raise HTTPException(status_code=409, detail=f"Server '{name}' already exists")
+    _cleanup_orphan_registration(db, name, user)
+    if db.query(ServerOwner).filter(ServerOwner.server_name == name).first():
+        raise HTTPException(status_code=409, detail=f"Server name '{name}' is already registered")
+
+    # Clone into the server's dedicated context dir so codegen / store layout matches.
+    server_dir = service.store.server_dir(name)
+    if server_dir.exists():
+        shutil.rmtree(server_dir)
+
+    git_args = ["git", "clone", "--depth", "1"]
+    if payload.ref:
+        git_args.extend(["--branch", payload.ref])
+    git_args.extend([payload.git_url, str(server_dir)])
+
+    try:
+        result = subprocess.run(git_args, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="git clone timed out") from None
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=502,
+            detail=f"git clone failed: {result.stderr.strip()[:500]}",
+        )
+
+    # Drop the .git directory before tar-ing the context - keeps the image
+    # smaller and avoids embedding the repo history in the deployable.
+    git_dir = server_dir / ".git"
+    if git_dir.exists():
+        shutil.rmtree(git_dir, ignore_errors=True)
+
+    server_py = server_dir / "server.py"
+    if not server_py.is_file():
+        shutil.rmtree(server_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=422,
+            detail="Repo does not contain server.py at its root.",
+        )
+    has_dockerfile = (server_dir / "Dockerfile").is_file()
+
+    db.add(ServerOwner(server_name=name, owner_id=user.id))
+    db.flush()
+
+    # Materialize a code-mode spec so the editor knows what this is. We
+    # don't blow away the cloned files - just save the spec alongside.
+    spec = ServerSpec(
+        name=name,
+        description=payload.description or "",
+        replicas=payload.replicas,
+        mode=MODE_CODE,
+        source=server_py.read_text(encoding="utf-8"),
+    )
+    service.store.save(spec)
+
+    try:
+        if not has_dockerfile:
+            # No Dockerfile in the repo - let codegen drop a default one in.
+            from app.services.codegen import generate_dockerfile
+            (server_dir / "Dockerfile").write_text(
+                generate_dockerfile(spec, service.custom_ca_cert(db)),
+                encoding="utf-8",
+            )
+        result = docker.build_and_start(
+            server_name=name,
+            build_context=server_dir,
+            template_name="git",
+            env_vars=service.effective_env(db, spec),
+            replicas=service.effective_replicas(spec),
+            registry_prefix=service.registry_prefix(db),
+            registry_auth=service.registry_auth(db),
+        )
+        audit_record(db, user, "server.deploy_from_git", "server", name, {
+            "git_url": payload.git_url, "ref": payload.ref,
+        })
+        return _to_response(db, result, spec)
+    except HTTPException:
+        db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error("Git deploy failed for '%s': %s", name, e)
+        db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+        service.store.delete(name)
+        try:
+            docker.remove_server(name, service.registry_prefix(db))
+        except Exception:  # noqa: BLE001
+            pass
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/{name}/export")
