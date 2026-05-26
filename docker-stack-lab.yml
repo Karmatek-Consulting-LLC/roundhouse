@@ -15,7 +15,8 @@ version: "3.8"
 # only listens on :80 (entrypoint `web`); it does not terminate TLS or use Let's Encrypt.
 # Backends stay on mcp-network. The external ingress overlay is fixed in `networks` (traefik-public).
 #   Stack name is fixed at `mcp-platform` (see workflow + traefik.swarm.yml network name).
-#   Host() for platform + SPA is lab.mcp.example.com (must match cluster ingress Host()).
+#   Set PUBLIC_HOSTNAME in the deploy env to the host clients reach the SPA at
+#   - must match the cluster ingress Host() rule that fronts this stack.
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
@@ -142,7 +143,7 @@ services:
       - MCP_DOCKER_NETWORK=mcp-platform_mcp-network
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       - MCP_TRAEFIK_ENTRYPOINTS=web
-      - MCP_BASE_URL=https://lab.mcp.example.com
+      - MCP_BASE_URL=https://${PUBLIC_HOSTNAME}
       - MCP_SERVERS_DATA_DIR=/var/lib/mcp-platform/servers
       - MCP_TEMPLATES_DIR=/app/templates
       - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/mcp-platform/traefik-dynamic
@@ -162,7 +163,7 @@ services:
         - "traefik.swarm.network=mcp-platform_mcp-network"
         # Plain HTTP only — TLS is at cluster ingress. !PathPrefix(`/s/`) leaves /s/{server} to MCP services.
         - "traefik.http.routers.platform-api.entrypoints=web"
-        - "traefik.http.routers.platform-api.rule=Host(`lab.mcp.example.com`) && !PathPrefix(`/s/`)"
+        - "traefik.http.routers.platform-api.rule=Host(`${PUBLIC_HOSTNAME}`) && !PathPrefix(`/s/`)"
         - "traefik.http.services.platform-api.loadbalancer.server.port=8000"
       restart_policy:
         condition: on-failure

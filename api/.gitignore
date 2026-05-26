@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.sqlite
+
+# Optional corp CA bundle for build-time TLS interception. The Dockerfiles
+# pick it up via a glob when present; never commit it.
+docker/corp-ca.crt
