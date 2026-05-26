@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.audit import record as audit_record
 from app.db import get_db
 from app.deps import current_user
 from app.models import ServerScope, ServerToken, User
@@ -79,6 +80,9 @@ def store(
         raise HTTPException(status_code=422, detail="Token name already exists")
     _assert_scopes_exist(db, name, payload.scopes)
     row, plaintext = server_auth.mint_token(db, name, payload.name, payload.scopes)
+    audit_record(db, user, "token.mint", "server_token", str(row.id), {
+        "server_name": name, "name": payload.name, "scopes": payload.scopes,
+    })
     return {**_token_to_api(row), "token": plaintext}
 
 
@@ -92,3 +96,4 @@ def destroy(
     _assert_access(db, user, name)
     if not server_auth.revoke_token(db, name, id):
         raise HTTPException(status_code=404, detail=f"Token {id} not found.")
+    audit_record(db, user, "token.revoke", "server_token", str(id), {"server_name": name})
