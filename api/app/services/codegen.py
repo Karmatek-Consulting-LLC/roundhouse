@@ -1,0 +1,239 @@
+"""Generate Python FastMCP server.py and Dockerfile from a ServerSpec."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from app.services.formatter import format_python
+from app.services.spec import ServerSpec
+
+
+# fastmcp version pinned to a known-good release that exposes
+# StaticTokenVerifier and require_scopes at fastmcp.server.auth. Bump
+# deliberately - generated server.py is coupled to this API surface.
+FASTMCP_VERSION = "3.3.1"
+
+
+_PYTHON_TYPE_MAP = {
+    "str": "str",
+    "int": "int",
+    "float": "float",
+    "bool": "bool",
+    "list": "list",
+    "dict": "dict",
+}
+
+
+def _py_string(s: str) -> str:
+    """Safe Python string literal. JSON encoding is valid Python."""
+    return json.dumps(s, ensure_ascii=False)
+
+
+def _py_dict(value: dict | list) -> str:
+    """Python dict/list literal. JSON encoding is valid Python for
+    str/int/list/dict shapes - which is all we emit in the tokens map."""
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _indent(code: str, level: int = 1) -> str:
+    prefix = "    " * level
+    out_lines: list[str] = []
+    for line in code.rstrip().split("\n"):
+        out_lines.append("" if not line.strip() else prefix + line)
+    return "\n".join(out_lines)
+
+
+def _param_signature(params: list[dict]) -> str:
+    required: list[str] = []
+    optional: list[str] = []
+    for p in params or []:
+        if not isinstance(p, dict) or not p.get("name"):
+            continue
+        type_ = _PYTHON_TYPE_MAP.get(p.get("type", "str"), "str")
+        name = p["name"]
+        if p.get("required", True):
+            required.append(f"{name}: {type_}")
+        else:
+            default = p.get("default")
+            default_repr = "None" if default is None else _py_string(str(default))
+            optional.append(f"{name}: {type_} = {default_repr}")
+    return ", ".join([*required, *optional])
+
+
+def _any_primitive_has_scopes(primitives: list[dict]) -> bool:
+    return any(
+        isinstance(p, dict) and isinstance(p.get("scopes"), list) and p["scopes"]
+        for p in primitives
+    )
+
+
+def _auth_clause(p: dict, auth_enabled: bool) -> str:
+    if not auth_enabled:
+        return ""
+    scopes = p.get("scopes") or []
+    if not isinstance(scopes, list):
+        return ""
+    args = [_py_string(s) for s in scopes if isinstance(s, str) and s]
+    if not args:
+        return ""
+    return "auth=require_scopes(" + ", ".join(args) + ")"
+
+
+def _decorator_args(positional: str, auth: str) -> str:
+    parts = [p for p in (positional, auth) if p]
+    return ", ".join(parts)
+
+
+def _tokens_map(tokens: list[dict]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for t in tokens:
+        plain = str(t.get("token") or "")
+        if not plain:
+            continue
+        out[plain] = {
+            "client_id": str(t.get("name") or ""),
+            "scopes": [s for s in (t.get("scopes") or []) if isinstance(s, str) and s],
+        }
+    return out
+
+
+def _gen_tool(t: dict, auth_enabled: bool) -> str:
+    sig = _param_signature(t.get("parameters", []))
+    ret_py = "dict" if t.get("return_type") == "dict" else "str"
+    default_body = 'return "Not implemented"' if ret_py == "str" else "return {}"
+    body = (t.get("code") or "").strip() or default_body
+    doc = _py_string(t.get("description") or t.get("name") or "")
+    name = t.get("name", "")
+    args = _decorator_args("", _auth_clause(t, auth_enabled))
+    return f"\n@mcp.tool({args})\ndef {name}({sig}) -> {ret_py}:\n    {doc}\n{_indent(body)}\n"
+
+
+def _gen_resource(r: dict, auth_enabled: bool) -> str:
+    body = (r.get("code") or "").strip() or f'return "{r.get("name", "")}"'
+    doc = _py_string(r.get("description") or r.get("name") or "")
+    uri = _py_string(str(r.get("uri", "")))
+    name = r.get("name", "")
+    args = _decorator_args(uri, _auth_clause(r, auth_enabled))
+    return f"\n@mcp.resource({args})\ndef {name}() -> str:\n    {doc}\n{_indent(body)}\n"
+
+
+def _gen_resource_template(rt: dict, auth_enabled: bool) -> str:
+    import re
+
+    template = str(rt.get("uri_template", ""))
+    params = re.findall(r"\{(\w+)\}", template)
+    sig = ", ".join(f"{p}: str" for p in params)
+    body = (rt.get("code") or "").strip() or f'return "{rt.get("name", "")}"'
+    doc = _py_string(rt.get("description") or rt.get("name") or "")
+    uri = _py_string(template)
+    name = rt.get("name", "")
+    args = _decorator_args(uri, _auth_clause(rt, auth_enabled))
+    return f"\n@mcp.resource({args})\ndef {name}({sig}) -> str:\n    {doc}\n{_indent(body)}\n"
+
+
+def _gen_prompt(p: dict, auth_enabled: bool) -> str:
+    sig = _param_signature(p.get("parameters", []))
+    body = (p.get("code") or "").strip() or 'return "Not implemented"'
+    doc = _py_string(p.get("description") or p.get("name") or "")
+    name = p.get("name", "")
+    args = _decorator_args("", _auth_clause(p, auth_enabled))
+    return f"\n@mcp.prompt({args})\ndef {name}({sig}) -> str:\n    {doc}\n{_indent(body)}\n"
+
+
+def _gen_primitive(p: dict, auth_enabled: bool) -> str:
+    return {
+        "tool": _gen_tool,
+        "resource": _gen_resource,
+        "resource_template": _gen_resource_template,
+        "prompt": _gen_prompt,
+    }.get(p.get("kind", ""), lambda *_: "")(p, auth_enabled)
+
+
+def generate_server_py(spec: ServerSpec, *, format_output: bool = True) -> str:
+    auth_enabled = bool(spec.tokens)
+    any_scoped = auth_enabled and _any_primitive_has_scopes(spec.primitives)
+
+    primitives_code = "\n".join(_gen_primitive(p, auth_enabled) for p in spec.primitives).strip()
+
+    import_lines: list[str] = ["from fastmcp import FastMCP"]
+    auth_imports: list[str] = []
+    if auth_enabled:
+        auth_imports.append("StaticTokenVerifier")
+    if any_scoped:
+        auth_imports.append("require_scopes")
+    if auth_imports:
+        import_lines.append("from fastmcp.server.auth import " + ", ".join(auth_imports))
+    # Preserve blank-line separators in user imports - the editor relies on them.
+    import_lines.extend(spec.imports)
+
+    mcp_args = [_py_string(spec.name)]
+    if auth_enabled:
+        mcp_args.append("auth=StaticTokenVerifier(tokens=" + _py_dict(_tokens_map(spec.tokens)) + ")")
+
+    lines: list[str] = [*import_lines, "", "mcp = FastMCP(" + ", ".join(mcp_args) + ")", "", primitives_code, ""]
+    lines.append('if __name__ == "__main__":')
+    lines.append("    mcp.run(")
+    lines.append('        transport="streamable-http",')
+    lines.append('        host="0.0.0.0",')
+    lines.append("        port=8000,")
+    lines.append("        stateless_http=True,")
+    lines.append("        json_response=True,")
+    lines.append("    )")
+    lines.append("")
+    output = "\n".join(lines)
+    if format_output:
+        return format_python(output)
+    return output
+
+
+def _has_custom_ca(ca: str | None) -> bool:
+    return bool(ca and ca.strip())
+
+
+def generate_dockerfile(spec: ServerSpec, custom_ca: str | None = None) -> str:
+    lines: list[str] = [
+        "FROM python:3.12-slim",
+        "WORKDIR /app",
+    ]
+    if _has_custom_ca(custom_ca):
+        # Append the corp CA to the existing trust bundle before any network
+        # call. python:3.12-slim already has ca-certificates - we just edit it.
+        lines.append("COPY custom-ca.crt /usr/local/share/ca-certificates/custom-ca.crt")
+        lines.append(
+            "RUN cat /usr/local/share/ca-certificates/custom-ca.crt >> /etc/ssl/certs/ca-certificates.crt \\"
+        )
+        lines.append("    && update-ca-certificates")
+        lines.append("ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \\")
+        lines.append("    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \\")
+        lines.append("    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt")
+
+    if spec.apt_packages:
+        apt = " ".join(spec.apt_packages)
+        lines.append(
+            f"RUN apt-get update && apt-get install -y --no-install-recommends {apt} "
+            "&& rm -rf /var/lib/apt/lists/*"
+        )
+
+    pip_install = f"fastmcp=={FASTMCP_VERSION}"
+    if spec.pip_packages:
+        pip_install += " " + " ".join(spec.pip_packages)
+    lines.append(f"RUN pip install --no-cache-dir {pip_install}")
+    lines.append("COPY server.py .")
+    lines.append("EXPOSE 8000")
+    lines.append('CMD ["python", "server.py"]')
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_build_context(spec: ServerSpec, output_dir: Path | str, custom_ca: str | None = None) -> Path:
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    server_py = (spec.source or "") if spec.is_code_mode() else generate_server_py(spec)
+    (out / "server.py").write_text(server_py, encoding="utf-8")
+    (out / "Dockerfile").write_text(generate_dockerfile(spec, custom_ca), encoding="utf-8")
+    ca_path = out / "custom-ca.crt"
+    if _has_custom_ca(custom_ca):
+        ca_path.write_text(custom_ca, encoding="utf-8")
+    elif ca_path.exists():
+        ca_path.unlink()
+    return out

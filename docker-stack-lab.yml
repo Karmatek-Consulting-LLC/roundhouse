@@ -119,15 +119,10 @@ services:
       - mcp_admin_password
       - mcp_postgres_password
     volumes:
-      - server-data:/var/www/html/storage/app/servers
-      - traefik-dynamic:/var/www/html/storage/app/traefik/dynamic
+      - server-data:/var/lib/mcp-platform/servers
+      - traefik-dynamic:/var/lib/mcp-platform/traefik-dynamic
     environment:
-      - APP_NAME=MCP Platform
-      - APP_ENV=production
-      - APP_DEBUG=false
-      - APP_URL=https://lab.mcp.example.com
-      - LOG_CHANNEL=stderr
-      - LOG_LEVEL=info
+      - PYTHONUNBUFFERED=1
 
       # Secret files - entrypoint hydrates APP_KEY / ADMIN_* / DB_PASSWORD from these.
       - APP_KEY_FILE=/run/secrets/mcp_app_key
@@ -141,20 +136,16 @@ services:
       - DB_DATABASE=mcp
       - DB_USERNAME=mcp
 
-      - SESSION_DRIVER=array
-      - CACHE_STORE=database
-      - QUEUE_CONNECTION=database
       - SANCTUM_TOKEN_EXPIRATION=1440
 
       # Must match `docker network ls` overlay: {stack}_mcp-network.
       - MCP_DOCKER_NETWORK=mcp-platform_mcp-network
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       - MCP_TRAEFIK_ENTRYPOINTS=web
-      # Same origin as APP_URL (Compose does not expand sibling keys like MCP_BASE_URL=${APP_URL}).
       - MCP_BASE_URL=https://lab.mcp.example.com
-      - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
-      - MCP_TEMPLATES_DIR=/var/www/html/templates
-      - MCP_TRAEFIK_DYNAMIC_DIR=/var/www/html/storage/app/traefik/dynamic
+      - MCP_SERVERS_DATA_DIR=/var/lib/mcp-platform/servers
+      - MCP_TEMPLATES_DIR=/app/templates
+      - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/mcp-platform/traefik-dynamic
       - MCP_DEFAULT_SERVER_REPLICAS=1
       - MCP_MAX_SERVER_REPLICAS=4
     networks:

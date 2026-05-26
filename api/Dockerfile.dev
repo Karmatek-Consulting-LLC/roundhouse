@@ -1,18 +1,29 @@
-# Dev image: PHP CLI with the artisan server. Code is bind-mounted.
-FROM php:8.4-cli-alpine
+# Dev image: Python with uvicorn --reload. Code is bind-mounted.
+FROM python:3.12-slim
 
-RUN apk add --no-cache \
-        tar netcat-openbsd git unzip \
-        postgresql-libs postgresql-dev \
-        libzip-dev oniguruma-dev \
-        ruff \
-    && docker-php-ext-install pdo pdo_pgsql bcmath zip opcache \
-    && apk del postgresql-dev \
-    && rm -rf /var/cache/apk/*
+# Corp CA at OS + Python level (debian-slim already has ca-certificates).
+COPY api/docker/corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt
+RUN cat /usr/local/share/ca-certificates/corp-ca.crt >> /etc/ssl/certs/ca-certificates.crt \
+    && update-ca-certificates
+ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
-COPY --from=composer:2.9 /usr/bin/composer /usr/bin/composer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        netcat-openbsd \
+        tar \
+        curl \
+        build-essential \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /var/www/html
+# ruff is shelled out from PythonFormatter to canonicalize generated server.py.
+RUN pip install --no-cache-dir ruff
+
+WORKDIR /app
+
+COPY api/pyproject.toml /app/pyproject.toml
+RUN pip install --no-cache-dir -e .
 
 COPY api/docker/dev-entrypoint.sh /usr/local/bin/dev-entrypoint.sh
 RUN chmod +x /usr/local/bin/dev-entrypoint.sh
@@ -20,4 +31,4 @@ RUN chmod +x /usr/local/bin/dev-entrypoint.sh
 EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/dev-entrypoint.sh"]
-CMD ["php", "-S", "0.0.0.0:8000", "-t", "public"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

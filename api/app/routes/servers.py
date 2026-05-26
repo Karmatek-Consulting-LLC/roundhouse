@@ -1,0 +1,673 @@
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.db import get_db
+from app.deps import current_user
+from app.models import ServerOwner, ServerScope, User
+from app.services import global_env, permissions
+from app.services.docker import DockerError, DockerNotFoundError, get_docker
+from app.services.server_service import get_server_service
+from app.services.spec import (
+    MODE_CODE,
+    MODE_STRUCTURED,
+    EnvVar,
+    ServerSpec,
+    normalize_env_imports,
+)
+
+router = APIRouter(prefix="/api/servers", tags=["servers"])
+logger = logging.getLogger(__name__)
+
+
+# ---- Helpers ----
+
+_SERVER_NAME_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$")
+_APT_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9+._:=~-]*$")
+
+
+def _assert_access(db: Session, user: User, name: str) -> None:
+    if not permissions.can_access(db, user, name):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+def _missing_snapshot(name: str) -> dict:
+    return {
+        "name": name,
+        "template": "custom",
+        "status": "not_deployed",
+        "created_at": "",
+        "replicas_running": 0,
+        "placement": [],
+    }
+
+
+def _unknown_snapshot(name: str) -> dict:
+    return {
+        "name": name,
+        "template": "custom",
+        "status": "unknown",
+        "created_at": "",
+        "replicas_running": 0,
+        "placement": [],
+    }
+
+
+def _docker_snapshot(name: str) -> dict:
+    try:
+        d = get_docker().get_server(name)
+    except Exception as e:  # noqa: BLE001 - log + degrade
+        logger.warning("Docker get_server failed for %s: %s", name, e)
+        return _unknown_snapshot(name)
+    return d if d is not None else _missing_snapshot(name)
+
+
+def _ensure_spec(db: Session, name: str) -> ServerSpec:
+    service = get_server_service()
+    spec = service.store.load(name)
+    if spec is not None:
+        return spec
+    in_docker = get_docker().get_server(name)
+    in_db = (
+        db.query(ServerOwner).filter(ServerOwner.server_name == name).first() is not None
+    )
+    if in_docker or in_db:
+        spec = ServerSpec(name=name)
+        service.store.save(spec)
+        return spec
+    raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+
+
+def _assert_structured(spec: ServerSpec, op: str) -> None:
+    if spec.is_code_mode():
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot {op} on a code-mode server - edit its server.py source instead.",
+        )
+
+
+def _assert_scopes_exist(db: Session, server: str, scopes: list[str]) -> None:
+    if not scopes:
+        return
+    rows = (
+        db.query(ServerScope.name)
+        .filter(ServerScope.server_name == server, ServerScope.name.in_(scopes))
+        .all()
+    )
+    known = {n for (n,) in rows}
+    unknown = [s for s in scopes if s not in known]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail="Unknown scopes for this server: " + ", ".join(unknown),
+        )
+
+
+def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
+    service = get_server_service()
+    name = snap.get("name") or ""
+    owner_row = (
+        db.query(ServerOwner).filter(ServerOwner.server_name == name).first()
+    )
+    owner_email: str | None = None
+    if owner_row and owner_row.owner:
+        owner_email = owner_row.owner.email
+    return {
+        "name": name,
+        "template": snap.get("template") or "custom",
+        "status": snap.get("status") or "unknown",
+        "url": f"{service.base_url(db)}/s/{name}/mcp",
+        "description": spec.description if spec else "",
+        "mode": spec.mode if spec else MODE_STRUCTURED,
+        "source": spec.source if spec else None,
+        "imports": spec.imports if spec else [],
+        "primitives": spec.primitives if spec else [],
+        "pip_packages": spec.pip_packages if spec else [],
+        "apt_packages": spec.apt_packages if spec else [],
+        "env_global_imports": spec.env_global_imports if spec else [],
+        "env_vars": [v.to_dict() for v in (spec.env_vars if spec else [])],
+        "global_env": [v.to_dict() for v in global_env.list_globals(db)],
+        "owner_id": str(owner_row.owner_id) if owner_row else None,
+        "owner_email": owner_email,
+        "redeploy_required_at": (
+            owner_row.redeploy_required_at.isoformat()
+            if owner_row and owner_row.redeploy_required_at
+            else None
+        ),
+        "created_at": snap.get("created_at"),
+        "replicas_desired": service.effective_replicas(spec),
+        "replicas_running": int(snap.get("replicas_running") or 0),
+        "docker_swarm_mode": get_docker().swarm_mode(),
+        "placement": snap.get("placement") or [],
+    }
+
+
+def _registered_names_for_user(db: Session, user: User) -> list[str]:
+    if user.is_superadmin():
+        return [
+            n
+            for (n,) in db.query(ServerOwner.server_name).order_by(ServerOwner.server_name).all()
+        ]
+    names = permissions.accessible_names(db, user) or []
+    return sorted(names)
+
+
+# ---- Listing / reads ----
+
+@router.get("")
+def index(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    service = get_server_service()
+    out: list[dict] = []
+    for name in _registered_names_for_user(db, user):
+        snap = _docker_snapshot(name)
+        spec = service.store.load(name)
+        out.append(_to_response(db, snap, spec))
+    return out
+
+
+@router.get("/limits")
+def limits(_: User = Depends(current_user)):
+    cfg = get_settings()
+    return {
+        "default_mcp_server_replicas": cfg.mcp_default_server_replicas,
+        "max_mcp_server_replicas": cfg.mcp_max_server_replicas,
+        "docker_swarm_mode": get_docker().swarm_mode(),
+    }
+
+
+@router.get("/{name}")
+def show(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _assert_access(db, user, name)
+    snap = _docker_snapshot(name)
+    spec = get_server_service().store.load(name)
+    return _to_response(db, snap, spec)
+
+
+@router.get("/{name}/logs", response_class=Response)
+def logs(
+    name: str,
+    tail: int = Query(default=200),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    docker = get_docker()
+    if not docker.get_server(name):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Docker service for '{name}'; logs are unavailable until deployed.",
+        )
+    try:
+        text = docker.get_server_logs(name, tail)
+    except DockerNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except DockerError as e:
+        logger.error("Failed to read logs for server '%s': %s", name, e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return Response(content=text, media_type="text/plain; charset=utf-8")
+
+
+# ---- Create ----
+
+class CreateServerIn(BaseModel):
+    name: str
+    description: str | None = ""
+    template: str | None = None
+    config: dict[str, Any] = {}
+    replicas: int | None = None
+    mode: Literal["structured", "code"] = MODE_STRUCTURED
+    source: str | None = None
+
+
+@router.post("", status_code=201)
+def store(
+    payload: CreateServerIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    cfg = get_settings()
+    if not _SERVER_NAME_RE.match(payload.name):
+        raise HTTPException(status_code=422, detail="Invalid server name")
+    if payload.replicas is not None and not (1 <= payload.replicas <= cfg.mcp_max_server_replicas):
+        raise HTTPException(
+            status_code=422,
+            detail=f"replicas must be between 1 and {cfg.mcp_max_server_replicas}",
+        )
+    if payload.mode == MODE_CODE:
+        if not (payload.source and payload.source.strip()):
+            raise HTTPException(status_code=422, detail='source is required when mode is "code"')
+        if payload.template:
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot specify both a template and code-mode source",
+            )
+
+    service = get_server_service()
+    docker = get_docker()
+    name = payload.name
+
+    if docker.get_server(name):
+        raise HTTPException(status_code=409, detail=f"Server '{name}' already exists")
+
+    _cleanup_orphan_registration(db, name, user)
+
+    if db.query(ServerOwner).filter(ServerOwner.server_name == name).first():
+        raise HTTPException(
+            status_code=409, detail=f"Server name '{name}' is already registered"
+        )
+
+    db.add(ServerOwner(server_name=name, owner_id=user.id))
+    db.flush()
+
+    try:
+        spec = ServerSpec(
+            name=name,
+            description=payload.description or "",
+            replicas=payload.replicas,
+            mode=payload.mode,
+            source=(payload.source if payload.mode == MODE_CODE else None),
+        )
+
+        if payload.template:
+            tmpl = service.templates.get_template(payload.template)
+            if tmpl is None:
+                raise HTTPException(
+                    status_code=404, detail=f"Template '{payload.template}' not found"
+                )
+            build_context = service.templates.render(payload.template, name, payload.config)
+            service.store.save(spec)
+            result = docker.build_and_start(
+                server_name=name,
+                build_context=build_context,
+                template_name=payload.template,
+                env_vars=service.effective_env(db, spec),
+                replicas=service.effective_replicas(spec),
+                registry_prefix=service.registry_prefix(db),
+                registry_auth=service.registry_auth(db),
+            )
+        else:
+            result = service.build_and_deploy(db, spec)
+
+        return _to_response(db, result, spec)
+    except HTTPException:
+        db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error("Failed to create server '%s': %s", name, e)
+        db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+        service.store.delete(name)
+        try:
+            docker.remove_server(name, service.registry_prefix(db))
+        except Exception:  # noqa: BLE001
+            pass
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _cleanup_orphan_registration(db: Session, name: str, user: User) -> None:
+    if get_docker().get_server(name):
+        return
+    orphan = db.query(ServerOwner).filter(ServerOwner.server_name == name).first()
+    if orphan is None:
+        return
+    if not user.is_superadmin() and str(orphan.owner_id) != str(user.id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Server name '{name}' is already registered to another user",
+        )
+    logger.warning("Removing orphaned server_owners row for '%s'", name)
+    db.delete(orphan)
+    db.flush()
+    get_server_service().store.delete(name)
+
+
+# ---- Lifecycle ----
+
+@router.post("/{name}/start")
+def start(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _assert_access(db, user, name)
+    docker = get_docker()
+    if not docker.get_server(name):
+        raise HTTPException(
+            status_code=400,
+            detail="Server has no Docker service to start. Deploy configuration from the server details page first.",
+        )
+    service = get_server_service()
+    spec = service.store.load(name)
+    replicas = service.effective_replicas(spec)
+    result = docker.start_server(name, replicas)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    if spec is None:
+        spec = _ensure_spec(db, name)
+    return _to_response(db, result, spec)
+
+
+@router.post("/{name}/stop")
+def stop(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _assert_access(db, user, name)
+    docker = get_docker()
+    if not docker.get_server(name):
+        raise HTTPException(
+            status_code=400,
+            detail="Server is not deployed to Docker; nothing to stop.",
+        )
+    result = docker.stop_server(name)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    spec = get_server_service().store.load(name)
+    return _to_response(db, result, spec)
+
+
+@router.post("/{name}/redeploy")
+def redeploy(
+    name: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    try:
+        result = get_server_service().redeploy(db, spec)
+        return _to_response(db, result, spec)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error("Failed to redeploy '%s': %s", name, e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
+def destroy(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _assert_access(db, user, name)
+    service = get_server_service()
+    docker = get_docker()
+    removed = False
+    try:
+        removed = docker.remove_server(name, service.registry_prefix(db))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Error removing docker server '%s': %s", name, e)
+    if not removed:
+        if not db.query(ServerOwner).filter(ServerOwner.server_name == name).first():
+            raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+        logger.warning("Clearing orphaned registration for '%s' (no Docker service to remove)", name)
+    service.store.delete(name)
+    db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+
+
+# ---- Spec mutations ----
+
+def _save_and_respond(db: Session, spec: ServerSpec) -> dict:
+    try:
+        get_server_service().save_spec(db, spec)
+        snap = _docker_snapshot(spec.name)
+        return _to_response(db, snap, spec)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error("Save failed for '%s': %s", spec.name, e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+class ReplicasIn(BaseModel):
+    replicas: int = Field(ge=1)
+
+
+@router.put("/{name}/replicas")
+def update_replicas(
+    name: str,
+    payload: ReplicasIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    cfg = get_settings()
+    if payload.replicas > cfg.mcp_max_server_replicas:
+        raise HTTPException(
+            status_code=422,
+            detail=f"replicas must be ≤ {cfg.mcp_max_server_replicas}",
+        )
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    spec.replicas = payload.replicas
+    service = get_server_service()
+    service.store.save(spec)
+
+    docker = get_docker()
+    if docker.swarm_mode():
+        running = docker.get_server(name)
+        if running and running.get("status") == "running":
+            docker.scale_server(name, spec.replicas)
+
+    snap = docker.get_server(name) or _missing_snapshot(name)
+    return _to_response(db, snap, spec)
+
+
+class DescriptionIn(BaseModel):
+    description: str
+
+
+@router.put("/{name}/description")
+def update_description(
+    name: str,
+    payload: DescriptionIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    spec.description = payload.description
+    get_server_service().store.save(spec)
+    snap = get_docker().get_server(name) or _missing_snapshot(name)
+    return _to_response(db, snap, spec)
+
+
+class SourceIn(BaseModel):
+    source: str
+
+
+@router.put("/{name}/source")
+def update_source(
+    name: str,
+    payload: SourceIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    if not spec.is_code_mode():
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot set source on a structured server - use the primitive editor instead.",
+        )
+    spec.source = payload.source
+    return _save_and_respond(db, spec)
+
+
+class PrimitiveIn(BaseModel):
+    kind: Literal["tool", "resource", "resource_template", "prompt"]
+    name: str
+    description: str | None = ""
+    code: str | None = ""
+    return_type: Literal["str", "dict"] | None = None
+    parameters: list[dict] | None = None
+    uri: str | None = None
+    uri_template: str | None = None
+    mime_type: str | None = None
+    scopes: list[str] | None = None
+
+
+class AddPrimitiveIn(BaseModel):
+    primitive: PrimitiveIn
+
+
+def _primitive_to_dict(p: PrimitiveIn) -> dict:
+    """Strip None-valued fields the way the Laravel validator did so we don't
+    pollute the on-disk spec with explicit nulls."""
+    raw = p.model_dump(exclude_none=True)
+    # Sanity-bound scopes to plain string list.
+    if "scopes" in raw and isinstance(raw["scopes"], list):
+        raw["scopes"] = [s for s in raw["scopes"] if isinstance(s, str)][:128]
+    return raw
+
+
+@router.post("/{name}/primitives")
+def add_primitive(
+    name: str,
+    payload: AddPrimitiveIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    _assert_scopes_exist(db, name, payload.primitive.scopes or [])
+    spec = _ensure_spec(db, name)
+    _assert_structured(spec, "add primitives")
+    for p in spec.primitives:
+        if p.get("name") == payload.primitive.name and p.get("kind") == payload.primitive.kind:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{payload.primitive.kind} '{payload.primitive.name}' already exists",
+            )
+    spec.primitives.append(_primitive_to_dict(payload.primitive))
+    return _save_and_respond(db, spec)
+
+
+@router.put("/{name}/primitives/{prim_name}")
+def update_primitive(
+    name: str,
+    prim_name: str,
+    payload: AddPrimitiveIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    _assert_scopes_exist(db, name, payload.primitive.scopes or [])
+    spec = _ensure_spec(db, name)
+    _assert_structured(spec, "update primitives")
+
+    idx = next(
+        (i for i, p in enumerate(spec.primitives) if p.get("name") == prim_name), None
+    )
+    if idx is None:
+        raise HTTPException(status_code=404, detail=f"Primitive '{prim_name}' not found")
+    spec.primitives[idx] = _primitive_to_dict(payload.primitive)
+    return _save_and_respond(db, spec)
+
+
+@router.delete("/{name}/primitives/{prim_name}")
+def delete_primitive(
+    name: str,
+    prim_name: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    _assert_structured(spec, "delete primitives")
+    before = len(spec.primitives)
+    spec.primitives = [p for p in spec.primitives if p.get("name") != prim_name]
+    if len(spec.primitives) == before:
+        raise HTTPException(status_code=404, detail=f"Primitive '{prim_name}' not found")
+    return _save_and_respond(db, spec)
+
+
+class PackagesIn(BaseModel):
+    pip_packages: list[str]
+
+
+@router.put("/{name}/packages")
+def update_packages(
+    name: str,
+    payload: PackagesIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    spec.pip_packages = list(payload.pip_packages)
+    return _save_and_respond(db, spec)
+
+
+class AptPackagesIn(BaseModel):
+    apt_packages: list[str]
+
+
+@router.put("/{name}/apt-packages")
+def update_apt_packages(
+    name: str,
+    payload: AptPackagesIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    for p in payload.apt_packages:
+        if not _APT_NAME_RE.match(p):
+            raise HTTPException(status_code=422, detail=f"Invalid apt package name: {p}")
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    spec.apt_packages = list(payload.apt_packages)
+    return _save_and_respond(db, spec)
+
+
+class EnvVarItem(BaseModel):
+    name: str
+    value: str = ""
+
+
+class EnvIn(BaseModel):
+    env_global_imports: list[str] = []
+    env_vars: list[EnvVarItem] = []
+
+
+def _parse_env_vars(items: list[EnvVarItem]) -> list[EnvVar]:
+    out: list[EnvVar] = []
+    for it in items:
+        ev = EnvVar.from_dict(it.model_dump())
+        if ev is not None:
+            out.append(ev)
+    return out
+
+
+@router.put("/{name}/env")
+def update_env(
+    name: str,
+    payload: EnvIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    spec.env_global_imports = normalize_env_imports(payload.env_global_imports)
+    spec.env_vars = _parse_env_vars(payload.env_vars)
+    return _save_and_respond(db, spec)
+
+
+class ConfigIn(BaseModel):
+    imports: list[str] = []
+    pip_packages: list[str] = []
+    apt_packages: list[str] = []
+    env_global_imports: list[str] = []
+    env_vars: list[EnvVarItem] = []
+
+
+@router.put("/{name}/config")
+def update_config(
+    name: str,
+    payload: ConfigIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    for p in payload.apt_packages:
+        if not _APT_NAME_RE.match(p):
+            raise HTTPException(status_code=422, detail=f"Invalid apt package name: {p}")
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    _assert_structured(spec, "update config (imports)")
+    spec.imports = list(payload.imports)
+    spec.pip_packages = list(payload.pip_packages)
+    spec.apt_packages = list(payload.apt_packages)
+    spec.env_global_imports = normalize_env_imports(payload.env_global_imports)
+    spec.env_vars = _parse_env_vars(payload.env_vars)
+    return _save_and_respond(db, spec)
