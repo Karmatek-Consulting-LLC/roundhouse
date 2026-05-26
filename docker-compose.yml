@@ -41,18 +41,17 @@ services:
     stop_grace_period: 60s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./api:/var/www/html
-      - ./templates:/var/www/html/templates:ro
-      - platform_vendor:/var/www/html/vendor
-      - server-data:/var/www/html/storage/app/servers
-      - traefik-dynamic:/var/www/html/storage/app/traefik/dynamic
+      - ./api:/app
+      - ./templates:/app/templates:ro
+      - server-data:/var/lib/mcp-platform/servers
+      - traefik-dynamic:/var/lib/mcp-platform/traefik-dynamic
     environment:
-      - APP_NAME=MCP Platform
-      - APP_ENV=local
-      - APP_DEBUG=true
-      - APP_URL=${MCP_BASE_URL:-http://localhost:3080}
-      - LOG_CHANNEL=stderr
-      - LOG_LEVEL=debug
+      - PYTHONUNBUFFERED=1
+      # APP_KEY (base64:...) is used by laravel_crypto.py to decrypt
+      # server_tokens rows minted by the old Laravel app. Set this to the
+      # same value that was in the Laravel .env so existing tokens keep
+      # working; otherwise leave blank and re-issue tokens after the port.
+      - APP_KEY=${APP_KEY:-}
 
       - DB_CONNECTION=pgsql
       - DB_HOST=postgres
@@ -61,9 +60,6 @@ services:
       - DB_USERNAME=${POSTGRES_USER:-mcp}
       - DB_PASSWORD=${POSTGRES_PASSWORD:-mcp}
 
-      - SESSION_DRIVER=array
-      - CACHE_STORE=database
-      - QUEUE_CONNECTION=database
       - SANCTUM_TOKEN_EXPIRATION=1440
 
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
@@ -72,9 +68,9 @@ services:
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:3080}
       - MCP_DOCKER_NETWORK=${DOCKER_NETWORK:-mcp-network}
       - MCP_DOCKER_SOCKET=/var/run/docker.sock
-      - MCP_SERVERS_DATA_DIR=/var/www/html/storage/app/servers
-      - MCP_TEMPLATES_DIR=/var/www/html/templates
-      - MCP_TRAEFIK_DYNAMIC_DIR=/var/www/html/storage/app/traefik/dynamic
+      - MCP_SERVERS_DATA_DIR=/var/lib/mcp-platform/servers
+      - MCP_TEMPLATES_DIR=/app/templates
+      - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/mcp-platform/traefik-dynamic
       - MCP_DEFAULT_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
       - MCP_MAX_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
     networks:
@@ -113,6 +109,5 @@ volumes:
   pgdata:
   server-data:
   traefik-dynamic:
-  platform_vendor:
   frontend_node_modules:
   frontend_pnpm_store:

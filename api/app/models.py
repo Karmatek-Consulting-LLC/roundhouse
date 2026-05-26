@@ -1,0 +1,200 @@
+"""SQLAlchemy models matching the Laravel schema exactly.
+
+Tables created by Laravel migrations:
+  - users
+  - teams
+  - team_memberships
+  - server_owners
+  - platform_settings
+  - server_scopes
+  - server_tokens
+  - personal_access_tokens
+  - cache, cache_locks, jobs, job_batches, failed_jobs, sessions  (Laravel-internal — kept as plain tables but unused here)
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+
+if TYPE_CHECKING:
+    pass
+
+
+def _uuid_str() -> str:
+    return str(uuid.uuid4())
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(PgUUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    memberships: Mapped[list["TeamMembership"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    owned_servers: Mapped[list["ServerOwner"]] = relationship(back_populates="owner")
+
+    def is_superadmin(self) -> bool:
+        return self.role == "superadmin"
+
+    def to_api(self) -> dict:
+        return {
+            "id": str(self.id),
+            "email": self.email,
+            "display_name": self.display_name,
+            "role": self.role,
+        }
+
+
+class Team(Base):
+    __tablename__ = "teams"
+
+    id: Mapped[str] = mapped_column(PgUUID(as_uuid=False), primary_key=True, default=_uuid_str)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    memberships: Mapped[list["TeamMembership"]] = relationship(
+        back_populates="team", cascade="all, delete-orphan"
+    )
+
+
+class TeamMembership(Base):
+    __tablename__ = "team_memberships"
+
+    user_id: Mapped[str] = mapped_column(
+        PgUUID(as_uuid=False),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    team_id: Mapped[str] = mapped_column(
+        PgUUID(as_uuid=False),
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role: Mapped[str] = mapped_column(String(20), default="member", nullable=False)
+
+    user: Mapped["User"] = relationship(back_populates="memberships")
+    team: Mapped["Team"] = relationship(back_populates="memberships")
+
+
+class ServerOwner(Base):
+    __tablename__ = "server_owners"
+
+    server_name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(
+        PgUUID(as_uuid=False),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # Renamed from auth_rebuild_required_at by the 2026_05_22 migration. Set
+    # when any spec change happens; cleared on successful redeploy.
+    redeploy_required_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    owner: Mapped["User"] = relationship(back_populates="owned_servers")
+
+
+class PlatformSetting(Base):
+    __tablename__ = "platform_settings"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+
+class ServerScope(Base):
+    __tablename__ = "server_scopes"
+    __table_args__ = (
+        UniqueConstraint("server_name", "name", name="server_scopes_server_name_name_unique"),
+        Index("server_scopes_server_name_index", "server_name"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    server_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class ServerToken(Base):
+    __tablename__ = "server_tokens"
+    __table_args__ = (
+        UniqueConstraint("server_name", "name", name="server_tokens_server_name_name_unique"),
+        Index("server_tokens_server_name_index", "server_name"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    server_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Encrypted at rest using Laravel's APP_KEY-derived AES-256-CBC + HMAC
+    # format so existing tokens stay valid after the port.
+    token: Mapped[str] = mapped_column(Text, nullable=False)
+    display_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    # JSON-encoded list[str] of scope names this token grants.
+    scopes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class PersonalAccessToken(Base):
+    """Sanctum's `personal_access_tokens` table. We keep the same wire format so
+    existing tokens issued by Laravel keep authenticating after the port:
+    plaintext token is `{id}|{rawText}`; column stores sha256(rawText)."""
+
+    __tablename__ = "personal_access_tokens"
+    __table_args__ = (Index("personal_access_tokens_expires_at_index", "expires_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tokenable_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    tokenable_id: Mapped[str] = mapped_column(PgUUID(as_uuid=False), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    abilities: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
