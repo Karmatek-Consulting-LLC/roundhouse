@@ -72,6 +72,7 @@ def health():
 
 
 # Routers
+from app.routes import audit as audit_route  # noqa: E402
 from app.routes import auth as auth_route  # noqa: E402
 from app.routes import invoke as invoke_route  # noqa: E402
 from app.routes import pypi as pypi_route  # noqa: E402
@@ -83,6 +84,7 @@ from app.routes import teams as teams_route  # noqa: E402
 from app.routes import templates as templates_route  # noqa: E402
 from app.routes import users as users_route  # noqa: E402
 
+app.include_router(audit_route.router)
 app.include_router(auth_route.router)
 app.include_router(users_route.router)
 app.include_router(teams_route.router)

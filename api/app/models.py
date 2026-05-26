@@ -176,6 +176,30 @@ class ServerToken(Base):
     )
 
 
+class AuditEvent(Base):
+    """Append-only log of mutating operations. Recorded by app.audit.record()
+    from the routers that mutate state. Read by the /api/audit endpoint."""
+
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        Index("audit_events_created_at_index", "created_at"),
+        Index("audit_events_target_index", "target_type", "target_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    actor_id: Mapped[str | None] = mapped_column(PgUUID(as_uuid=False), nullable=True)
+    actor_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Small structured payload describing what changed (e.g. {"replicas": 4}).
+    # Don't store secrets here - the recording helpers strip known sensitive keys.
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class PersonalAccessToken(Base):
     """Sanctum's `personal_access_tokens` table. We keep the same wire format so
     existing tokens issued by Laravel keep authenticating after the port:

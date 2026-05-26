@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.audit import record as audit_record
 from app.config import get_settings
 from app.db import get_db
 from app.deps import current_user
@@ -295,6 +296,9 @@ def store(
         else:
             result = service.build_and_deploy(db, spec)
 
+        audit_record(db, user, "server.create", "server", name, {
+            "template": payload.template, "mode": payload.mode,
+        })
         return _to_response(db, result, spec)
     except HTTPException:
         db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
@@ -346,6 +350,7 @@ def start(name: str, user: User = Depends(current_user), db: Session = Depends(g
         raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
     if spec is None:
         spec = _ensure_spec(db, name)
+    audit_record(db, user, "server.start", "server", name)
     return _to_response(db, result, spec)
 
 
@@ -362,6 +367,7 @@ def stop(name: str, user: User = Depends(current_user), db: Session = Depends(ge
     if result is None:
         raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
     spec = get_server_service().store.load(name)
+    audit_record(db, user, "server.stop", "server", name)
     return _to_response(db, result, spec)
 
 
@@ -373,12 +379,93 @@ def redeploy(
     spec = _ensure_spec(db, name)
     try:
         result = get_server_service().redeploy(db, spec)
+        audit_record(db, user, "server.redeploy", "server", name)
         return _to_response(db, result, spec)
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to redeploy '%s': %s", name, e)
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ---- Export / Import ----
+
+EXPORT_VERSION = 1
+
+
+@router.get("/{name}/export")
+def export_spec(
+    name: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Return a portable JSON dump of the server's spec. No secrets - runtime
+    tokens and apt/pip env values for global imports are NOT included; the
+    importer regenerates tokens and reads globals from its own platform."""
+    _assert_access(db, user, name)
+    spec = get_server_service().store.load(name)
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    return {
+        "version": EXPORT_VERSION,
+        "exported_at": _now_iso(),
+        "spec": spec.to_dict(),
+    }
+
+
+class ImportIn(BaseModel):
+    spec: dict
+    # If set, override the spec's own `name` field. Useful when the source
+    # server already exists locally and you want to clone it under a new name.
+    name_override: str | None = None
+
+
+@router.post("/import", status_code=201)
+def import_spec(
+    payload: ImportIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    raw_spec = dict(payload.spec)
+    if payload.name_override:
+        raw_spec["name"] = payload.name_override
+    name = str(raw_spec.get("name") or "")
+    if not _SERVER_NAME_RE.match(name):
+        raise HTTPException(status_code=422, detail=f"Invalid or missing server name: {name!r}")
+
+    docker = get_docker()
+    if docker.get_server(name):
+        raise HTTPException(status_code=409, detail=f"Server '{name}' already exists")
+    _cleanup_orphan_registration(db, name, user)
+    if db.query(ServerOwner).filter(ServerOwner.server_name == name).first():
+        raise HTTPException(status_code=409, detail=f"Server name '{name}' is already registered")
+
+    db.add(ServerOwner(server_name=name, owner_id=user.id))
+    db.flush()
+
+    spec = ServerSpec.from_dict(raw_spec)
+    service = get_server_service()
+    try:
+        result = service.build_and_deploy(db, spec)
+        audit_record(db, user, "server.import", "server", name)
+        return _to_response(db, result, spec)
+    except HTTPException:
+        db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error("Import failed for '%s': %s", name, e)
+        db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+        service.store.delete(name)
+        try:
+            docker.remove_server(name, service.registry_prefix(db))
+        except Exception:  # noqa: BLE001
+            pass
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
@@ -397,6 +484,7 @@ def destroy(name: str, user: User = Depends(current_user), db: Session = Depends
         logger.warning("Clearing orphaned registration for '%s' (no Docker service to remove)", name)
     service.store.delete(name)
     db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+    audit_record(db, user, "server.delete", "server", name)
 
 
 # ---- Spec mutations ----
