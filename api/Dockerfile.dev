@@ -1,6 +1,21 @@
 # Dev image: Python with uvicorn --reload. Code is bind-mounted.
 FROM python:3.12-slim
 
+# Optional corp CA: if the operator drops a PEM at api/docker/corp-ca.crt
+# before building, install it into the image trust store. The [t] glob lets
+# the COPY succeed silently when the file is absent. The cert is gitignored
+# - drop it locally when building inside a network with a TLS-inspecting
+# proxy, leave it absent in lab/dev where the default trust store is fine.
+COPY api/docker/corp-ca.cr[t] /tmp/build-ca/
+RUN if [ -s /tmp/build-ca/corp-ca.crt ]; then \
+        cp /tmp/build-ca/corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt && \
+        cat /tmp/build-ca/corp-ca.crt >> /etc/ssl/certs/ca-certificates.crt && \
+        update-ca-certificates; \
+    fi && rm -rf /tmp/build-ca
+ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         netcat-openbsd \
         tar \
