@@ -111,6 +111,32 @@ class DockerHttp:
             raise self._to_exception(resp, path)
         return resp.content
 
+    def stream_raw(self, path: str, query: dict | None = None):
+        """Open a long-lived GET that yields bytes as Docker pushes them.
+        Used by the log-follow endpoint. The caller is responsible for
+        breaking out of the iterator when it wants to stop."""
+        req = self._client.build_request("GET", path.lstrip("/"), params=self._encode_query(query))
+        resp = self._client.send(req, stream=True)
+        if resp.status_code >= 400:
+            # Drain so we can show the error message.
+            body = resp.read().decode("utf-8", errors="replace")
+            resp.close()
+            raise self._to_exception_with_body(resp.status_code, body, path)
+        return resp
+
+    @staticmethod
+    def _to_exception_with_body(status_code: int, body: str, path: str) -> DockerError:
+        message = body
+        try:
+            decoded = json.loads(body)
+            if isinstance(decoded, dict) and "message" in decoded:
+                message = str(decoded["message"])
+        except json.JSONDecodeError:
+            pass
+        if status_code == 404:
+            return DockerNotFoundError(f"Not found: {path} - {message}")
+        return DockerError(f"Docker API {status_code} on {path}: {message}")
+
     # ---- Helpers ----
 
     @staticmethod
