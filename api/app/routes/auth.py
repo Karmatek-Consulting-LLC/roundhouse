@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth import hash_password, issue_token, verify_password
@@ -13,7 +13,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 class LoginIn(BaseModel):
-    email: EmailStr
+    # Don't gate on EmailStr - admin@mcp.local and other .local addresses are
+    # legitimate in this product's deployments.
+    email: str = Field(min_length=1)
     password: str = Field(min_length=1)
 
 
@@ -23,7 +25,7 @@ class ChangePasswordIn(BaseModel):
 
 
 class RegisterIn(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=1)
     password: str = Field(min_length=8, max_length=256)
     display_name: str = Field(min_length=1, max_length=255)
     role: str = Field(default="user")
