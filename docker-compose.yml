@@ -66,6 +66,7 @@ services:
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:3080}
       - MCP_DOCKER_NETWORK=${DOCKER_NETWORK:-mcp-network}
       - MCP_DOCKER_SOCKET=/var/run/docker.sock
+      - MCP_DOCKER_MODE=${MCP_DOCKER_MODE:-auto}
       - MCP_SERVERS_DATA_DIR=/var/lib/mcp-platform/servers
       - MCP_TEMPLATES_DIR=/app/templates
       - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/mcp-platform/traefik-dynamic
