@@ -131,13 +131,10 @@ jobs:
             sleep 1
           done
 
-          # Laravel app - startup runs migrations, seeds the admin user, warms caches.
+          # Startup runs migrations and seeds the admin user.
           docker run -d --name "$APP" --network "$NET" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -e APP_KEY=base64:$(openssl rand -base64 32) \
-            -e APP_ENV=production \
-            -e APP_DEBUG=false \
-            -e LOG_CHANNEL=stderr \
             -e DB_CONNECTION=pgsql \
             -e DB_HOST="$DB" \
             -e DB_PORT=5432 \
@@ -149,7 +146,7 @@ jobs:
             -e MCP_BASE_URL=http://localhost \
             "mcp-platform-ci:${LAB_SHA_TAG}" >/dev/null
 
-          # Health probe via /api/health - Octane serves on :8000.
+          # Health probe via /api/health (uvicorn serves on :8000).
           for i in $(seq 1 120); do
             RUNNING="$(docker inspect -f '{{.State.Running}}' "$APP" 2>/dev/null || echo false)"
             if [[ "$RUNNING" != "true" ]]; then

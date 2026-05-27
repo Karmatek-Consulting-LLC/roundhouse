@@ -1,6 +1,6 @@
-"""SQLAlchemy models matching the Laravel schema exactly.
+"""SQLAlchemy models for the MCP Platform schema.
 
-Tables created by Laravel migrations:
+Tables:
   - users
   - teams
   - team_memberships
@@ -9,7 +9,7 @@ Tables created by Laravel migrations:
   - server_scopes
   - server_tokens
   - personal_access_tokens
-  - cache, cache_locks, jobs, job_batches, failed_jobs, sessions  (Laravel-internal — kept as plain tables but unused here)
+  - cache, cache_locks, jobs, job_batches, failed_jobs, sessions  (legacy — declared but unused)
 """
 from __future__ import annotations
 
@@ -162,8 +162,8 @@ class ServerToken(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     server_name: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    # Encrypted at rest using Laravel's APP_KEY-derived AES-256-CBC + HMAC
-    # format so existing tokens stay valid after the port.
+    # Encrypted at rest with the AES-256-CBC + HMAC envelope keyed off APP_KEY
+    # (see app.crypto). Fixed format — existing rows must remain decryptable.
     token: Mapped[str] = mapped_column(Text, nullable=False)
     display_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
     # JSON-encoded list[str] of scope names this token grants.
@@ -201,9 +201,8 @@ class AuditEvent(Base):
 
 
 class PersonalAccessToken(Base):
-    """Sanctum's `personal_access_tokens` table. We keep the same wire format so
-    existing tokens issued by Laravel keep authenticating after the port:
-    plaintext token is `{id}|{rawText}`; column stores sha256(rawText)."""
+    """API bearer tokens. Plaintext form is `{id}|{rawText}`; the column
+    stores sha256(rawText) — never the raw token."""
 
     __tablename__ = "personal_access_tokens"
     __table_args__ = (Index("personal_access_tokens_expires_at_index", "expires_at"),)

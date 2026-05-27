@@ -45,9 +45,7 @@ def db_session() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Create any missing tables. Idempotent — if Laravel already migrated this
-    DB, only newly added SQLAlchemy tables show up. For brand-new databases,
-    every Laravel-equivalent table is created."""
+    """Create any missing tables. Idempotent — existing tables are left alone."""
     # Import models so SQLAlchemy registers them on Base.metadata.
     from app import models  # noqa: F401
 

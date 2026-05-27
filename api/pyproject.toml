@@ -1,7 +1,7 @@
 [project]
 name = "mcp-platform-api"
 version = "0.1.0"
-description = "FastAPI backend for the MCP Platform - port of the Laravel app."
+description = "FastAPI backend for the MCP Platform."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

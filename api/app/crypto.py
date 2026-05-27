@@ -1,18 +1,16 @@
-"""Laravel `encrypted` cast compatibility.
+"""AES-256-CBC + HMAC-SHA256 envelope used to encrypt server_tokens at rest.
 
-Laravel's Encrypter wraps AES-256-CBC + HMAC-SHA256 in a base64(JSON) envelope:
+Wire format — a base64-encoded JSON object:
 
     {
         "iv":    base64(16 bytes),
         "value": base64(ciphertext),
-        "mac":   hex(hmac_sha256(iv || ciphertext, key)),
+        "mac":   hex(hmac_sha256(iv_b64 || value_b64, key)),
         "tag":   ""        # CBC has no tag
     }
 
-The outer envelope is then base64-encoded. The key is the 32 raw bytes inside
-the `base64:...` APP_KEY. Existing server_tokens rows minted by the Laravel app
-must remain decryptable after the port, so we replicate the wire format
-exactly.
+The key is the 32 raw bytes carried inside a `base64:<...>`-prefixed APP_KEY.
+The format is fixed: existing rows must remain decryptable, so do not change it.
 """
 from __future__ import annotations
 

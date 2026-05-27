@@ -44,8 +44,8 @@ def _seed_admin_if_needed() -> None:
 app = FastAPI(title="MCP Platform API", lifespan=lifespan)
 
 
-# Match Laravel's `{"detail": "..."}` envelope for all error responses so the
-# frontend's error handling works unchanged.
+# Error envelope: `{"detail": "..."}` for HTTP errors, with `errors` added on
+# 422 validation failures. The frontend expects this shape.
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
@@ -58,7 +58,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
-    # Best-effort short message in `detail`, plus the full `errors` array (mirrors Laravel's shape).
+    # Best-effort short message in `detail`, plus the full `errors` array.
     first = errors[0].get("msg") if errors else "Validation failed"
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

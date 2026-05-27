@@ -1,8 +1,7 @@
-"""Sanctum-compatible bearer token auth.
+"""Bearer token auth.
 
-Token wire format: `{id}|{plaintext}` — split on `|`, look up row by `id`,
-compare sha256(plaintext) to stored `token` column. Same as Laravel's
-HasApiTokens, so tokens issued by the Laravel app keep working."""
+Token wire format: `{id}|{plaintext}` — split on `|`, look up the row by
+`id`, then compare sha256(plaintext) to the stored `token` column."""
 from __future__ import annotations
 
 import hashlib
@@ -17,12 +16,11 @@ from app.models import PersonalAccessToken, User
 from app.config import get_settings
 
 
-# ---------- Passwords (Laravel-compatible bcrypt) ----------
+# ---------- Passwords ----------
 
 def hash_password(plaintext: str) -> str:
-    """Laravel's Hash::make uses bcrypt with cost 12 by default. The `$2y$`
-    prefix from PHP and `$2b$` from Python bcrypt are interchangeable per
-    the underlying library."""
+    # Cost 12. Both $2y$ and $2b$ prefixes are accepted on verify by the
+    # underlying bcrypt library, so existing hashes with either prefix work.
     return bcrypt.hashpw(plaintext.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode()
 
 
@@ -45,7 +43,7 @@ def _sha256(s: str) -> str:
 def issue_token(db: Session, user: User, name: str = "api") -> str:
     """Create a new personal access token and return the plaintext form the
     client must store. The DB stores only sha256(plaintext)."""
-    raw = secrets.token_hex(20)  # 40 chars, matches Laravel default
+    raw = secrets.token_hex(20)  # 40 hex chars
     row = PersonalAccessToken(
         tokenable_type="App\\Models\\User",
         tokenable_id=str(user.id),
@@ -88,9 +86,9 @@ def resolve_token(db: Session, header_value: str | None) -> User | None:
         return None
     if row.expires_at is not None and row.expires_at < datetime.now(timezone.utc):
         return None
-    expiry_minutes = get_settings().sanctum_token_expiration_minutes
+    expiry_minutes = get_settings().auth_token_expiration_minutes
     if expiry_minutes and row.created_at:
-        # Match Laravel's expire-by-created-at when expires_at is null.
+        # When expires_at is null, fall back to a TTL measured from created_at.
         expires = row.created_at + timedelta(minutes=expiry_minutes)
         if expires < datetime.now(timezone.utc):
             return None

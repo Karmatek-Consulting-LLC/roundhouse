@@ -14,10 +14,9 @@ MODE_CODE = "code"
 class EnvVar:
     """A per-server environment variable.
 
-    When `secret=True`, `value` carries Laravel-format ciphertext (see
-    laravel_crypto). The plaintext is never persisted to disk; codegen /
-    container spawn decrypts on demand. Plain rows store plaintext as
-    before."""
+    When `secret=True`, `value` carries an encrypted envelope (see
+    `app.crypto`). The plaintext is never persisted to disk; codegen /
+    container spawn decrypts on demand. Non-secret rows store plaintext."""
 
     name: str
     value: str = ""
