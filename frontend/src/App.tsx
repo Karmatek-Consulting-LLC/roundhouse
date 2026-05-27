@@ -91,10 +91,10 @@ function AppShell() {
             onClick={goHome}
             className="flex items-center gap-3 text-left"
           >
-            <Logo className="h-10 w-10 shrink-0" />
+            <Logo className="h-10 w-auto shrink-0" />
             <div>
               <h1 className="text-xl font-semibold tracking-tight">
-                MCP Platform
+                Roundhouse
               </h1>
               <p className="text-sm text-muted-foreground">
                 Deploy and manage MCP servers
