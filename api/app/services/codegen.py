@@ -485,7 +485,14 @@ def generate_server_py(spec: ServerSpec, *, format_output: bool = True) -> str:
 
     primitives_code = "\n".join(_gen_primitive(p, auth_enabled) for p in spec.primitives).strip()
 
-    import_lines: list[str] = ["from fastmcp import FastMCP"]
+    import_lines: list[str] = [
+        "from fastmcp import FastMCP",
+        # Convenience for tool/resource code: reference uploaded assets as
+        # `(ASSETS_DIR / "foo.json").read_text()`. The directory exists in
+        # the image even when empty (see codegen.write_build_context).
+        "from pathlib import Path as _AssetsPath",
+        'ASSETS_DIR = _AssetsPath("/app/assets")',
+    ]
     auth_imports: list[str] = []
     if auth_enabled:
         auth_imports.append("StaticTokenVerifier")
@@ -560,6 +567,10 @@ def generate_dockerfile(spec: ServerSpec, custom_ca: str | None = None) -> str:
         pip_install += " " + " ".join(spec.pip_packages)
     lines.append(f"RUN pip install --no-cache-dir {pip_install}")
     lines.append("COPY server.py .")
+    # Bake uploaded assets into the image at /app/assets/. write_build_context
+    # always creates an assets/ subdir (possibly empty) so this COPY stays
+    # valid even when the user hasn't uploaded anything.
+    lines.append("COPY assets/ /app/assets/")
     lines.append("EXPOSE 8000")
     # python's urllib avoids needing curl in the base image. exit 0 on 200,
     # non-zero otherwise; Docker flips the container to unhealthy after the
@@ -581,6 +592,10 @@ def write_build_context(spec: ServerSpec, output_dir: Path | str, custom_ca: str
     server_py = (spec.source or "") if spec.is_code_mode() else generate_server_py(spec)
     (out / "server.py").write_text(server_py, encoding="utf-8")
     (out / "Dockerfile").write_text(generate_dockerfile(spec, custom_ca), encoding="utf-8")
+    # Ensure assets/ exists so the Dockerfile's COPY doesn't fail when the
+    # user hasn't uploaded any files. Existing assets are left in place -
+    # the asset store writes to this same directory directly.
+    (out / "assets").mkdir(exist_ok=True)
     ca_path = out / "custom-ca.crt"
     if _has_custom_ca(custom_ca):
         ca_path.write_text(custom_ca, encoding="utf-8")
