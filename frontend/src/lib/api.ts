@@ -68,6 +68,33 @@ export type Primitive =
   | ResourceTemplatePrimitive
   | PromptPrimitive;
 
+export interface UsagePrimitive {
+  kind: string;
+  name: string;
+  calls: number;
+  errors: number;
+  last_call_ts: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+  samples: number;
+}
+
+export interface UsageClient {
+  name: string;
+  client_id: string | null;
+  calls: number;
+  last_call_ts: number;
+}
+
+export interface UsageSnapshot {
+  primitives: UsagePrimitive[];
+  tokens: UsageClient[];
+  started_ts: number;
+  now_ts: number;
+  available: boolean;
+}
+
 export interface TemplateVariable {
   name: string;
   description: string;
@@ -389,6 +416,8 @@ export const api = {
   getServer: (name: string) => request<Server>(`/servers/${name}`),
   getServerLogs: (name: string, tail = 200) =>
     requestText(`/servers/${encodeURIComponent(name)}/logs?tail=${tail}`),
+  getServerUsage: (name: string) =>
+    request<UsageSnapshot>(`/servers/${encodeURIComponent(name)}/usage`),
   createServer: (data: CreateServerRequest) =>
     request<Server>("/servers", {
       method: "POST",
