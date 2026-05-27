@@ -3,7 +3,6 @@ export function Logo({ className }: { className?: string }) {
     <svg
       viewBox="0 0 120 68"
       fill="none"
-      stroke="currentColor"
       strokeWidth="3"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -11,16 +10,20 @@ export function Logo({ className }: { className?: string }) {
       className={className}
       aria-label="Roundhouse"
     >
-      <path d="M 20 50 A 40 40 0 0 1 100 50" />
-      <path d="M 38 50 A 22 22 0 0 1 82 50" />
-      <line x1="20" y1="50" x2="38" y2="50" />
-      <line x1="82" y1="50" x2="100" y2="50" />
-      <line x1="27.6" y1="26.5" x2="42.2" y2="37.1" />
-      <line x1="47.6" y1="12" x2="53.2" y2="29.1" />
-      <line x1="72.4" y1="12" x2="66.8" y2="29.1" />
-      <line x1="92.4" y1="26.5" x2="77.8" y2="37.1" />
-      <line x1="60" y1="63" x2="60" y2="28" />
-      <circle cx="60" cy="50" r="5" />
+      <g stroke="currentColor">
+        <path d="M 20 50 A 40 40 0 0 1 100 50" />
+        <path d="M 38 50 A 22 22 0 0 1 82 50" />
+        <line x1="20" y1="50" x2="38" y2="50" />
+        <line x1="82" y1="50" x2="100" y2="50" />
+        <line x1="27.6" y1="26.5" x2="42.2" y2="37.1" />
+        <line x1="47.6" y1="12" x2="53.2" y2="29.1" />
+        <line x1="72.4" y1="12" x2="66.8" y2="29.1" />
+        <line x1="92.4" y1="26.5" x2="77.8" y2="37.1" />
+      </g>
+      <g className="stroke-primary">
+        <line x1="60" y1="63" x2="60" y2="28" />
+        <circle cx="60" cy="50" r="5" />
+      </g>
     </svg>
   );
 }
