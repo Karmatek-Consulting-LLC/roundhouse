@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 105" fill="none">
+  <g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 50 50 A 40 40 0 0 1 130 50" />
+    <path d="M 68 50 A 22 22 0 0 1 112 50" />
+    <line x1="50" y1="50" x2="68" y2="50" />
+    <line x1="112" y1="50" x2="130" y2="50" />
+    <line x1="57.6" y1="26.5" x2="72.2" y2="37.1" />
+    <line x1="77.6" y1="12" x2="83.2" y2="29.1" />
+    <line x1="102.4" y1="12" x2="96.8" y2="29.1" />
+    <line x1="122.4" y1="26.5" x2="107.8" y2="37.1" />
+    <line x1="90" y1="63" x2="90" y2="28" />
+    <circle cx="90" cy="50" r="5" />
+  </g>
+  <text x="90" y="89" text-anchor="middle" dominant-baseline="central"
+        font-family="ui-monospace, 'SF Mono', Menlo, monospace"
+        font-weight="600" font-size="22" letter-spacing="2.64"
+        fill="currentColor">ROUNDHOUSE</text>
+</svg>
