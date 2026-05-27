@@ -63,6 +63,41 @@ class Settings(BaseSettings):
         default=32, alias="MCP_MAX_SERVER_REPLICAS"
     )
 
+    # Workload backend selector.
+    mcp_orchestrator: str = Field(default="docker", alias="MCP_ORCHESTRATOR")
+
+    # ---- Kubernetes (only used when mcp_orchestrator == "kubernetes") ----
+    mcp_k8s_api_url: str = Field(
+        default="https://kubernetes.default.svc", alias="MCP_K8S_API_URL"
+    )
+    mcp_k8s_namespace: str = Field(default="mcp-servers", alias="MCP_K8S_NAMESPACE")
+    mcp_k8s_token_path: str = Field(
+        default="/var/run/secrets/kubernetes.io/serviceaccount/token",
+        alias="MCP_K8S_TOKEN_PATH",
+    )
+    mcp_k8s_ca_path: str = Field(
+        default="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+        alias="MCP_K8S_CA_PATH",
+    )
+    mcp_k8s_image_pull_secret: str = Field(default="", alias="MCP_K8S_IMAGE_PULL_SECRET")
+
+    # ---- Image builder (Kubernetes backend) ----
+    # "docker" -> talk to MCP_DOCKER_HOST (legacy). "kaniko" -> launch one-shot Jobs.
+    mcp_k8s_builder: str = Field(default="docker", alias="MCP_K8S_BUILDER")
+    mcp_k8s_builder_namespace: str = Field(default="", alias="MCP_K8S_BUILDER_NAMESPACE")
+    mcp_k8s_builder_image: str = Field(
+        default="gcr.io/kaniko-project/executor:latest", alias="MCP_K8S_BUILDER_IMAGE"
+    )
+    mcp_k8s_builder_pvc: str = Field(default="", alias="MCP_K8S_BUILDER_PVC")
+    mcp_k8s_builder_registry_secret: str = Field(
+        default="", alias="MCP_K8S_BUILDER_REGISTRY_SECRET"
+    )
+    mcp_k8s_builder_timeout: int = Field(default=600, alias="MCP_K8S_BUILDER_TIMEOUT")
+    # Set via Downward API (fieldRef: spec.nodeName) in the Helm chart so kaniko
+    # Jobs land on the same node as the api pod and can share the RWO PVC.
+    node_name: str = Field(default="", alias="NODE_NAME")
+    pod_namespace: str = Field(default="", alias="POD_NAMESPACE")
+
     @property
     def docker_host(self) -> str:
         # MCP_DOCKER_HOST wins; MCP_DOCKER_SOCKET kept for backwards compat with
