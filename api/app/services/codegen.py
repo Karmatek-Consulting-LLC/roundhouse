@@ -149,6 +149,142 @@ def _gen_primitive(p: dict, auth_enabled: bool) -> str:
     }.get(p.get("kind", ""), lambda *_: "")(p, auth_enabled)
 
 
+# Default middleware config baked into every generated server. Per-server
+# `middleware_defaults` overrides these; per-primitive `middleware` overrides
+# the server defaults. Keep keys stable - they're read by the generated
+# _PlatformMiddleware class.
+_MIDDLEWARE_BASE_DEFAULTS: dict = {
+    "log_calls": True,
+    "log_arguments": False,
+    "max_argument_bytes": 1_000_000,
+}
+
+
+def _merge_middleware_config(spec: ServerSpec) -> dict[str, dict]:
+    """Resolve the per-primitive middleware config map emitted into server.py.
+
+    The map always contains a "_default" entry (base defaults overlaid with
+    spec.middleware_defaults). Entries for individual primitives are emitted
+    only when that primitive carries a non-empty `middleware` dict."""
+    base = dict(_MIDDLEWARE_BASE_DEFAULTS)
+    if isinstance(spec.middleware_defaults, dict):
+        base.update({k: v for k, v in spec.middleware_defaults.items() if isinstance(k, str)})
+    out: dict[str, dict] = {"_default": base}
+    for p in spec.primitives:
+        name = p.get("name")
+        cfg = p.get("middleware")
+        if not isinstance(name, str) or not name or not isinstance(cfg, dict) or not cfg:
+            continue
+        out[name] = {k: v for k, v in cfg.items() if isinstance(k, str)}
+    return out
+
+
+_MIDDLEWARE_CLASS_SRC = '''
+class _PlatformMiddleware(_Middleware):
+    """Platform-managed middleware: structured request logs + argument-size
+    guard. Per-primitive overrides come from _MIDDLEWARE_CONFIG."""
+
+    async def on_call_tool(self, context, call_next):
+        msg = context.message
+        return await self._invoke("tool", getattr(msg, "name", ""), getattr(msg, "arguments", None), context, call_next)
+
+    async def on_read_resource(self, context, call_next):
+        msg = context.message
+        return await self._invoke("resource", str(getattr(msg, "uri", "")), None, context, call_next)
+
+    async def on_get_prompt(self, context, call_next):
+        msg = context.message
+        return await self._invoke("prompt", getattr(msg, "name", ""), getattr(msg, "arguments", None), context, call_next)
+
+    async def _invoke(self, kind, name, arguments, context, call_next):
+        cfg = _mw_config_for(name)
+        started = _time.perf_counter()
+        err_type: str | None = None
+        try:
+            max_args = cfg.get("max_argument_bytes")
+            if isinstance(max_args, int) and max_args > 0 and arguments is not None:
+                try:
+                    size = len(_json.dumps(arguments, default=str).encode("utf-8"))
+                except Exception:
+                    size = 0
+                if size > max_args:
+                    raise _ToolError(f"Arguments for {name!r} exceed {max_args} bytes")
+            return await call_next(context)
+        except Exception as e:
+            err_type = type(e).__name__
+            raise
+        finally:
+            if cfg.get("log_calls", True):
+                rec = {
+                    "event": "mcp.call",
+                    "kind": kind,
+                    "name": name,
+                    "client_id": _mw_client_id(),
+                    "duration_ms": round((_time.perf_counter() - started) * 1000, 2),
+                    "error": err_type,
+                }
+                if cfg.get("log_arguments") and arguments is not None:
+                    try:
+                        rec["arguments"] = arguments
+                    except Exception:
+                        pass
+                try:
+                    _PLATFORM_LOG.info(_json.dumps(rec, default=str))
+                except Exception:
+                    pass
+'''
+
+
+def _gen_middleware(spec: ServerSpec) -> tuple[list[str], str]:
+    """Return (extra_import_lines, middleware_body).
+
+    The body is inserted after the `mcp = FastMCP(...)` line and is followed
+    by a single `mcp.add_middleware(_PlatformMiddleware())` call."""
+    config_map = _merge_middleware_config(spec)
+    imports = [
+        "import json as _json",
+        "import logging as _logging",
+        "import time as _time",
+        "from fastmcp.exceptions import ToolError as _ToolError",
+        "from fastmcp.server.middleware import Middleware as _Middleware",
+    ]
+    body_lines = [
+        "",
+        "# --- Platform middleware (auto-generated) ---",
+        "try:",
+        "    from fastmcp.server.dependencies import get_access_token as _get_access_token",
+        "except Exception:  # noqa: BLE001",
+        "    _get_access_token = lambda: None",
+        "",
+        "_PLATFORM_LOG = _logging.getLogger('mcp.platform')",
+        "_PLATFORM_LOG.setLevel(_logging.INFO)",
+        "if not _PLATFORM_LOG.handlers:",
+        "    _h = _logging.StreamHandler()",
+        "    _h.setFormatter(_logging.Formatter('%(message)s'))",
+        "    _PLATFORM_LOG.addHandler(_h)",
+        "    _PLATFORM_LOG.propagate = False",
+        "",
+        # repr() over json.dumps so booleans / None render as valid Python.
+        "_MIDDLEWARE_CONFIG = " + repr(config_map),
+        "",
+        "def _mw_config_for(name):",
+        "    base = _MIDDLEWARE_CONFIG['_default']",
+        "    override = _MIDDLEWARE_CONFIG.get(name) or {}",
+        "    return {**base, **override}",
+        "",
+        "def _mw_client_id():",
+        "    try:",
+        "        tok = _get_access_token()",
+        "    except Exception:",
+        "        return None",
+        "    return getattr(tok, 'client_id', None) if tok is not None else None",
+        _MIDDLEWARE_CLASS_SRC,
+        "mcp.add_middleware(_PlatformMiddleware())",
+        "",
+    ]
+    return imports, "\n".join(body_lines)
+
+
 def generate_server_py(spec: ServerSpec, *, format_output: bool = True) -> str:
     auth_enabled = bool(spec.tokens)
     any_scoped = auth_enabled and _any_primitive_has_scopes(spec.primitives)
@@ -163,6 +299,10 @@ def generate_server_py(spec: ServerSpec, *, format_output: bool = True) -> str:
         auth_imports.append("require_scopes")
     if auth_imports:
         import_lines.append("from fastmcp.server.auth import " + ", ".join(auth_imports))
+
+    mw_imports, mw_body = _gen_middleware(spec)
+    import_lines.extend(mw_imports)
+
     # Preserve blank-line separators in user imports - the editor relies on them.
     import_lines.extend(spec.imports)
 
@@ -170,7 +310,14 @@ def generate_server_py(spec: ServerSpec, *, format_output: bool = True) -> str:
     if auth_enabled:
         mcp_args.append("auth=StaticTokenVerifier(tokens=" + _py_dict(_tokens_map(spec.tokens)) + ")")
 
-    lines: list[str] = [*import_lines, "", "mcp = FastMCP(" + ", ".join(mcp_args) + ")", "", primitives_code, ""]
+    lines: list[str] = [
+        *import_lines,
+        "",
+        "mcp = FastMCP(" + ", ".join(mcp_args) + ")",
+        mw_body,
+        primitives_code,
+        "",
+    ]
     lines.append('if __name__ == "__main__":')
     lines.append("    mcp.run(")
     lines.append('        transport="streamable-http",')

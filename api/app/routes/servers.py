@@ -794,6 +794,7 @@ class PrimitiveIn(BaseModel):
     uri_template: str | None = None
     mime_type: str | None = None
     scopes: list[str] | None = None
+    middleware: dict | None = None
 
 
 class AddPrimitiveIn(BaseModel):

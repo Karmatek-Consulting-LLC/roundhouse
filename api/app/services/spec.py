@@ -79,6 +79,7 @@ class ServerSpec:
     mode: str = MODE_STRUCTURED
     source: str | None = None
     apt_packages: list[str] = field(default_factory=list)
+    middleware_defaults: dict = field(default_factory=dict)
     # Hydrated at codegen time only - never persisted with plaintext.
     tokens: list[dict] = field(default_factory=list)
 
@@ -103,6 +104,10 @@ class ServerSpec:
         mode = MODE_CODE if data.get("mode") == MODE_CODE else MODE_STRUCTURED
         source = data.get("source") if isinstance(data.get("source"), str) else None
 
+        mw_defaults = data.get("middleware_defaults")
+        if not isinstance(mw_defaults, dict):
+            mw_defaults = {}
+
         return cls(
             name=str(data.get("name") or ""),
             description=str(data.get("description") or ""),
@@ -115,6 +120,7 @@ class ServerSpec:
             mode=mode,
             source=source,
             apt_packages=_string_list(data.get("apt_packages", [])),
+            middleware_defaults=mw_defaults,
         )
 
     def to_dict(self) -> dict:
@@ -130,4 +136,5 @@ class ServerSpec:
             "mode": self.mode,
             "source": self.source,
             "apt_packages": self.apt_packages,
+            "middleware_defaults": self.middleware_defaults,
         }
