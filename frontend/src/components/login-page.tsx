@@ -44,9 +44,9 @@ export function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <Logo className="h-12 w-12" />
+            <Logo className="h-12 w-auto" />
           </div>
-          <CardTitle className="text-2xl">MCP Platform</CardTitle>
+          <CardTitle className="text-2xl">Roundhouse</CardTitle>
           <CardDescription>Sign in to manage your MCP servers</CardDescription>
         </CardHeader>
         <CardContent>
