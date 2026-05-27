@@ -47,10 +47,8 @@ services:
       - traefik-dynamic:/var/lib/mcp-platform/traefik-dynamic
     environment:
       - PYTHONUNBUFFERED=1
-      # APP_KEY (base64:...) is used by laravel_crypto.py to decrypt
-      # server_tokens rows minted by the old Laravel app. Set this to the
-      # same value that was in the Laravel .env so existing tokens keep
-      # working; otherwise leave blank and re-issue tokens after the port.
+      # APP_KEY (base64:<32-byte-key>) keys the at-rest encryption for
+      # server_tokens rows. Leave blank for dev (tokens stored plaintext).
       - APP_KEY=${APP_KEY:-}
 
       - DB_CONNECTION=pgsql
@@ -60,7 +58,7 @@ services:
       - DB_USERNAME=${POSTGRES_USER:-mcp}
       - DB_PASSWORD=${POSTGRES_PASSWORD:-mcp}
 
-      - SANCTUM_TOKEN_EXPIRATION=1440
+      - AUTH_TOKEN_EXPIRATION_MINUTES=1440
 
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}

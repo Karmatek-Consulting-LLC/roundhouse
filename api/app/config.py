@@ -8,8 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Runtime config. Environment variable names match the Laravel app's
-    so the docker-compose env block transfers over unchanged."""
+    """Runtime config loaded from environment / .env file."""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -22,12 +21,13 @@ class Settings(BaseSettings):
     db_password: str = Field(default="mcp", alias="DB_PASSWORD")
 
     # App-level secret. Used to derive the symmetric key for ServerToken
-    # encryption (compatible with Laravel's `base64:...` APP_KEY format).
+    # encryption. Expected format: `base64:` followed by 32 random bytes,
+    # base64-encoded.
     app_key: str = Field(default="", alias="APP_KEY")
 
     # Auth tokens
-    sanctum_token_expiration_minutes: int = Field(
-        default=1440, alias="SANCTUM_TOKEN_EXPIRATION"
+    auth_token_expiration_minutes: int = Field(
+        default=1440, alias="AUTH_TOKEN_EXPIRATION_MINUTES"
     )
 
     # Initial admin (seeded once on first run if no users exist).
@@ -106,8 +106,7 @@ class Settings(BaseSettings):
 
     @property
     def docker_host(self) -> str:
-        # MCP_DOCKER_HOST wins; MCP_DOCKER_SOCKET kept for backwards compat with
-        # the Laravel app's env contract.
+        # MCP_DOCKER_HOST wins; MCP_DOCKER_SOCKET kept as a legacy alias.
         return self.mcp_docker_host or self.mcp_docker_socket
 
     @property

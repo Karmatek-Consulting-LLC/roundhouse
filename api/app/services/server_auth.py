@@ -14,16 +14,15 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.laravel_crypto import DecryptError, decrypt, encrypt
+from app.crypto import DecryptError, decrypt, encrypt
 from app.models import ServerOwner, ServerScope, ServerToken
 from app.services.spec import ServerSpec
 from app.services.store import ServerStore
 
 
 def _decrypt_or_passthrough(stored: str) -> str:
-    """Decrypt a Laravel-encrypted token. If decryption fails (rows written
-    before the port may carry a different envelope, or new rows we encrypted
-    ourselves), fall back to the raw column value."""
+    """Decrypt a stored token. Falls back to the raw column value when
+    decryption fails — older rows may have been written without encryption."""
     app_key = get_settings().app_key
     try:
         return decrypt(stored, app_key)

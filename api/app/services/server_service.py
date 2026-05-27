@@ -46,7 +46,7 @@ class ServerService:
 
     def effective_env(self, db: Session, spec: ServerSpec) -> dict[str, str]:
         from app.config import get_settings
-        from app.laravel_crypto import DecryptError, decrypt
+        from app.crypto import DecryptError, decrypt
         merged: dict[str, str] = {}
         gdict = global_env.globals_as_dict(db)
         for name in spec.env_global_imports:
@@ -140,7 +140,7 @@ class ServerService:
             return
         try:
             self.docker.update_runtime_env(server_name, self.effective_env(db, spec))
-        except Exception as e:  # noqa: BLE001 - log + continue, same as Laravel
+        except Exception as e:  # noqa: BLE001 - log + continue
             logger.error("Failed to update runtime env for server '%s': %s", server_name, e)
 
 

@@ -4,7 +4,7 @@ version: "3.8"
 # builds and pushes the image from api/Dockerfile.
 #
 # Required external secrets (one-time create on the Swarm):
-#   docker secret create mcp_app_key <file>           # Laravel APP_KEY, "base64:<32-byte-key>"
+#   docker secret create mcp_app_key <file>           # APP_KEY, "base64:<32-byte-key>"
 #   docker secret create mcp_admin_email <file>       # optional - seeded on first boot
 #   docker secret create mcp_admin_password <file>    # optional - seeded on first boot
 #   docker secret create mcp_postgres_password <file>
@@ -137,7 +137,7 @@ services:
       - DB_DATABASE=mcp
       - DB_USERNAME=mcp
 
-      - SANCTUM_TOKEN_EXPIRATION=1440
+      - AUTH_TOKEN_EXPIRATION_MINUTES=1440
 
       # Must match `docker network ls` overlay: {stack}_mcp-network.
       - MCP_DOCKER_NETWORK=mcp-platform_mcp-network

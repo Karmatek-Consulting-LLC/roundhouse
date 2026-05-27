@@ -1003,8 +1003,8 @@ class AddPrimitiveIn(BaseModel):
 
 
 def _primitive_to_dict(p: PrimitiveIn) -> dict:
-    """Strip None-valued fields the way the Laravel validator did so we don't
-    pollute the on-disk spec with explicit nulls."""
+    """Strip None-valued fields so we don't pollute the on-disk spec with
+    explicit nulls."""
     raw = p.model_dump(exclude_none=True)
     # Sanity-bound scopes to plain string list.
     if "scopes" in raw and isinstance(raw["scopes"], list):
@@ -1127,7 +1127,7 @@ def _encrypt_env(plaintext: str) -> str:
     plaintext when APP_KEY isn't configured (dev mode) so we don't fail
     closed - the secret flag is still preserved so the UI keeps masking."""
     from app.config import get_settings
-    from app.laravel_crypto import encrypt
+    from app.crypto import encrypt
     app_key = get_settings().app_key
     if not app_key:
         return plaintext
@@ -1151,8 +1151,7 @@ def _merge_env_vars(items: list[EnvVarItem], existing: list[EnvVar]) -> list[Env
                 prev = by_name.get(name)
                 if prev is not None and prev.secret:
                     out.append(EnvVar(name=name, value=prev.value, secret=True))
-                # Else: secret toggle flipped on with no value yet -> skip,
-                # matches Laravel behavior (no row written).
+                # Else: secret toggle flipped on with no value yet -> skip.
         else:
             out.append(EnvVar(name=name, value=it.value or "", secret=False))
     return out
