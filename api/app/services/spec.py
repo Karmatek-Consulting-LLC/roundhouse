@@ -92,6 +92,9 @@ class ServerSpec:
     source: str | None = None
     apt_packages: list[str] = field(default_factory=list)
     middleware_defaults: dict = field(default_factory=dict)
+    # None = no cap (Docker default). cpu_limit is whole CPUs (0.5 = half).
+    cpu_limit: float | None = None
+    memory_limit_mb: int | None = None
     # Hydrated at codegen time only - never persisted with plaintext.
     tokens: list[dict] = field(default_factory=list)
 
@@ -120,6 +123,24 @@ class ServerSpec:
         if not isinstance(mw_defaults, dict):
             mw_defaults = {}
 
+        def _opt_float(v: Any) -> float | None:
+            if v is None:
+                return None
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return None
+            return f if f > 0 else None
+
+        def _opt_int(v: Any) -> int | None:
+            if v is None:
+                return None
+            try:
+                i = int(v)
+            except (TypeError, ValueError):
+                return None
+            return i if i > 0 else None
+
         return cls(
             name=str(data.get("name") or ""),
             description=str(data.get("description") or ""),
@@ -133,6 +154,8 @@ class ServerSpec:
             source=source,
             apt_packages=_string_list(data.get("apt_packages", [])),
             middleware_defaults=mw_defaults,
+            cpu_limit=_opt_float(data.get("cpu_limit")),
+            memory_limit_mb=_opt_int(data.get("memory_limit_mb")),
         )
 
     def to_dict(self) -> dict:
@@ -149,4 +172,6 @@ class ServerSpec:
             "source": self.source,
             "apt_packages": self.apt_packages,
             "middleware_defaults": self.middleware_defaults,
+            "cpu_limit": self.cpu_limit,
+            "memory_limit_mb": self.memory_limit_mb,
         }
