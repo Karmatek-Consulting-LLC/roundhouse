@@ -161,6 +161,17 @@ export interface PlacementTask {
 
 export type ServerMode = "structured" | "code";
 
+export interface AuditEvent {
+  id: number;
+  actor_id: string | null;
+  actor_email: string | null;
+  action: string;
+  target_type: string;
+  target_id: string;
+  payload: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
 export interface Server {
   name: string;
   template: string;
@@ -368,6 +379,36 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  deployFromGit: (data: {
+    name: string;
+    git_url: string;
+    ref?: string;
+    description?: string;
+    replicas?: number;
+  }) =>
+    request<Server>("/servers/from-git", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  exportServer: (name: string) =>
+    request<{ version: number; exported_at: string; spec: Record<string, unknown> }>(
+      `/servers/${encodeURIComponent(name)}/export`,
+    ),
+  importServer: (data: { spec: Record<string, unknown>; name_override?: string }) =>
+    request<Server>("/servers/import", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // Audit log (superadmin only)
+  listAuditEvents: (params: { target_type?: string; target_id?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.target_type) q.set("target_type", params.target_type);
+    if (params.target_id) q.set("target_id", params.target_id);
+    if (params.limit) q.set("limit", String(params.limit));
+    const s = q.toString();
+    return request<AuditEvent[]>(`/audit${s ? `?${s}` : ""}`);
+  },
   startServer: (name: string) =>
     request<Server>(`/servers/${name}/start`, { method: "POST" }),
   stopServer: (name: string) =>
