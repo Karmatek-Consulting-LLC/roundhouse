@@ -14,6 +14,9 @@ __pycache__/
 .vscode/
 *.swp
 
+# Claude Code session scaffolding (worktrees, job dirs)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
