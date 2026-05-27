@@ -21,6 +21,7 @@ import { useTheme } from "@/hooks/use-theme";
 import {
   ArrowLeft,
   Boxes,
+  Download,
   FileCode,
   FileText,
   KeyRound,
@@ -503,6 +504,24 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
     setError(null);
   }
 
+  async function exportSpec() {
+    setError(null);
+    try {
+      const dump = await api.exportServer(serverName);
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${serverName}.spec.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed");
+    }
+  }
+
   async function lifecycleAction(action: "start" | "stop" | "redeploy" | "delete") {
     setError(null);
     if (action === "delete" && !confirm(`Delete server "${serverName}"? This removes the container/service and the stored spec.`)) {
@@ -609,6 +628,15 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
         >
           {lifecycle === "redeploy" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Rocket className="mr-1 h-3 w-3" />}
           Redeploy
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!!lifecycle}
+          onClick={() => exportSpec()}
+        >
+          <Download className="mr-1 h-3 w-3" />
+          Export spec
         </Button>
         <Button
           size="sm"

@@ -18,6 +18,7 @@ import { LoginPage } from "@/components/login-page";
 import { UserManagement } from "@/components/user-management";
 import { TeamManagement } from "@/components/team-management";
 import { PlatformSettings } from "@/components/platform-settings";
+import { AuditLogPage } from "@/components/audit-log";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChangePasswordDialog } from "@/components/change-password-dialog";
-import { KeyRound, LogOut, Settings, Shield, Users } from "lucide-react";
+import { History, KeyRound, LogOut, Settings, Shield, Users } from "lucide-react";
 
 export type ServersOutletContext = ReturnType<typeof useServers>;
 
@@ -136,6 +137,14 @@ function AppShell() {
                       <Settings className="mr-2 h-4 w-4" />
                       Platform Settings
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        navigate("/audit");
+                      }}
+                    >
+                      <History className="mr-2 h-4 w-4" />
+                      Audit Log
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </>
                 )}
@@ -211,6 +220,11 @@ function PlatformSettingsPage() {
   return <PlatformSettings onBack={() => navigate("/")} />;
 }
 
+function AuditLogRoute() {
+  const navigate = useNavigate();
+  return <AuditLogPage onBack={() => navigate("/")} />;
+}
+
 export default function App() {
   const { loading: authLoading } = useAuth();
 
@@ -239,6 +253,14 @@ export default function App() {
             element={
               <SuperAdminOnly>
                 <PlatformSettingsPage />
+              </SuperAdminOnly>
+            }
+          />
+          <Route
+            path="/audit"
+            element={
+              <SuperAdminOnly>
+                <AuditLogRoute />
               </SuperAdminOnly>
             }
           />
