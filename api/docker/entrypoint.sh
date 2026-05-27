@@ -23,10 +23,18 @@ if [ -n "$DB_HOST" ]; then
 fi
 
 # --- Lifecycle cleanup ---
+# MCP servers persist across platform restarts by default. Set
+# MCP_CLEANUP_ON_SHUTDOWN=true in the environment when you actually want a
+# full teardown (CI scripts, `compose down -v`). Manual cleanup remains
+# available via `docker exec ... python -m app.cleanup`.
 child=""
 shutdown() {
-    echo "[entrypoint] shutdown signal received - cleaning up managed MCP servers..."
-    python -m app.cleanup 2>&1 || true
+    if [ "${MCP_CLEANUP_ON_SHUTDOWN:-false}" = "true" ]; then
+        echo "[entrypoint] shutdown signal received - cleaning up managed MCP servers..."
+        python -m app.cleanup 2>&1 || true
+    else
+        echo "[entrypoint] shutdown signal received - leaving managed MCP servers running (set MCP_CLEANUP_ON_SHUTDOWN=true to force cleanup)."
+    fi
     if [ -n "$child" ]; then
         kill -TERM "$child" 2>/dev/null || true
         wait "$child" 2>/dev/null || true
