@@ -50,6 +50,8 @@ COPY api/pyproject.toml /app/pyproject.toml
 RUN pip install --no-cache-dir .
 
 COPY api/app /app/app
+COPY api/alembic /app/alembic
+COPY api/alembic.ini /app/alembic.ini
 COPY templates /app/templates
 COPY --from=frontend-build /build/dist /app/public/frontend
 
