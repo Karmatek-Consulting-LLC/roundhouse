@@ -1,7 +1,7 @@
 apiVersion: v2
-name: mcp-platform
+name: roundhouse
 description: |
-  Internal MCP server hosting platform — deploys the platform-api (Laravel),
+  Internal MCP server hosting platform — deploys the platform-api (FastAPI),
   React frontend, optional Postgres, and the RBAC needed for the platform-api
   to manage spawned MCP server workloads inside the cluster.
 type: application
@@ -11,4 +11,3 @@ kubeVersion: ">=1.26.0-0"
 keywords:
   - mcp
   - llm
-  - laravel
