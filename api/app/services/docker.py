@@ -132,6 +132,18 @@ class DockerClient:
         self._network = cfg.mcp_docker_network
         self._swarm_cache: bool | None = None
 
+        forced = (cfg.mcp_docker_mode or "auto").strip().lower()
+        if forced == "swarm":
+            self._swarm_cache = True
+            logger.info("Docker mode: swarm (forced via MCP_DOCKER_MODE)")
+        elif forced == "standalone":
+            self._swarm_cache = False
+            logger.info("Docker mode: standalone (forced via MCP_DOCKER_MODE)")
+        elif forced != "auto":
+            raise ValueError(
+                f"MCP_DOCKER_MODE must be 'auto', 'standalone', or 'swarm' (got {forced!r})"
+            )
+
     # ---- Mode detection ----
 
     def swarm_mode(self) -> bool:
@@ -140,7 +152,7 @@ class DockerClient:
         info = self._http.get("info")
         state = (info.get("Swarm") or {}).get("LocalNodeState")
         self._swarm_cache = state == "active"
-        logger.info("Docker mode: %s", "swarm" if self._swarm_cache else "standalone")
+        logger.info("Docker mode: %s (auto-detected)", "swarm" if self._swarm_cache else "standalone")
         return self._swarm_cache
 
     def mode(self) -> str:
