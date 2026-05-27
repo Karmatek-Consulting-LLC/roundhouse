@@ -168,6 +168,8 @@ def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
         "replicas_running": int(snap.get("replicas_running") or 0),
         "docker_swarm_mode": get_docker().swarm_mode(),
         "placement": snap.get("placement") or [],
+        "cpu_limit": spec.cpu_limit if spec else None,
+        "memory_limit_mb": spec.memory_limit_mb if spec else None,
     }
 
 
@@ -805,6 +807,34 @@ def update_replicas(
             docker.scale_server(name, spec.replicas)
 
     snap = docker.get_server(name) or _missing_snapshot(name)
+    return _to_response(db, snap, spec)
+
+
+class ResourceLimitsIn(BaseModel):
+    # 0 / null clears the limit. cpu is whole CPUs (0.5 = half).
+    cpu_limit: float | None = None
+    memory_limit_mb: int | None = None
+
+
+@router.put("/{name}/resources")
+def update_resources(
+    name: str,
+    payload: ResourceLimitsIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    spec.cpu_limit = payload.cpu_limit if (payload.cpu_limit and payload.cpu_limit > 0) else None
+    spec.memory_limit_mb = (
+        payload.memory_limit_mb if (payload.memory_limit_mb and payload.memory_limit_mb > 0) else None
+    )
+    # Resource changes don't take effect until next deploy - flag it so the
+    # editor surfaces the redeploy banner like a spec change.
+    from app.services import server_auth as _sa
+    get_server_service().store.save(spec)
+    _sa.mark_redeploy_required(db, name)
+    snap = get_docker().get_server(name) or _missing_snapshot(name)
     return _to_response(db, snap, spec)
 
 

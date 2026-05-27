@@ -470,6 +470,12 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
   const [savedDescription, setSavedDescription] = useState(server.description ?? "");
   const [replicas, setReplicas] = useState<number>(server.replicas_desired ?? 1);
   const [savedReplicas, setSavedReplicas] = useState<number>(server.replicas_desired ?? 1);
+  // Empty string = no limit (Docker default). Stored as string in state so
+  // the input can be cleared without coercing to 0.
+  const [cpuLimit, setCpuLimit] = useState<string>(server.cpu_limit != null ? String(server.cpu_limit) : "");
+  const [memoryLimit, setMemoryLimit] = useState<string>(server.memory_limit_mb != null ? String(server.memory_limit_mb) : "");
+  const [savedCpuLimit, setSavedCpuLimit] = useState<string>(cpuLimit);
+  const [savedMemoryLimit, setSavedMemoryLimit] = useState<string>(memoryLimit);
   const [replicaLimits, setReplicaLimits] = useState<{
     max_mcp_server_replicas: number;
     docker_swarm_mode: boolean;
@@ -484,7 +490,8 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
 
   const descDirty = description !== savedDescription;
   const replicasDirty = replicas !== savedReplicas;
-  const dirty = descDirty || replicasDirty;
+  const resourcesDirty = cpuLimit !== savedCpuLimit || memoryLimit !== savedMemoryLimit;
+  const dirty = descDirty || replicasDirty || resourcesDirty;
 
   async function save() {
     setError(null);
@@ -493,9 +500,19 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
       const tasks: Promise<unknown>[] = [];
       if (descDirty) tasks.push(api.updateDescription(serverName, description));
       if (replicasDirty) tasks.push(api.updateServerReplicas(serverName, replicas));
+      if (resourcesDirty) {
+        const cpu = parseFloat(cpuLimit);
+        const mem = parseInt(memoryLimit, 10);
+        tasks.push(api.updateServerResources(serverName, {
+          cpu_limit: !Number.isNaN(cpu) && cpu > 0 ? cpu : null,
+          memory_limit_mb: !Number.isNaN(mem) && mem > 0 ? mem : null,
+        }));
+      }
       await Promise.all(tasks);
       setSavedDescription(description);
       setSavedReplicas(replicas);
+      setSavedCpuLimit(cpuLimit);
+      setSavedMemoryLimit(memoryLimit);
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
@@ -507,6 +524,8 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
   function reset() {
     setDescription(savedDescription);
     setReplicas(savedReplicas);
+    setCpuLimit(savedCpuLimit);
+    setMemoryLimit(savedMemoryLimit);
     setError(null);
   }
 
@@ -604,6 +623,39 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
             Stored but not applied — running in stand-alone Docker.
           </p>
         )}
+      </div>
+
+      <div className="grid gap-2">
+        <Label>Resource limits</Label>
+        <p className="text-xs text-muted-foreground">
+          Caps applied to the container at deploy time. Blank = no limit (Docker default).
+          Changes take effect on the next <strong>Redeploy</strong>.
+        </p>
+        <div className="grid grid-cols-2 gap-3 max-w-md">
+          <div className="grid gap-1">
+            <Label className="text-xs text-muted-foreground">CPUs</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              min={0}
+              placeholder="—"
+              value={cpuLimit}
+              onChange={(e) => setCpuLimit(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-1">
+            <Label className="text-xs text-muted-foreground">Memory (MB)</Label>
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              placeholder="—"
+              value={memoryLimit}
+              onChange={(e) => setMemoryLimit(e.target.value)}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="border-t pt-4 flex flex-wrap items-center gap-2">

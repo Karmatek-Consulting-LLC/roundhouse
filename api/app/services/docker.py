@@ -207,12 +207,20 @@ class DockerClient:
         replicas: int = 1,
         registry_prefix: str | None = None,
         registry_auth: dict[str, str] | None = None,
+        cpu_limit: float | None = None,
+        memory_limit_mb: int | None = None,
     ) -> dict:
         env_vars = env_vars or {}
         tag = self.build_image(server_name, build_context, registry_prefix, registry_auth)
         if self.swarm_mode():
-            return self._create_service(server_name, tag, template_name, env_vars, replicas, registry_auth)
-        return self._create_container(server_name, tag, template_name, env_vars)
+            return self._create_service(
+                server_name, tag, template_name, env_vars, replicas, registry_auth,
+                cpu_limit=cpu_limit, memory_limit_mb=memory_limit_mb,
+            )
+        return self._create_container(
+            server_name, tag, template_name, env_vars,
+            cpu_limit=cpu_limit, memory_limit_mb=memory_limit_mb,
+        )
 
     def list_servers(self) -> list[dict]:
         return self._list_services() if self.swarm_mode() else self._list_containers()
@@ -324,12 +332,26 @@ class DockerClient:
     # ---- Container backend ----
 
     def _create_container(
-        self, server_name: str, tag: str, template_name: str, env_vars: dict[str, str]
+        self,
+        server_name: str,
+        tag: str,
+        template_name: str,
+        env_vars: dict[str, str],
+        cpu_limit: float | None = None,
+        memory_limit_mb: int | None = None,
     ) -> dict:
         name = _container_name(server_name)
         labels = _all_labels(server_name, template_name)
         env_list = [f"{k}={v}" for k, v in env_vars.items()]
         logger.info("Creating container %s", name)
+        host_config: dict[str, Any] = {
+            "NetworkMode": self._network,
+            "RestartPolicy": {"Name": "unless-stopped"},
+        }
+        if isinstance(cpu_limit, (int, float)) and cpu_limit > 0:
+            host_config["NanoCpus"] = int(cpu_limit * 1_000_000_000)
+        if isinstance(memory_limit_mb, int) and memory_limit_mb > 0:
+            host_config["Memory"] = memory_limit_mb * 1024 * 1024
         created = self._http.post(
             "containers/create",
             {"name": name},
@@ -337,10 +359,7 @@ class DockerClient:
                 "Image": tag,
                 "Labels": labels,
                 "Env": env_list,
-                "HostConfig": {
-                    "NetworkMode": self._network,
-                    "RestartPolicy": {"Name": "unless-stopped"},
-                },
+                "HostConfig": host_config,
                 "NetworkingConfig": {"EndpointsConfig": {self._network: {}}},
             },
         )
@@ -412,18 +431,28 @@ class DockerClient:
         env_vars: dict[str, str],
         replicas: int,
         registry_auth: dict[str, str] | None = None,
+        cpu_limit: float | None = None,
+        memory_limit_mb: int | None = None,
     ) -> dict:
         name = _container_name(server_name)
         labels = _all_labels(server_name, template_name)
         env_list = [f"{k}={v}" for k, v in env_vars.items()]
         logger.info("Creating swarm service %s (replicas=%d)", name, replicas)
+        task_template: dict[str, Any] = {
+            "ContainerSpec": {"Image": tag, "Env": env_list},
+            "Networks": [{"Target": self._network}],
+        }
+        limits: dict[str, Any] = {}
+        if isinstance(cpu_limit, (int, float)) and cpu_limit > 0:
+            limits["NanoCPUs"] = int(cpu_limit * 1_000_000_000)
+        if isinstance(memory_limit_mb, int) and memory_limit_mb > 0:
+            limits["MemoryBytes"] = memory_limit_mb * 1024 * 1024
+        if limits:
+            task_template["Resources"] = {"Limits": limits}
         spec = {
             "Name": name,
             "Labels": labels,
-            "TaskTemplate": {
-                "ContainerSpec": {"Image": tag, "Env": env_list},
-                "Networks": [{"Target": self._network}],
-            },
+            "TaskTemplate": task_template,
             "Mode": {"Replicated": {"Replicas": replicas}},
             "EndpointSpec": {"Mode": "vip"},
         }

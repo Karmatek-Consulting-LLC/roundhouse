@@ -253,6 +253,10 @@ export interface Server {
   placement: PlacementTask[];
   /** ISO-8601 timestamp set when scope/token changes need a redeploy; null otherwise. */
   redeploy_required_at?: string | null;
+  /** Docker --cpus value (whole CPUs, fractional ok). null = no cap. */
+  cpu_limit?: number | null;
+  /** Docker --memory in MB. null = no cap. */
+  memory_limit_mb?: number | null;
 }
 
 export interface ServerScope {
@@ -479,6 +483,14 @@ export const api = {
     request<Server>(`/servers/${serverName}/description`, {
       method: "PUT",
       body: JSON.stringify({ description }),
+    }),
+  updateServerResources: (
+    serverName: string,
+    body: { cpu_limit: number | null; memory_limit_mb: number | null },
+  ) =>
+    request<Server>(`/servers/${serverName}/resources`, {
+      method: "PUT",
+      body: JSON.stringify(body),
     }),
   updateServerReplicas: (serverName: string, replicas: number) =>
     request<Server>(`/servers/${serverName}/replicas`, {

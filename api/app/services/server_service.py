@@ -115,6 +115,8 @@ class ServerService:
             replicas=self.effective_replicas(spec),
             registry_prefix=self.registry_prefix(db),
             registry_auth=self.registry_auth(db),
+            cpu_limit=spec.cpu_limit,
+            memory_limit_mb=spec.memory_limit_mb,
         )
         server_auth.clear_redeploy_required(db, spec.name)
         return result
