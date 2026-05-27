@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, type Primitive, type Server, type UsageSnapshot } from "@/lib/api";
+import { api, type Asset, type AssetListResponse, type Primitive, type Server, type UsageSnapshot } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { PrimitiveForm } from "@/components/primitive-form";
@@ -22,9 +22,11 @@ import {
   ArrowLeft,
   Activity,
   Boxes,
+  Copy,
   Download,
   FileCode,
   FileText,
+  Files,
   KeyRound,
   Loader2,
   Package,
@@ -35,6 +37,7 @@ import {
   Rocket,
   Settings,
   Trash2,
+  Upload,
   Variable,
 } from "lucide-react";
 
@@ -61,6 +64,7 @@ type Selection =
   | { kind: "apt-packages" }
   | { kind: "env" }
   | { kind: "auth" }
+  | { kind: "assets" }
   | { kind: "usage" }
   | { kind: "logs" }
   | { kind: "source" };
@@ -78,6 +82,7 @@ function parseSelection(path: string): Selection {
   if (path === "apt-packages") return { kind: "apt-packages" };
   if (path === "env") return { kind: "env" };
   if (path === "auth") return { kind: "auth" };
+  if (path === "assets") return { kind: "assets" };
   if (path === "usage") return { kind: "usage" };
   if (path === "logs") return { kind: "logs" };
   if (path === "source") return { kind: "source" };
@@ -205,6 +210,9 @@ function RightRail({ serverName, server, selection, onSaved, onDeleted, gotoPrim
         </div>
       </>
     );
+  }
+  if (selection.kind === "assets") {
+    return <AssetsRail serverName={serverName} server={server} onMutated={onSaved} />;
   }
   if (selection.kind === "usage") {
     return <UsageRail serverName={serverName} server={server} />;
@@ -907,6 +915,215 @@ function LogsRail({ serverName, server }: { serverName: string; server: Server }
   );
 }
 
+// ---------------- Assets rail ----------------
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function AssetsRail({
+  serverName,
+  server,
+  onMutated,
+}: {
+  serverName: string;
+  server: Server;
+  onMutated: () => void;
+}) {
+  const [data, setData] = useState<AssetListResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [copiedName, setCopiedName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const resp = await api.listAssets(serverName);
+      setData(resp);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load assets");
+    } finally {
+      setLoading(false);
+    }
+  }, [serverName]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function uploadFiles(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (!list.length) return;
+    setUploading(true);
+    setError(null);
+    try {
+      for (const f of list) {
+        await api.uploadAsset(serverName, f);
+      }
+      await refresh();
+      onMutated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function remove(name: string) {
+    if (!confirm(`Delete asset "${name}"?`)) return;
+    setError(null);
+    try {
+      await api.deleteAsset(serverName, name);
+      await refresh();
+      onMutated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    }
+  }
+
+  async function copyPath(name: string) {
+    try {
+      await navigator.clipboard.writeText(`/app/assets/${name}`);
+      setCopiedName(name);
+      setTimeout(() => setCopiedName((c) => (c === name ? null : c)), 1500);
+    } catch {
+      setError("Couldn't copy to clipboard");
+    }
+  }
+
+  const assets = data?.assets ?? [];
+  const totalSize = data?.total_size ?? 0;
+  const maxTotal = data?.max_total_bytes ?? 100 * 1024 * 1024;
+  const maxFile = data?.max_file_bytes ?? 10 * 1024 * 1024;
+  const fillPct = Math.min(100, Math.round((totalSize / maxTotal) * 100));
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <RailHeader>Assets</RailHeader>
+      <p className="text-xs text-muted-foreground">
+        Files baked into the server's container image at <code className="rounded bg-muted px-1">/app/assets/</code>.
+        Reference them from your tool code as <code className="rounded bg-muted px-1">(ASSETS_DIR / "filename").read_text()</code>{" "}
+        or with the absolute path. Uploads take effect on next <strong>Redeploy</strong>.
+      </p>
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
+        }}
+        className={`rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors ${
+          dragOver ? "border-primary bg-primary/5" : "border-border bg-muted/20"
+        }`}
+      >
+        <Upload className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
+        <p className="text-sm">
+          Drop files here, or{" "}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-primary"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            choose files
+          </button>
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Max {formatBytes(maxFile)} per file, {formatBytes(maxTotal)} per server.
+        </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) uploadFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className={`h-full transition-all ${fillPct > 90 ? "bg-amber-500" : "bg-primary"}`}
+            style={{ width: `${fillPct}%` }}
+          />
+        </div>
+        <span className="tabular-nums">
+          {formatBytes(totalSize)} / {formatBytes(maxTotal)}
+        </span>
+      </div>
+
+      {server.redeploy_required_at && assets.length > 0 && (
+        <p className="text-xs italic text-amber-700 dark:text-amber-300">
+          Asset changes pending — redeploy to bake them into the image.
+        </p>
+      )}
+
+      {loading ? (
+        <p className="text-xs italic text-muted-foreground">Loading…</p>
+      ) : assets.length === 0 ? (
+        <p className="text-xs italic text-muted-foreground">No assets uploaded yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="py-1 pr-3 font-medium">Filename</th>
+                <th className="py-1 pr-3 font-medium text-right">Size</th>
+                <th className="py-1 pr-3 font-medium">Path</th>
+                <th className="py-1 font-medium" />
+              </tr>
+            </thead>
+            <tbody>
+              {assets.map((a: Asset) => (
+                <tr key={a.name} className="border-b last:border-0">
+                  <td className="py-1 pr-3 font-mono">{a.name}</td>
+                  <td className="py-1 pr-3 text-right tabular-nums">{formatBytes(a.size)}</td>
+                  <td className="py-1 pr-3 font-mono text-muted-foreground">
+                    /app/assets/{a.name}
+                  </td>
+                  <td className="py-1 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Copy absolute path"
+                      onClick={() => copyPath(a.name)}
+                    >
+                      <Copy className={`h-4 w-4 ${copiedName === a.name ? "text-emerald-600" : "text-muted-foreground"}`} />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Delete" onClick={() => remove(a.name)}>
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------------- Usage rail ----------------
 
 function formatRelative(epochSec: number, nowSec: number): string {
@@ -1244,6 +1461,13 @@ function LeftNav({ server, selection, onSelect }: LeftNavProps) {
           onClick={() => onSelect("auth")}
         >
           Auth
+        </NavItem>
+        <NavItem
+          icon={<Files className="h-3.5 w-3.5" />}
+          active={selection.kind === "assets"}
+          onClick={() => onSelect("assets")}
+        >
+          Assets
         </NavItem>
         <NavItem
           icon={<Activity className="h-3.5 w-3.5" />}

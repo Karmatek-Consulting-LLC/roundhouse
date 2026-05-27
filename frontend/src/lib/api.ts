@@ -87,6 +87,19 @@ export interface UsageClient {
   last_call_ts: number;
 }
 
+export interface Asset {
+  name: string;
+  size: number;
+  modified_ts: number;
+}
+
+export interface AssetListResponse {
+  assets: Asset[];
+  total_size: number;
+  max_file_bytes: number;
+  max_total_bytes: number;
+}
+
 export interface UsageSnapshot {
   primitives: UsagePrimitive[];
   tokens: UsageClient[];
@@ -435,6 +448,31 @@ export const api = {
     requestText(`/servers/${encodeURIComponent(name)}/logs?tail=${tail}`),
   getServerUsage: (name: string) =>
     request<UsageSnapshot>(`/servers/${encodeURIComponent(name)}/usage`),
+  listAssets: (serverName: string) =>
+    request<AssetListResponse>(`/servers/${encodeURIComponent(serverName)}/assets`),
+  uploadAsset: async (serverName: string, file: File): Promise<Asset> => {
+    const token = localStorage.getItem("token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    // No Content-Type: fetch auto-sets multipart/form-data with the right boundary.
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const res = await fetch(`${BASE}/servers/${encodeURIComponent(serverName)}/assets`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const d = (body as { detail?: unknown }).detail;
+      throw new Error(d != null ? formatApiErrorDetail(d) : `Upload failed: ${res.status}`);
+    }
+    return res.json();
+  },
+  deleteAsset: (serverName: string, filename: string) =>
+    request<void>(`/servers/${encodeURIComponent(serverName)}/assets/${encodeURIComponent(filename)}`, {
+      method: "DELETE",
+    }),
   createServer: (data: CreateServerRequest) =>
     request<Server>("/servers", {
       method: "POST",
