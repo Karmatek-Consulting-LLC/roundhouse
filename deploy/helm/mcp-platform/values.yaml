@@ -1,0 +1,142 @@
+## ---------------------------------------------------------------------------
+## mcp-platform default values
+##
+## Prerequisites (see README.md for detail):
+##   - Traefik installed in the cluster (CRDs IngressRoute + Middleware)
+##   - An image-build endpoint reachable from the api pod (see imageBuilder.host)
+##   - A Docker registry reachable from cluster nodes (configured at runtime via the UI)
+## ---------------------------------------------------------------------------
+
+nameOverride: ""
+fullnameOverride: ""
+
+## Namespace where spawned MCP server workloads (Deployment + Service + IngressRoute)
+## live. Distinct from the chart's release namespace so platform-api can be
+## restricted with a Role rather than a ClusterRole.
+workloadsNamespace:
+  name: mcp-servers
+  create: true
+
+## Image references for the platform itself. Lab's FastAPI image is
+## API-only (no static-file mount), so the chart deploys a separate
+## frontend pod running the Vite-based image. Swap image.frontend for a
+## static-serve build whenever one ships.
+image:
+  api:
+    repository: mcp-platform/api
+    tag: ""              ## empty -> uses .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  frontend:
+    repository: mcp-platform/frontend
+    tag: ""
+    pullPolicy: IfNotPresent
+  pullSecrets: []        ## list of {name: ...} secrets referenced by api + frontend pods
+
+## How the platform builds MCP server images. Defaults to "kaniko" — a one-shot
+## Kubernetes Job runs gcr.io/kaniko-project/executor against a build context
+## staged on the api PVC, then pushes to the configured registry. No external
+## Docker daemon required, no privileged container.
+##
+## Set imageBuilder.kind: docker (and imageBuilder.host) to keep the legacy
+## path that talks to an out-of-cluster Docker/BuildKit endpoint.
+imageBuilder:
+  kind: kaniko          ## "kaniko" | "docker"
+  host: ""              ## MCP_DOCKER_HOST; required only when kind=docker
+  kaniko:
+    image: gcr.io/kaniko-project/executor:latest
+    ## REQUIRED when kind=kaniko: name of a kubernetes.io/dockerconfigjson
+    ## Secret in this chart's namespace, used by kaniko to push to the registry.
+    registrySecret: ""
+    ## Build timeout (seconds).
+    timeoutSeconds: 600
+
+## External-facing URL the platform reports to MCP clients. Must match the host
+## the IngressRoute terminates on, e.g. "https://mcp.example.com".
+baseUrl: ""
+
+## Initial admin account, created on first boot. Override before installing.
+admin:
+  email: admin@mcp.local
+  password: admin
+
+## ---------------------------------------------------------------------------
+## platform-api (Laravel / Octane)
+## ---------------------------------------------------------------------------
+api:
+  replicas: 1
+  resources: {}
+  ## Extra env injected into the api container (after the chart's own env).
+  extraEnv: []
+  ## Optional pre-existing Secret to envFrom (keys become env vars verbatim).
+  envFromSecret: ""
+  storage:
+    serverData:
+      size: 5Gi
+      storageClass: ""
+      accessMode: ReadWriteOnce
+  podSecurityContext: {}
+  securityContext: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+## ---------------------------------------------------------------------------
+## frontend (Vite dev server image as shipped by lab — swap for a static-serve
+## image whenever one is published)
+## ---------------------------------------------------------------------------
+frontend:
+  replicas: 1
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+## ---------------------------------------------------------------------------
+## Postgres — either bundled (postgres.enabled: true) or external
+## ---------------------------------------------------------------------------
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  auth:
+    user: mcp
+    password: mcp           ## OVERRIDE for production deployments
+    database: mcp
+  storage:
+    size: 10Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  resources: {}
+
+## Used only when postgres.enabled is false.
+externalDatabase:
+  host: ""
+  port: 5432
+  user: ""
+  database: ""
+  ## Reference an existing Secret with key "password" rather than putting the
+  ## value in values.yaml.
+  passwordSecret: ""
+
+## ---------------------------------------------------------------------------
+## Traefik routing (assumes Traefik installed cluster-side)
+## ---------------------------------------------------------------------------
+traefik:
+  enabled: true
+  ## Comma-separated Traefik entrypoints to attach the platform's routes to.
+  ## This is also passed to spawned MCP servers via MCP_TRAEFIK_ENTRYPOINTS.
+  entrypoints: "web,websecure"
+  ## Optional Host(`X`) match. Leave empty to match on path only.
+  hostname: ""
+  ## When you want TLS on the platform's IngressRoute (e.g. with cert-manager).
+  tls:
+    enabled: false
+    secretName: ""
+
+## ---------------------------------------------------------------------------
+## Kubernetes orchestrator settings (passed to the platform-api so it can
+## spawn MCP server workloads)
+## ---------------------------------------------------------------------------
+kubernetes:
+  ## Name of an imagePullSecret in workloadsNamespace.name. Required if the
+  ## configured Docker registry is private.
+  imagePullSecret: ""

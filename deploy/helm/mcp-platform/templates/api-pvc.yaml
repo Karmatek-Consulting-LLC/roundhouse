@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mcp-platform.api.fullname" . }}-server-data
+  labels:
+    {{- include "mcp-platform.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.api.storage.serverData.accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ .Values.api.storage.serverData.size }}
+  {{- with .Values.api.storage.serverData.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}

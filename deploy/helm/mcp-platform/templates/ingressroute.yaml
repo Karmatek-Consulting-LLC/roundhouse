@@ -1,0 +1,42 @@
+{{- if .Values.traefik.enabled -}}
+{{- /*
+  /api/* lands on the FastAPI Service, everything else falls through to the
+  frontend Service. Frontend rule uses lower priority so /api/* wins.
+*/ -}}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "mcp-platform.fullname" . }}
+  labels:
+    {{- include "mcp-platform.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    {{- range (splitList "," .Values.traefik.entrypoints) }}
+    - {{ . | trim | quote }}
+    {{- end }}
+  routes:
+    - kind: Rule
+      match: {{ if .Values.traefik.hostname -}}
+        Host(`{{ .Values.traefik.hostname }}`) && PathPrefix(`/api`)
+      {{- else -}}
+        PathPrefix(`/api`)
+      {{- end }}
+      priority: 100
+      services:
+        - name: {{ include "mcp-platform.api.fullname" . }}
+          port: 8000
+    - kind: Rule
+      match: {{ if .Values.traefik.hostname -}}
+        Host(`{{ .Values.traefik.hostname }}`)
+      {{- else -}}
+        PathPrefix(`/`)
+      {{- end }}
+      priority: 1
+      services:
+        - name: {{ include "mcp-platform.frontend.fullname" . }}
+          port: 5173
+  {{- if .Values.traefik.tls.enabled }}
+  tls:
+    secretName: {{ .Values.traefik.tls.secretName | quote }}
+  {{- end }}
+{{- end }}

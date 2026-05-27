@@ -1,0 +1,8 @@
+{{- if .Values.workloadsNamespace.create -}}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.workloadsNamespace.name }}
+  labels:
+    {{- include "mcp-platform.labels" . | nindent 4 }}
+{{- end }}
