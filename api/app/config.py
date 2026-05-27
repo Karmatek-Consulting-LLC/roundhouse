@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # Workload backend selector.
     mcp_orchestrator: str = Field(default="docker", alias="MCP_ORCHESTRATOR")
 
+    # Force the docker backend's mode instead of probing `docker info`.
+    # "auto" (default) detects from the daemon; "standalone" / "swarm" override.
+    # Use "standalone" when the host is a swarm node but the platform is being
+    # run via plain `docker compose`.
+    mcp_docker_mode: str = Field(default="auto", alias="MCP_DOCKER_MODE")
+
     # ---- Kubernetes (only used when mcp_orchestrator == "kubernetes") ----
     mcp_k8s_api_url: str = Field(
         default="https://kubernetes.default.svc", alias="MCP_K8S_API_URL"
