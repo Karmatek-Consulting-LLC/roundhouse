@@ -8,6 +8,8 @@
     <line x1="47.6" y1="12" x2="53.2" y2="29.1" />
     <line x1="72.4" y1="12" x2="66.8" y2="29.1" />
     <line x1="92.4" y1="26.5" x2="77.8" y2="37.1" />
+  </g>
+  <g stroke="oklch(0.6171 0.1375 39.0427)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
     <line x1="60" y1="63" x2="60" y2="28" />
     <circle cx="60" cy="50" r="5" />
   </g>
