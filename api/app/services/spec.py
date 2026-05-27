@@ -12,8 +12,16 @@ MODE_CODE = "code"
 
 @dataclass(slots=True)
 class EnvVar:
+    """A per-server environment variable.
+
+    When `secret=True`, `value` carries Laravel-format ciphertext (see
+    laravel_crypto). The plaintext is never persisted to disk; codegen /
+    container spawn decrypts on demand. Plain rows store plaintext as
+    before."""
+
     name: str
     value: str = ""
+    secret: bool = False
 
     @classmethod
     def from_dict(cls, data: Any) -> "EnvVar | None":
@@ -25,10 +33,14 @@ class EnvVar:
         value = data.get("value", "")
         if not isinstance(value, str):
             value = ""
-        return cls(name=name, value=value)
+        secret = bool(data.get("secret"))
+        return cls(name=name, value=value, secret=secret)
 
-    def to_dict(self) -> dict[str, str]:
-        return {"name": self.name, "value": self.value}
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"name": self.name, "value": self.value}
+        if self.secret:
+            out["secret"] = True
+        return out
 
 
 def normalize_env_name(n: str) -> str:

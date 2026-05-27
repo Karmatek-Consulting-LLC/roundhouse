@@ -112,6 +112,24 @@ def _assert_scopes_exist(db: Session, server: str, scopes: list[str]) -> None:
         )
 
 
+def _env_vars_for_response(env_vars: list[EnvVar]) -> list[dict[str, Any]]:
+    """Project env_vars for outbound API responses. Secret values are never
+    echoed - we surface a `has_value` flag so the UI knows whether the row
+    holds something to preserve on the next save."""
+    out: list[dict[str, Any]] = []
+    for ev in env_vars:
+        if ev.secret:
+            out.append({
+                "name": ev.name,
+                "value": "",
+                "secret": True,
+                "has_value": bool(ev.value),
+            })
+        else:
+            out.append({"name": ev.name, "value": ev.value, "secret": False, "has_value": bool(ev.value)})
+    return out
+
+
 def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
     service = get_server_service()
     name = snap.get("name") or ""
@@ -136,7 +154,7 @@ def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
         "pip_packages": spec.pip_packages if spec else [],
         "apt_packages": spec.apt_packages if spec else [],
         "env_global_imports": spec.env_global_imports if spec else [],
-        "env_vars": [v.to_dict() for v in (spec.env_vars if spec else [])],
+        "env_vars": _env_vars_for_response(spec.env_vars if spec else []),
         "global_env": [v.to_dict() for v in global_env.list_globals(db)],
         "owner_id": str(owner_row.owner_id) if owner_row else None,
         "owner_email": owner_email,
@@ -655,10 +673,17 @@ def export_spec(
     spec = get_server_service().store.load(name)
     if spec is None:
         raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    exported = spec.to_dict()
+    # Strip ciphertext from secret env vars - it's keyed to this instance's
+    # APP_KEY and useless elsewhere. The flag + name survive so the importer
+    # has a slot to re-enter the value into.
+    exported["env_vars"] = [
+        ({**ev, "value": ""} if ev.get("secret") else ev) for ev in exported.get("env_vars", [])
+    ]
     return {
         "version": EXPORT_VERSION,
         "exported_at": _now_iso(),
-        "spec": spec.to_dict(),
+        "spec": exported,
     }
 
 
@@ -951,7 +976,10 @@ def update_apt_packages(
 
 class EnvVarItem(BaseModel):
     name: str
-    value: str = ""
+    # Plain rows: literal value. Secret rows: the plaintext to encrypt-and-
+    # store, or null/"" to preserve whatever ciphertext is already on disk.
+    value: str | None = ""
+    secret: bool = False
 
 
 class EnvIn(BaseModel):
@@ -959,12 +987,39 @@ class EnvIn(BaseModel):
     env_vars: list[EnvVarItem] = []
 
 
-def _parse_env_vars(items: list[EnvVarItem]) -> list[EnvVar]:
+def _encrypt_env(plaintext: str) -> str:
+    """Encrypt a secret env value for at-rest storage. Falls back to
+    plaintext when APP_KEY isn't configured (dev mode) so we don't fail
+    closed - the secret flag is still preserved so the UI keeps masking."""
+    from app.config import get_settings
+    from app.laravel_crypto import encrypt
+    app_key = get_settings().app_key
+    if not app_key:
+        return plaintext
+    return encrypt(plaintext, app_key)
+
+
+def _merge_env_vars(items: list[EnvVarItem], existing: list[EnvVar]) -> list[EnvVar]:
+    """Build the new env_vars list. For secret rows where the client omitted
+    a fresh value, preserve the ciphertext already on disk so the UI never
+    has to re-collect the plaintext."""
+    by_name = {ev.name: ev for ev in existing}
     out: list[EnvVar] = []
     for it in items:
-        ev = EnvVar.from_dict(it.model_dump())
-        if ev is not None:
-            out.append(ev)
+        name = (it.name or "").strip()
+        if not name:
+            continue
+        if it.secret:
+            if it.value:
+                out.append(EnvVar(name=name, value=_encrypt_env(it.value), secret=True))
+            else:
+                prev = by_name.get(name)
+                if prev is not None and prev.secret:
+                    out.append(EnvVar(name=name, value=prev.value, secret=True))
+                # Else: secret toggle flipped on with no value yet -> skip,
+                # matches Laravel behavior (no row written).
+        else:
+            out.append(EnvVar(name=name, value=it.value or "", secret=False))
     return out
 
 
@@ -978,7 +1033,7 @@ def update_env(
     _assert_access(db, user, name)
     spec = _ensure_spec(db, name)
     spec.env_global_imports = normalize_env_imports(payload.env_global_imports)
-    spec.env_vars = _parse_env_vars(payload.env_vars)
+    spec.env_vars = _merge_env_vars(payload.env_vars, spec.env_vars)
     return _save_and_respond(db, spec)
 
 
@@ -1007,5 +1062,5 @@ def update_config(
     spec.pip_packages = list(payload.pip_packages)
     spec.apt_packages = list(payload.apt_packages)
     spec.env_global_imports = normalize_env_imports(payload.env_global_imports)
-    spec.env_vars = _parse_env_vars(payload.env_vars)
+    spec.env_vars = _merge_env_vars(payload.env_vars, spec.env_vars)
     return _save_and_respond(db, spec)

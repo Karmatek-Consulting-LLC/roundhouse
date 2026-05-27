@@ -108,9 +108,14 @@ export interface Template {
   variables: TemplateVariable[];
 }
 
+/** When `secret` is true, the platform stores the value encrypted at rest
+ * (laravel-crypto) and never echoes it back. The editor shows the row as
+ * masked; sending `value: ""` on save preserves the stored ciphertext. */
 export interface EnvVar {
   name: string;
   value: string;
+  secret?: boolean;
+  has_value?: boolean;
 }
 
 /** Server env: explicit global imports + local pairs (API `/servers/.../config` and `/env`). */

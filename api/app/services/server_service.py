@@ -45,13 +45,24 @@ class ServerService:
         return spec.replicas
 
     def effective_env(self, db: Session, spec: ServerSpec) -> dict[str, str]:
+        from app.config import get_settings
+        from app.laravel_crypto import DecryptError, decrypt
         merged: dict[str, str] = {}
         gdict = global_env.globals_as_dict(db)
         for name in spec.env_global_imports:
             if name in gdict:
                 merged[name] = gdict[name]
+        app_key = get_settings().app_key
         for ev in spec.env_vars:
-            merged[ev.name] = ev.value
+            if ev.secret and ev.value and app_key:
+                try:
+                    merged[ev.name] = decrypt(ev.value, app_key)
+                except DecryptError:
+                    # Most likely cause: row encrypted with a different APP_KEY.
+                    # Skipping is safer than leaking ciphertext into env.
+                    continue
+            else:
+                merged[ev.name] = ev.value
         return merged
 
     def custom_ca_cert(self, db: Session) -> str | None:
