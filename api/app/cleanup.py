@@ -27,8 +27,7 @@ def main() -> int:
         logger.info("No managed servers running - nothing to clean up.")
         return 0
 
-    mode = "swarm service" if docker.swarm_mode() else "container"
-    logger.info("Removing %d managed %s(s)...", len(servers), mode)
+    logger.info("Removing %d managed workload(s) via %s...", len(servers), docker.mode())
 
     failed = 0
     for s in servers:

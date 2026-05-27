@@ -143,6 +143,15 @@ class DockerClient:
         logger.info("Docker mode: %s", "swarm" if self._swarm_cache else "standalone")
         return self._swarm_cache
 
+    def mode(self) -> str:
+        return "docker-swarm" if self.swarm_mode() else "docker"
+
+    def supports_scaling(self) -> bool:
+        return self.swarm_mode()
+
+    def image_tag(self, server_name: str, registry_prefix: str | None = None) -> str:
+        return image_tag(server_name, registry_prefix)
+
     # ---- Image build + push ----
 
     def build_image(
@@ -632,12 +641,10 @@ def _drain_frames(buf: bytes) -> tuple[str, bytes]:
     return (b"".join(out).decode("utf-8", errors="replace"), buf[pos:])
 
 
-# Module-level singleton so the swarm-mode cache is shared across requests.
-_singleton: DockerClient | None = None
+# Back-compat alias for code that pre-dates the Orchestrator abstraction.
+# Returns the configured backend, which may not be Docker — call sites that
+# truly need Docker-specifics (e.g. swarm_mode()) should narrow with isinstance.
+def get_docker():
+    from app.services.orchestrator import get_orchestrator
 
-
-def get_docker() -> DockerClient:
-    global _singleton
-    if _singleton is None:
-        _singleton = DockerClient()
-    return _singleton
+    return get_orchestrator()

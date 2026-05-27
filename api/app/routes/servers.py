@@ -167,7 +167,10 @@ def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
         "created_at": snap.get("created_at"),
         "replicas_desired": service.effective_replicas(spec),
         "replicas_running": int(snap.get("replicas_running") or 0),
-        "docker_swarm_mode": get_docker().swarm_mode(),
+        "orchestrator": get_docker().mode(),
+        "supports_scaling": get_docker().supports_scaling(),
+        # Back-compat: frontend reads docker_swarm_mode as a "supports scaling" flag.
+        "docker_swarm_mode": get_docker().supports_scaling(),
         "placement": snap.get("placement") or [],
         "cpu_limit": spec.cpu_limit if spec else None,
         "memory_limit_mb": spec.memory_limit_mb if spec else None,
@@ -203,7 +206,9 @@ def limits(_: User = Depends(current_user)):
     return {
         "default_mcp_server_replicas": cfg.mcp_default_server_replicas,
         "max_mcp_server_replicas": cfg.mcp_max_server_replicas,
-        "docker_swarm_mode": get_docker().swarm_mode(),
+        "orchestrator": get_docker().mode(),
+        "supports_scaling": get_docker().supports_scaling(),
+        "docker_swarm_mode": get_docker().supports_scaling(),
     }
 
 
@@ -802,7 +807,7 @@ def update_replicas(
     service.store.save(spec)
 
     docker = get_docker()
-    if docker.swarm_mode():
+    if docker.supports_scaling():
         running = docker.get_server(name)
         if running and running.get("status") == "running":
             docker.scale_server(name, spec.replicas)
