@@ -858,6 +858,35 @@ def list_assets(
     }
 
 
+@router.get("/{name}/assets/{filename}")
+def download_asset(
+    name: str,
+    filename: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Stream an asset back to the caller as a download. Filename is run
+    through the same safe-charset gate the upload uses; the FileResponse
+    layer enforces no-cache so collaborators always pull the current
+    version."""
+    from fastapi.responses import FileResponse
+    from app.services.assets import AssetStore, AssetError
+    _assert_access(db, user, name)
+    store = AssetStore(get_server_service().store.server_dir(name))
+    try:
+        path = store.path_for(filename)
+    except AssetError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"Asset {filename!r} not found")
+    return FileResponse(
+        path=path,
+        filename=filename,
+        media_type="application/octet-stream",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.post("/{name}/assets", status_code=201)
 async def upload_asset(
     name: str,
