@@ -125,6 +125,8 @@ def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
         "name": name,
         "template": snap.get("template") or "custom",
         "status": snap.get("status") or "unknown",
+        "health": snap.get("health"),
+        "restart_count": snap.get("restart_count"),
         "url": f"{service.base_url(db)}/s/{name}/mcp",
         "description": spec.description if spec else "",
         "mode": spec.mode if spec else MODE_STRUCTURED,

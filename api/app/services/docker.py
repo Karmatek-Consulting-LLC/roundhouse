@@ -72,6 +72,17 @@ def _all_labels(server_name: str, template_name: str) -> dict[str, str]:
     }
 
 
+def _parse_health_from_summary(status_str: str) -> str | None:
+    """Docker's `ps` Status column carries health in parens, e.g.
+    'Up 2 minutes (healthy)'. Parse it out without a full inspect."""
+    if not isinstance(status_str, str):
+        return None
+    for token in ("(healthy)", "(unhealthy)", "(starting)", "(health: starting)"):
+        if token in status_str:
+            return token.strip("()").replace("health: ", "")
+    return None
+
+
 def _container_summary_to_dict(c: dict) -> dict:
     labels = c.get("Labels") or {}
     state = c.get("State") or "unknown"
@@ -86,6 +97,7 @@ def _container_summary_to_dict(c: dict) -> dict:
         "name": labels.get(LABEL_SERVER_NAME, ""),
         "template": labels.get(LABEL_TEMPLATE, ""),
         "status": state,
+        "health": _parse_health_from_summary(c.get("Status") or ""),
         "created_at": created_str,
         "replicas_running": 1 if running else 0,
         "placement": [],
@@ -94,14 +106,19 @@ def _container_summary_to_dict(c: dict) -> dict:
 
 def _container_to_dict(c: dict) -> dict:
     labels = (c.get("Config") or {}).get("Labels") or {}
-    state = (c.get("State") or {}).get("Status")
+    state_obj = c.get("State") or {}
+    state = state_obj.get("Status")
     if state is None:
-        state = "running" if (c.get("State") or {}).get("Running") else "exited"
+        state = "running" if state_obj.get("Running") else "exited"
     running = state == "running"
+    health = (state_obj.get("Health") or {}).get("Status")
+    restart_count = c.get("RestartCount") if isinstance(c.get("RestartCount"), int) else None
     return {
         "name": labels.get(LABEL_SERVER_NAME, ""),
         "template": labels.get(LABEL_TEMPLATE, ""),
         "status": state,
+        "health": health if isinstance(health, str) else None,
+        "restart_count": restart_count,
         "created_at": c.get("Created", ""),
         "replicas_running": 1 if running else 0,
         "placement": [],
@@ -504,10 +521,14 @@ class DockerClient:
         replicas = ((spec.get("Mode") or {}).get("Replicated") or {}).get("Replicas", 0)
         status = "running" if replicas > 0 else "stopped"
         placement = self._task_placement_for(svc) if (include_placement and self.swarm_mode()) else []
+        # Swarm doesn't expose container-level health on the service object;
+        # leaving health=None preserves the existing UI contract for swarm.
         return {
             "name": labels.get(LABEL_SERVER_NAME, ""),
             "template": labels.get(LABEL_TEMPLATE, ""),
             "status": status,
+            "health": None,
+            "restart_count": None,
             "created_at": svc.get("CreatedAt", ""),
             "replicas_running": int(replicas),
             "placement": placement,

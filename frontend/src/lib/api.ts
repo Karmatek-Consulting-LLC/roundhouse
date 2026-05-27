@@ -214,10 +214,18 @@ export interface AuditEvent {
   created_at: string | null;
 }
 
+/** Health values come from Docker HEALTHCHECK. `starting` while the
+ * grace period hasn't elapsed; `healthy` once the probe has succeeded;
+ * `unhealthy` after retry failures. `null` when no healthcheck is defined
+ * (older images, swarm services). */
+export type ServerHealth = "starting" | "healthy" | "unhealthy" | null;
+
 export interface Server {
   name: string;
   template: string;
   status: string;
+  health?: ServerHealth;
+  restart_count?: number | null;
   url: string;
   description: string;
   mode: ServerMode;

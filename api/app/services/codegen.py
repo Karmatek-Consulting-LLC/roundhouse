@@ -393,7 +393,7 @@ def _metrics_snapshot():
 
 
 _METRICS_ROUTE_SRC = '''
-# --- /metrics route (auto-generated) ---
+# --- /metrics + /healthz routes (auto-generated) ---
 try:
     from starlette.responses import JSONResponse as _JSONResponse, PlainTextResponse as _PlainTextResponse
 except Exception:  # noqa: BLE001 - starlette ships with fastmcp
@@ -410,6 +410,15 @@ async def _platform_metrics(request):
     if auth != expected:
         return _PlainTextResponse("unauthorized", status_code=401)
     return _JSONResponse(_metrics_snapshot())
+
+
+@mcp.custom_route("/healthz", methods=["GET"])
+async def _platform_healthz(request):
+    """Liveness probe used by Docker HEALTHCHECK + the platform UI. No auth -
+    Docker has no way to send headers and the response carries no secrets."""
+    if _PlainTextResponse is None:
+        return None
+    return _PlainTextResponse("ok", status_code=200)
 '''
 
 
@@ -552,6 +561,15 @@ def generate_dockerfile(spec: ServerSpec, custom_ca: str | None = None) -> str:
     lines.append(f"RUN pip install --no-cache-dir {pip_install}")
     lines.append("COPY server.py .")
     lines.append("EXPOSE 8000")
+    # python's urllib avoids needing curl in the base image. exit 0 on 200,
+    # non-zero otherwise; Docker flips the container to unhealthy after the
+    # configured retries.
+    lines.append(
+        'HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n'
+        '  CMD python -c "import urllib.request,sys; '
+        'r=urllib.request.urlopen(\'http://127.0.0.1:8000/healthz\', timeout=2); '
+        'sys.exit(0 if r.status==200 else 1)" || exit 1'
+    )
     lines.append('CMD ["python", "server.py"]')
     lines.append("")
     return "\n".join(lines)
