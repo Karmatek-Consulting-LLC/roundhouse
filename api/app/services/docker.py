@@ -279,11 +279,10 @@ class DockerClient:
 
     def stream_server_logs(self, server_name: str, tail: int = 100):
         """Open a long-lived log stream, yielding decoded log text chunks as
-        Docker pushes them. The caller closes when done; the underlying
-        httpx response is bound to the returned context manager via the
-        `.close()` method on the iterator object.
+        Docker pushes them. The caller closes when done.
 
-        Returns an iterator of (text_chunk: str). Demux happens per chunk."""
+        Returns an iterator of (text_chunk: str). Frame demux happens here
+        so the SSE endpoint just forwards lines."""
         tail = max(1, min(tail, 5000))
         query = {
             "stdout": "1",
@@ -296,14 +295,14 @@ class DockerClient:
             svc = self._find_service_raw(server_name)
             if not svc:
                 raise DockerNotFoundError(f"Server '{server_name}' not found")
-            resp = self._http.stream_raw(f"services/{svc['ID']}/logs", query)
+            chunks = self._http.stream_chunks(f"services/{svc['ID']}/logs", query)
         else:
             name = _container_name(server_name)
             try:
-                resp = self._http.stream_raw(f"containers/{name}/logs", query)
+                chunks = self._http.stream_chunks(f"containers/{name}/logs", query)
             except DockerNotFoundError as e:
                 raise DockerNotFoundError(f"Server '{server_name}' not found") from e
-        return _LogStream(resp)
+        return _LogStream(chunks)
 
     # ---- Container backend ----
 
@@ -539,24 +538,17 @@ class DockerClient:
 
 
 class _LogStream:
-    """Adapter that takes an httpx streaming Response carrying Docker
-    multiplexed log frames and yields decoded text chunks suitable for
-    SSE. Frames are demuxed lazily so we don't buffer the whole stream."""
+    """Adapter that takes a byte-chunk iterator (from DockerHttp.stream_chunks)
+    carrying Docker multiplexed log frames and yields decoded text chunks
+    suitable for SSE. Frames are demuxed lazily so we don't buffer the whole
+    stream."""
 
-    def __init__(self, response):
-        self._resp = response
+    def __init__(self, source):
+        self._source = source
         self._buffer = b""
 
     def __iter__(self):
-        # TODO: httpx over a Unix domain socket buffers streaming responses
-        # until EOF when there's no Content-Length header (which is true for
-        # Docker's follow=1 logs endpoint). Neither iter_bytes nor iter_raw
-        # yields incremental chunks here. The fix is probably to drop down to
-        # a raw socket for this one call, or run Docker via tcp:// in dev.
-        # For now this yields the historical tail on stream close - which is
-        # not ideal but also not wrong; the SSE endpoint stays open and the
-        # demux logic is correct when chunks do arrive.
-        for chunk in self._resp.iter_raw(chunk_size=4096):
+        for chunk in self._source:
             if not chunk:
                 continue
             self._buffer += chunk
@@ -566,7 +558,7 @@ class _LogStream:
 
     def close(self) -> None:
         try:
-            self._resp.close()
+            self._source.close()
         except Exception:  # noqa: BLE001
             pass
 
