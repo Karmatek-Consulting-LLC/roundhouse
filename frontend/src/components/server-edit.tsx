@@ -1321,7 +1321,7 @@ export function ServerEdit({ serverName }: ServerEditProps) {
           <ArrowLeft className="mr-1 h-4 w-4" /> Servers
         </Button>
         <h2 className="text-lg font-semibold">{server.name}</h2>
-        <StatusBadge status={server.status} />
+        <StatusBadge status={server.status} health={server.health} />
         <code className="ml-auto rounded bg-muted px-2 py-1 text-xs font-mono">
           {server.url}
         </code>
