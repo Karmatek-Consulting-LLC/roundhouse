@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, type Primitive, type Server } from "@/lib/api";
+import { api, type Primitive, type Server, type UsageSnapshot } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { PrimitiveForm } from "@/components/primitive-form";
@@ -20,6 +20,7 @@ import { python } from "@codemirror/lang-python";
 import { useTheme } from "@/hooks/use-theme";
 import {
   ArrowLeft,
+  Activity,
   Boxes,
   Download,
   FileCode,
@@ -60,6 +61,7 @@ type Selection =
   | { kind: "apt-packages" }
   | { kind: "env" }
   | { kind: "auth" }
+  | { kind: "usage" }
   | { kind: "logs" }
   | { kind: "source" };
 
@@ -76,6 +78,7 @@ function parseSelection(path: string): Selection {
   if (path === "apt-packages") return { kind: "apt-packages" };
   if (path === "env") return { kind: "env" };
   if (path === "auth") return { kind: "auth" };
+  if (path === "usage") return { kind: "usage" };
   if (path === "logs") return { kind: "logs" };
   if (path === "source") return { kind: "source" };
   return { kind: "overview" };
@@ -202,6 +205,9 @@ function RightRail({ serverName, server, selection, onSaved, onDeleted, gotoPrim
         </div>
       </>
     );
+  }
+  if (selection.kind === "usage") {
+    return <UsageRail serverName={serverName} server={server} />;
   }
 
   return (
@@ -849,6 +855,164 @@ function LogsRail({ serverName, server }: { serverName: string; server: Server }
   );
 }
 
+// ---------------- Usage rail ----------------
+
+function formatRelative(epochSec: number, nowSec: number): string {
+  if (!epochSec) return "never";
+  const delta = Math.max(0, Math.floor(nowSec - epochSec));
+  if (delta < 5) return "just now";
+  if (delta < 60) return `${delta}s ago`;
+  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
+  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
+  return `${Math.floor(delta / 86400)}d ago`;
+}
+
+function formatMs(v: number | null): string {
+  if (v == null) return "—";
+  if (v < 1) return v.toFixed(2) + " ms";
+  if (v < 100) return v.toFixed(1) + " ms";
+  return Math.round(v) + " ms";
+}
+
+function UsageRail({ serverName, server }: { serverName: string; server: Server }) {
+  const [snap, setSnap] = useState<UsageSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await api.getServerUsage(serverName);
+      setSnap(data);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to fetch usage");
+    } finally {
+      setLoading(false);
+    }
+  }, [serverName]);
+
+  useEffect(() => {
+    refresh();
+    // 5s poll while the rail is visible. The endpoint is cheap (one HTTP hop
+    // inside the Docker network) so this is a fine resolution for a human
+    // staring at the page; collapse to on-demand if it becomes an issue.
+    const id = setInterval(refresh, 5000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  return (
+    <div className="space-y-3">
+      <RailHeader>Usage</RailHeader>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
+          <RefreshCw className="mr-1 h-3 w-3" /> Refresh
+        </Button>
+        {snap && snap.available && (
+          <span className="text-xs text-muted-foreground">
+            Since process start ({formatRelative(snap.started_ts, snap.now_ts)})
+          </span>
+        )}
+        {server.status !== "running" && (
+          <span className="text-xs italic text-muted-foreground ml-auto">
+            Server is {server.status} — metrics unavailable.
+          </span>
+        )}
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {snap && snap.available === false && !error && (
+        <p className="text-xs italic text-muted-foreground">
+          No metrics yet — the server may need a redeploy to pick up the metrics endpoint,
+          or no requests have been served since startup.
+        </p>
+      )}
+
+      {snap && snap.available && (
+        <>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+              Per primitive
+            </div>
+            {snap.primitives.length === 0 ? (
+              <p className="text-xs italic text-muted-foreground">No calls yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="py-1 pr-3 font-medium">Name</th>
+                      <th className="py-1 pr-3 font-medium">Kind</th>
+                      <th className="py-1 pr-3 font-medium text-right">Calls</th>
+                      <th className="py-1 pr-3 font-medium text-right">Errors</th>
+                      <th className="py-1 pr-3 font-medium text-right">p50</th>
+                      <th className="py-1 pr-3 font-medium text-right">p95</th>
+                      <th className="py-1 pr-3 font-medium text-right">p99</th>
+                      <th className="py-1 font-medium">Last call</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {snap.primitives.map((p) => (
+                      <tr key={p.kind + ":" + p.name} className="border-b last:border-0">
+                        <td className="py-1 pr-3 font-mono">{p.name}</td>
+                        <td className="py-1 pr-3 text-muted-foreground">{p.kind}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums">{p.calls}</td>
+                        <td className={`py-1 pr-3 text-right tabular-nums ${p.errors > 0 ? "text-destructive" : ""}`}>
+                          {p.errors}
+                        </td>
+                        <td className="py-1 pr-3 text-right tabular-nums">{formatMs(p.p50_ms)}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums">{formatMs(p.p95_ms)}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums">{formatMs(p.p99_ms)}</td>
+                        <td className="py-1 text-muted-foreground">{formatRelative(p.last_call_ts, snap.now_ts)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 mt-3">
+              Per token / primitive
+            </div>
+            {snap.tokens.length === 0 ? (
+              <p className="text-xs italic text-muted-foreground">No calls yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="py-1 pr-3 font-medium">Token</th>
+                      <th className="py-1 pr-3 font-medium">Primitive</th>
+                      <th className="py-1 pr-3 font-medium text-right">Calls</th>
+                      <th className="py-1 font-medium">Last call</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {snap.tokens.map((t, i) => (
+                      <tr key={i} className="border-b last:border-0">
+                        <td className="py-1 pr-3 font-mono">{t.client_id ?? <span className="italic text-muted-foreground">(unauthenticated)</span>}</td>
+                        <td className="py-1 pr-3 font-mono">{t.name}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums">{t.calls}</td>
+                        <td className="py-1 text-muted-foreground">{formatRelative(t.last_call_ts, snap.now_ts)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ---------------- Source rail (code mode) ----------------
 
 function SourceRail({ serverName, server, onSaved }: { serverName: string; server: Server; onSaved: () => void }) {
@@ -1028,6 +1192,13 @@ function LeftNav({ server, selection, onSelect }: LeftNavProps) {
           onClick={() => onSelect("auth")}
         >
           Auth
+        </NavItem>
+        <NavItem
+          icon={<Activity className="h-3.5 w-3.5" />}
+          active={selection.kind === "usage"}
+          onClick={() => onSelect("usage")}
+        >
+          Usage
         </NavItem>
         <NavItem
           icon={<FileText className="h-3.5 w-3.5" />}

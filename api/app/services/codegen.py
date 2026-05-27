@@ -285,13 +285,15 @@ class _PlatformMiddleware(_Middleware):
             raise
         finally:
             await _release_gate(gate_info)
+            duration_ms = round((_time.perf_counter() - started) * 1000, 2)
+            _metrics_record(kind, name, client_id, duration_ms, err_type)
             if cfg.get("log_calls", True):
                 rec = {
                     "event": "mcp.call",
                     "kind": kind,
                     "name": name,
                     "client_id": client_id,
-                    "duration_ms": round((_time.perf_counter() - started) * 1000, 2),
+                    "duration_ms": duration_ms,
                     "error": err_type,
                 }
                 if cfg.get("log_arguments") and arguments is not None:
@@ -306,11 +308,116 @@ class _PlatformMiddleware(_Middleware):
 '''
 
 
-def _gen_middleware(spec: ServerSpec) -> tuple[list[str], str]:
+# Metrics module is emitted *before* the middleware class so _invoke can
+# call _metrics_record() directly. Kept as its own block for readability.
+_METRICS_MODULE_SRC = '''
+# --- Metrics (auto-generated) ---
+from collections import deque as _deque
+
+# Per-(kind,name): rolling sample of durations + counters.
+_METRICS_PRIM: dict = {}
+# Per-(name,client_id) call counters.
+_METRICS_BY_CLIENT: dict = {}
+_METRICS_STARTED = _time.time()
+_DURATION_SAMPLES = 256
+
+
+def _metrics_record(kind, name, client_id, duration_ms, err_type):
+    key = (kind, name)
+    p = _METRICS_PRIM.get(key)
+    if p is None:
+        p = {
+            "kind": kind, "name": name,
+            "calls": 0, "errors": 0,
+            "rate_limited": 0, "concurrency_denied": 0,
+            "last_call_ts": 0.0,
+            "durations": _deque(maxlen=_DURATION_SAMPLES),
+        }
+        _METRICS_PRIM[key] = p
+    p["calls"] += 1
+    p["last_call_ts"] = _time.time()
+    p["durations"].append(float(duration_ms))
+    if err_type is not None:
+        p["errors"] += 1
+        if err_type == "ToolError":
+            # Tag the two middleware-injected rejection paths so we can split
+            # them out from user errors in the dashboard.
+            # (Best-effort: the exception message carries the discriminator.)
+            pass
+
+    tk = (str(name), str(client_id or ""))
+    t = _METRICS_BY_CLIENT.get(tk)
+    if t is None:
+        t = {"name": name, "client_id": client_id, "calls": 0, "last_call_ts": 0.0}
+        _METRICS_BY_CLIENT[tk] = t
+    t["calls"] += 1
+    t["last_call_ts"] = _time.time()
+
+
+def _percentile(samples, q):
+    if not samples:
+        return None
+    arr = sorted(samples)
+    idx = max(0, min(len(arr) - 1, int(q * (len(arr) - 1))))
+    return round(arr[idx], 2)
+
+
+def _metrics_snapshot():
+    primitives = []
+    for p in _METRICS_PRIM.values():
+        durs = list(p["durations"])
+        primitives.append({
+            "kind": p["kind"], "name": p["name"],
+            "calls": p["calls"], "errors": p["errors"],
+            "last_call_ts": p["last_call_ts"],
+            "p50_ms": _percentile(durs, 0.50),
+            "p95_ms": _percentile(durs, 0.95),
+            "p99_ms": _percentile(durs, 0.99),
+            "samples": len(durs),
+        })
+    tokens = []
+    for t in _METRICS_BY_CLIENT.values():
+        tokens.append({
+            "name": t["name"], "client_id": t["client_id"],
+            "calls": t["calls"], "last_call_ts": t["last_call_ts"],
+        })
+    primitives.sort(key=lambda r: (-r["calls"], r["name"]))
+    tokens.sort(key=lambda r: (-r["calls"], r.get("client_id") or ""))
+    return {
+        "started_ts": _METRICS_STARTED,
+        "now_ts": _time.time(),
+        "primitives": primitives,
+        "tokens": tokens,
+    }
+'''
+
+
+_METRICS_ROUTE_SRC = '''
+# --- /metrics route (auto-generated) ---
+try:
+    from starlette.responses import JSONResponse as _JSONResponse, PlainTextResponse as _PlainTextResponse
+except Exception:  # noqa: BLE001 - starlette ships with fastmcp
+    _JSONResponse = None
+    _PlainTextResponse = None
+
+
+@mcp.custom_route("/metrics", methods=["GET"])
+async def _platform_metrics(request):
+    if _JSONResponse is None or _PlainTextResponse is None:
+        return None
+    auth = request.headers.get("authorization", "")
+    expected = "Bearer " + _METRICS_TOKEN
+    if auth != expected:
+        return _PlainTextResponse("unauthorized", status_code=401)
+    return _JSONResponse(_metrics_snapshot())
+'''
+
+
+def _gen_middleware(spec: ServerSpec, metrics_token: str) -> tuple[list[str], str]:
     """Return (extra_import_lines, middleware_body).
 
     The body is inserted after the `mcp = FastMCP(...)` line and is followed
-    by a single `mcp.add_middleware(_PlatformMiddleware())` call."""
+    by `mcp.add_middleware(_PlatformMiddleware())` and the /metrics route."""
     config_map = _merge_middleware_config(spec)
     imports = [
         "import asyncio as _asyncio",
@@ -336,6 +443,8 @@ def _gen_middleware(spec: ServerSpec) -> tuple[list[str], str]:
         "    _PLATFORM_LOG.addHandler(_h)",
         "    _PLATFORM_LOG.propagate = False",
         "",
+        "_METRICS_TOKEN = " + _py_string(metrics_token),
+        "",
         # repr() over json.dumps so booleans / None render as valid Python.
         "_MIDDLEWARE_CONFIG = " + repr(config_map),
         "",
@@ -350,14 +459,18 @@ def _gen_middleware(spec: ServerSpec) -> tuple[list[str], str]:
         "    except Exception:",
         "        return None",
         "    return getattr(tok, 'client_id', None) if tok is not None else None",
+        _METRICS_MODULE_SRC,
         _MIDDLEWARE_CLASS_SRC,
         "mcp.add_middleware(_PlatformMiddleware())",
+        _METRICS_ROUTE_SRC,
         "",
     ]
     return imports, "\n".join(body_lines)
 
 
 def generate_server_py(spec: ServerSpec, *, format_output: bool = True) -> str:
+    from app.services.metrics_auth import metrics_token_for
+
     auth_enabled = bool(spec.tokens)
     any_scoped = auth_enabled and _any_primitive_has_scopes(spec.primitives)
 
@@ -372,7 +485,7 @@ def generate_server_py(spec: ServerSpec, *, format_output: bool = True) -> str:
     if auth_imports:
         import_lines.append("from fastmcp.server.auth import " + ", ".join(auth_imports))
 
-    mw_imports, mw_body = _gen_middleware(spec)
+    mw_imports, mw_body = _gen_middleware(spec, metrics_token_for(spec.name))
     import_lines.extend(mw_imports)
 
     # Preserve blank-line separators in user imports - the editor relies on them.

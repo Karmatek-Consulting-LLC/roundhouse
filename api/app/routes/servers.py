@@ -282,6 +282,45 @@ def logs_stream(
     )
 
 
+@router.get("/{name}/usage")
+def usage(
+    name: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Scrape the spawned container's /metrics endpoint and return the
+    snapshot. Uses the deterministic per-server metrics token so the
+    endpoint stays closed to external callers.
+
+    Returns {primitives: [...], tokens: [...], started_ts, now_ts}. When the
+    container is down or hasn't yet served its first request, returns an
+    empty snapshot rather than 404 - the editor wants to render the panel
+    either way."""
+    import httpx
+    from app.services.metrics_auth import metrics_token_for
+
+    _assert_access(db, user, name)
+    snap = get_docker().get_server(name)
+    if not snap or snap.get("status") != "running":
+        return {"primitives": [], "tokens": [], "started_ts": 0, "now_ts": 0, "available": False}
+
+    token = metrics_token_for(name)
+    url = f"http://mcp-{name}:8000/metrics"
+    try:
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.get(url, headers={"Authorization": f"Bearer {token}"})
+    except httpx.HTTPError as e:
+        logger.info("usage scrape failed for %s: %s", name, e)
+        return {"primitives": [], "tokens": [], "started_ts": 0, "now_ts": 0, "available": False}
+    if resp.status_code != 200:
+        # 401 here means the server was built before this token scheme - it
+        # will refresh on next redeploy.
+        return {"primitives": [], "tokens": [], "started_ts": 0, "now_ts": 0, "available": False}
+    data = resp.json()
+    data["available"] = True
+    return data
+
+
 # ---- Create ----
 
 class CreateServerIn(BaseModel):
