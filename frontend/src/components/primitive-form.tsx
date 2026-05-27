@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type Primitive, type ServerScope, type ToolParameter } from "@/lib/api";
+import { api, type Primitive, type PrimitiveMiddleware, type ServerScope, type ToolParameter } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -81,6 +81,12 @@ export function PrimitiveForm({
     existing?.kind === "tool" && existing.return_type === "dict" ? "dict" : "str",
   );
   const [scopes, setScopes] = useState<string[]>(existing?.scopes ?? []);
+  const [rateLimitRpm, setRateLimitRpm] = useState<string>(
+    existing?.middleware?.rate_limit_rpm != null ? String(existing.middleware.rate_limit_rpm) : "",
+  );
+  const [maxConcurrent, setMaxConcurrent] = useState<string>(
+    existing?.middleware?.max_concurrent != null ? String(existing.middleware.max_concurrent) : "",
+  );
   const [availableScopes, setAvailableScopes] = useState<ServerScope[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -106,20 +112,37 @@ export function PrimitiveForm({
     setParams(params.map((p, i) => (i === idx ? { ...p, ...updates } : p)));
   }
 
+  function buildMiddleware(): PrimitiveMiddleware | undefined {
+    const mw: PrimitiveMiddleware = {};
+    const rpm = parseInt(rateLimitRpm, 10);
+    if (!Number.isNaN(rpm) && rpm > 0) mw.rate_limit_rpm = rpm;
+    const cap = parseInt(maxConcurrent, 10);
+    if (!Number.isNaN(cap) && cap > 0) mw.max_concurrent = cap;
+    // Preserve any keys the form doesn't yet edit (e.g. log_arguments).
+    if (existing?.middleware) {
+      for (const [k, v] of Object.entries(existing.middleware)) {
+        if (k === "rate_limit_rpm" || k === "max_concurrent") continue;
+        if (v != null) (mw as Record<string, unknown>)[k] = v;
+      }
+    }
+    return Object.keys(mw).length ? mw : undefined;
+  }
+
   function buildPrimitive(): Primitive {
     const s = scopes.length ? scopes : undefined;
+    const mw = buildMiddleware();
     switch (kind) {
       case "tool":
         return {
           kind: "tool", name, description, parameters: params, code,
-          return_type: returnType, scopes: s,
+          return_type: returnType, scopes: s, middleware: mw,
         };
       case "resource":
-        return { kind: "resource", name, uri, description, mime_type: mimeType, code, scopes: s };
+        return { kind: "resource", name, uri, description, mime_type: mimeType, code, scopes: s, middleware: mw };
       case "resource_template":
-        return { kind: "resource_template", name, uri_template: uri, description, mime_type: mimeType, code, scopes: s };
+        return { kind: "resource_template", name, uri_template: uri, description, mime_type: mimeType, code, scopes: s, middleware: mw };
       case "prompt":
-        return { kind: "prompt", name, description, parameters: params, code, scopes: s };
+        return { kind: "prompt", name, description, parameters: params, code, scopes: s, middleware: mw };
     }
   }
 
@@ -156,6 +179,8 @@ export function PrimitiveForm({
     setParams("parameters" in existing ? existing.parameters : []);
     setReturnType(existing.kind === "tool" && existing.return_type === "dict" ? "dict" : "str");
     setScopes(existing.scopes ?? []);
+    setRateLimitRpm(existing.middleware?.rate_limit_rpm != null ? String(existing.middleware.rate_limit_rpm) : "");
+    setMaxConcurrent(existing.middleware?.max_concurrent != null ? String(existing.middleware.max_concurrent) : "");
     setError(null);
   }
 
@@ -371,6 +396,38 @@ export function PrimitiveForm({
               })}
             </div>
           )}
+        </div>
+
+        <div className="grid gap-2">
+          <Label>Limits</Label>
+          <p className="text-xs text-muted-foreground">
+            Per-token guardrails enforced by the generated server. Leave blank
+            to inherit server defaults (currently: no limit).
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1">
+              <Label className="text-xs text-muted-foreground">Rate limit (per minute)</Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                placeholder="—"
+                value={rateLimitRpm}
+                onChange={(e) => setRateLimitRpm(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label className="text-xs text-muted-foreground">Max concurrent</Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                placeholder="—"
+                value={maxConcurrent}
+                onChange={(e) => setMaxConcurrent(e.target.value)}
+              />
+            </div>
+          </div>
         </div>
 
       </div>

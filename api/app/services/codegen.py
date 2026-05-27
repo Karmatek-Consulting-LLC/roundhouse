@@ -180,9 +180,69 @@ def _merge_middleware_config(spec: ServerSpec) -> dict[str, dict]:
 
 
 _MIDDLEWARE_CLASS_SRC = '''
+# In-process rate-limit + concurrency state. Keyed on (kind:name, client_id).
+# Buckets: [tokens_available, last_refill_perf_counter]
+_RATE_BUCKETS: dict = {}
+# Gates: {"in_flight": int, "cap": int}
+_CONCURRENCY_GATES: dict = {}
+_MW_LOCK = _asyncio.Lock()
+# Sentinel: distinguishes "no limit configured" (None) from "capacity exceeded".
+_GATE_DENIED = object()
+
+
+async def _rate_allow(key, rpm):
+    """Token-bucket admission. rpm <= 0 / non-numeric disables the check."""
+    if not isinstance(rpm, (int, float)) or rpm <= 0:
+        return True
+    now = _time.perf_counter()
+    async with _MW_LOCK:
+        bucket = _RATE_BUCKETS.get(key)
+        if bucket is None:
+            bucket = [float(rpm), now]
+            _RATE_BUCKETS[key] = bucket
+        else:
+            elapsed = max(0.0, now - bucket[1])
+            bucket[0] = min(float(rpm), bucket[0] + elapsed * (rpm / 60.0))
+            bucket[1] = now
+        if bucket[0] >= 1.0:
+            bucket[0] -= 1.0
+            return True
+        return False
+
+
+async def _acquire_gate(key, cap):
+    """Non-blocking concurrency admission. Returns:
+      None         - no cap configured, no release needed
+      _GATE_DENIED - at capacity, caller should reject
+      info dict    - admitted, caller must pass it to _release_gate"""
+    if not isinstance(cap, int) or cap <= 0:
+        return None
+    async with _MW_LOCK:
+        info = _CONCURRENCY_GATES.get(key)
+        if info is None or info["cap"] != cap:
+            info = {"in_flight": 0, "cap": cap}
+            _CONCURRENCY_GATES[key] = info
+        if info["in_flight"] >= cap:
+            return _GATE_DENIED
+        info["in_flight"] += 1
+        return info
+
+
+async def _release_gate(info):
+    if not isinstance(info, dict):
+        return
+    async with _MW_LOCK:
+        info["in_flight"] = max(0, info["in_flight"] - 1)
+
+
 class _PlatformMiddleware(_Middleware):
-    """Platform-managed middleware: structured request logs + argument-size
-    guard. Per-primitive overrides come from _MIDDLEWARE_CONFIG."""
+    """Platform-managed middleware. Per-call pipeline (configurable via
+    _MIDDLEWARE_CONFIG):
+      1. argument-size guard
+      2. rate limit (token bucket, per name+client_id)
+      3. concurrency gate (semaphore, per name+client_id)
+      4. dispatch + duration timing
+      5. structured request log"""
 
     async def on_call_tool(self, context, call_next):
         msg = context.message
@@ -198,8 +258,11 @@ class _PlatformMiddleware(_Middleware):
 
     async def _invoke(self, kind, name, arguments, context, call_next):
         cfg = _mw_config_for(name)
+        client_id = _mw_client_id()
+        gate_key = (f"{kind}:{name}", client_id or "")
         started = _time.perf_counter()
         err_type: str | None = None
+        gate_info = None
         try:
             max_args = cfg.get("max_argument_bytes")
             if isinstance(max_args, int) and max_args > 0 and arguments is not None:
@@ -209,17 +272,25 @@ class _PlatformMiddleware(_Middleware):
                     size = 0
                 if size > max_args:
                     raise _ToolError(f"Arguments for {name!r} exceed {max_args} bytes")
+            rpm = cfg.get("rate_limit_rpm")
+            if not await _rate_allow(gate_key, rpm):
+                raise _ToolError(f"Rate limit exceeded for {name!r} ({rpm} rpm)")
+            admit = await _acquire_gate(gate_key, cfg.get("max_concurrent"))
+            if admit is _GATE_DENIED:
+                raise _ToolError(f"Concurrency cap reached for {name!r}")
+            gate_info = admit
             return await call_next(context)
         except Exception as e:
             err_type = type(e).__name__
             raise
         finally:
+            await _release_gate(gate_info)
             if cfg.get("log_calls", True):
                 rec = {
                     "event": "mcp.call",
                     "kind": kind,
                     "name": name,
-                    "client_id": _mw_client_id(),
+                    "client_id": client_id,
                     "duration_ms": round((_time.perf_counter() - started) * 1000, 2),
                     "error": err_type,
                 }
@@ -242,6 +313,7 @@ def _gen_middleware(spec: ServerSpec) -> tuple[list[str], str]:
     by a single `mcp.add_middleware(_PlatformMiddleware())` call."""
     config_map = _merge_middleware_config(spec)
     imports = [
+        "import asyncio as _asyncio",
         "import json as _json",
         "import logging as _logging",
         "import time as _time",

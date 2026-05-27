@@ -6,6 +6,17 @@ export interface ToolParameter {
   default: string | null;
 }
 
+/** Per-primitive overrides for the platform middleware (rate limit,
+ * concurrency cap, request logging). Keys with undefined values inherit
+ * server-level defaults. */
+export interface PrimitiveMiddleware {
+  rate_limit_rpm?: number;
+  max_concurrent?: number;
+  max_argument_bytes?: number;
+  log_arguments?: boolean;
+  log_calls?: boolean;
+}
+
 export interface ToolPrimitive {
   kind: "tool";
   name: string;
@@ -16,6 +27,7 @@ export interface ToolPrimitive {
   return_type?: "str" | "dict";
   /** Scope names required to invoke. Empty/absent = no scope check (token-only). */
   scopes?: string[];
+  middleware?: PrimitiveMiddleware;
 }
 
 export interface ResourcePrimitive {
@@ -26,6 +38,7 @@ export interface ResourcePrimitive {
   mime_type: string;
   code: string;
   scopes?: string[];
+  middleware?: PrimitiveMiddleware;
 }
 
 export interface ResourceTemplatePrimitive {
@@ -36,6 +49,7 @@ export interface ResourceTemplatePrimitive {
   mime_type: string;
   code: string;
   scopes?: string[];
+  middleware?: PrimitiveMiddleware;
 }
 
 export interface PromptPrimitive {
@@ -45,6 +59,7 @@ export interface PromptPrimitive {
   parameters: ToolParameter[];
   code: string;
   scopes?: string[];
+  middleware?: PrimitiveMiddleware;
 }
 
 export type Primitive =
