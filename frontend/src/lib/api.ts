@@ -473,6 +473,21 @@ export const api = {
     request<void>(`/servers/${encodeURIComponent(serverName)}/assets/${encodeURIComponent(filename)}`, {
       method: "DELETE",
     }),
+  downloadAsset: async (serverName: string, filename: string): Promise<Blob> => {
+    const token = localStorage.getItem("token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(
+      `${BASE}/servers/${encodeURIComponent(serverName)}/assets/${encodeURIComponent(filename)}`,
+      { headers },
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const d = (body as { detail?: unknown }).detail;
+      throw new Error(d != null ? formatApiErrorDetail(d) : `Download failed: ${res.status}`);
+    }
+    return res.blob();
+  },
   createServer: (data: CreateServerRequest) =>
     request<Server>("/servers", {
       method: "POST",

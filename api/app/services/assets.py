@@ -50,6 +50,14 @@ class AssetStore:
     def __init__(self, server_dir: Path):
         self.assets_dir = Path(server_dir) / "assets"
 
+    def path_for(self, filename: str) -> Path | None:
+        """Resolve an asset filename to its on-disk path, or None if absent.
+        Filename is validated through the same safe-charset gate that write/
+        delete use - traversal is structurally impossible."""
+        name = _validate_filename(filename)
+        target = self.assets_dir / name
+        return target if target.is_file() else None
+
     def list(self) -> list[dict]:
         if not self.assets_dir.is_dir():
             return []

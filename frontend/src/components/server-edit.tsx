@@ -997,6 +997,25 @@ function AssetsRail({
     }
   }
 
+  async function download(name: string) {
+    setError(null);
+    try {
+      // Authenticated fetch -> blob URL trick. A plain <a download> can't
+      // carry the bearer token in localStorage, so the server would 401.
+      const blob = await api.downloadAsset(serverName, name);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Download failed");
+    }
+  }
+
   const assets = data?.assets ?? [];
   const totalSize = data?.total_size ?? 0;
   const maxTotal = data?.max_total_bytes ?? 100 * 1024 * 1024;
@@ -1109,6 +1128,9 @@ function AssetsRail({
                       onClick={() => copyPath(a.name)}
                     >
                       <Copy className={`h-4 w-4 ${copiedName === a.name ? "text-emerald-600" : "text-muted-foreground"}`} />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Download" onClick={() => download(a.name)}>
+                      <Download className="h-4 w-4 text-muted-foreground" />
                     </Button>
                     <Button variant="ghost" size="icon" title="Delete" onClick={() => remove(a.name)}>
                       <Trash2 className="h-4 w-4 text-muted-foreground" />
