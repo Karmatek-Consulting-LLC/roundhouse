@@ -4,7 +4,8 @@ import logging
 import re
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi import File as FastApiFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -836,6 +837,76 @@ def update_resources(
     _sa.mark_redeploy_required(db, name)
     snap = get_docker().get_server(name) or _missing_snapshot(name)
     return _to_response(db, snap, spec)
+
+
+# ---- Assets ----
+
+@router.get("/{name}/assets")
+def list_assets(
+    name: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.assets import AssetStore, MAX_FILE_BYTES, MAX_TOTAL_BYTES
+    _assert_access(db, user, name)
+    store = AssetStore(get_server_service().store.server_dir(name))
+    return {
+        "assets": store.list(),
+        "total_size": store.total_size(),
+        "max_file_bytes": MAX_FILE_BYTES,
+        "max_total_bytes": MAX_TOTAL_BYTES,
+    }
+
+
+@router.post("/{name}/assets", status_code=201)
+async def upload_asset(
+    name: str,
+    file: UploadFile = FastApiFile(...),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Multipart upload of a single asset. Bounded read so an oversize
+    upload can't exhaust memory before the size check."""
+    from app.services.assets import AssetStore, AssetError, MAX_FILE_BYTES
+    from app.services import server_auth as _sa
+    _assert_access(db, user, name)
+    # Read one byte past the cap so we can distinguish at-limit from over.
+    payload = await file.read(MAX_FILE_BYTES + 1)
+    if len(payload) > MAX_FILE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Asset exceeds {MAX_FILE_BYTES}-byte per-file cap",
+        )
+    store = AssetStore(get_server_service().store.server_dir(name))
+    try:
+        record = store.write(file.filename or "", payload)
+    except AssetError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    _sa.mark_redeploy_required(db, name)
+    audit_record(db, user, "asset.upload", "server", name)
+    return record
+
+
+@router.delete("/{name}/assets/{filename}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_asset(
+    name: str,
+    filename: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.assets import AssetStore, AssetError
+    from app.services import server_auth as _sa
+    _assert_access(db, user, name)
+    store = AssetStore(get_server_service().store.server_dir(name))
+    try:
+        removed = store.delete(filename)
+    except AssetError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"Asset {filename!r} not found")
+    _sa.mark_redeploy_required(db, name)
+    audit_record(db, user, "asset.delete", "server", name)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 class DescriptionIn(BaseModel):
