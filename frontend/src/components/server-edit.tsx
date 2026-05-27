@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, type Primitive, type Server } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -656,50 +656,177 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
 
 // ---------------- Logs rail ----------------
 
+type StreamState = "connecting" | "open" | "closed" | "error";
+
+// Cap the buffer so a long-running tail doesn't eat memory. Plenty for human
+// inspection; the underlying Docker stream is always queryable from scratch.
+const MAX_LOG_LINES = 5000;
+
 function LogsRail({ serverName, server }: { serverName: string; server: Server }) {
-  const [logs, setLogs] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [lines, setLines] = useState<string[]>([]);
+  const [state, setState] = useState<StreamState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [tail, setTail] = useState(400);
+  const [follow, setFollow] = useState(true);
+  const [paused, setPaused] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const text = await api.getServerLogs(serverName, tail);
-      setLogs(text.trim() ? text : "(no log lines yet)");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load logs");
-      setLogs(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [serverName, tail]);
+  // Used to force-reconnect on demand (button click) or when tail changes.
+  const [streamKey, setStreamKey] = useState(0);
+
+  const preRef = useRef<HTMLPreElement | null>(null);
+  // When paused, we still receive events but stash them here without rendering,
+  // so the buffer doesn't grow unbounded and we keep a single "resume" cliff.
+  const pausedBufferRef = useRef<string[]>([]);
+  // Mirror `paused` into a ref so the EventSource handler (captured in a
+  // closure for the lifetime of the stream) always reads the current value.
+  const pausedRef = useRef(paused);
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    setLines([]);
+    setError(null);
+    setState("connecting");
+
+    const token = localStorage.getItem("token") ?? "";
+    const url = `/api/servers/${encodeURIComponent(serverName)}/logs/stream?tail=${tail}&token=${encodeURIComponent(token)}`;
+    const es = new EventSource(url);
+
+    es.addEventListener("open", () => {
+      // Custom "open" event from the backend - confirms the stream is live
+      // even before Docker pushes the first chunk.
+      setState("open");
+    });
+
+    es.onopen = () => {
+      // Browser-level connection open. The backend sends an "event: open"
+      // SSE marker too, which the listener above picks up.
+      setState((s) => (s === "error" ? "open" : s));
+    };
+
+    es.onmessage = (evt) => {
+      const line = evt.data;
+      if (pausedRef.current) {
+        pausedBufferRef.current.push(line);
+        if (pausedBufferRef.current.length > MAX_LOG_LINES) {
+          pausedBufferRef.current.splice(0, pausedBufferRef.current.length - MAX_LOG_LINES);
+        }
+        return;
+      }
+      setLines((prev) => {
+        const next = prev.length >= MAX_LOG_LINES ? prev.slice(prev.length - MAX_LOG_LINES + 1) : prev.slice();
+        next.push(line);
+        return next;
+      });
+    };
+
+    es.addEventListener("error", (evt) => {
+      // Backend may emit a structured error event; browser also fires onerror
+      // on transport problems. Treat them the same - show the message we have.
+      const data = (evt as MessageEvent).data;
+      if (typeof data === "string" && data) {
+        setError(data);
+      }
+    });
+
+    es.onerror = () => {
+      // EventSource auto-reconnects unless we close. We close so the user
+      // sees an explicit "Reconnect" affordance instead of silent retries.
+      setState("error");
+      es.close();
+    };
+
+    return () => {
+      es.close();
+      setState("closed");
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverName, tail, streamKey]);
+
+  // Auto-scroll to bottom on new lines when `follow` is on.
+  useEffect(() => {
+    if (!follow) return;
+    const pre = preRef.current;
+    if (!pre) return;
+    pre.scrollTop = pre.scrollHeight;
+  }, [lines, follow]);
+
+  function resume() {
+    setPaused(false);
+    // Flush stashed lines into the rendered buffer.
+    if (pausedBufferRef.current.length > 0) {
+      setLines((prev) => {
+        const merged = [...prev, ...pausedBufferRef.current];
+        return merged.length > MAX_LOG_LINES ? merged.slice(merged.length - MAX_LOG_LINES) : merged;
+      });
+      pausedBufferRef.current = [];
+    }
+  }
+
+  function reconnect() {
+    pausedBufferRef.current = [];
+    setStreamKey((k) => k + 1);
+  }
+
+  const statusBadge = (() => {
+    if (state === "open" && !paused) return <span className="text-emerald-600 dark:text-emerald-400">● Streaming</span>;
+    if (state === "open" && paused) return <span className="text-amber-600 dark:text-amber-400">⏸ Paused</span>;
+    if (state === "connecting") return <span className="text-muted-foreground">Connecting…</span>;
+    if (state === "error") return <span className="text-destructive">Disconnected</span>;
+    return <span className="text-muted-foreground">Closed</span>;
+  })();
 
   return (
     <div className="flex flex-col gap-3 max-w-5xl">
       <RailHeader>Logs</RailHeader>
-      <div className="flex items-center gap-2 text-xs">
+      <div className="flex items-center gap-2 text-xs flex-wrap">
         <Label className="text-xs">Tail</Label>
         <Input
           type="number"
-          min={50}
+          min={0}
           max={5000}
           value={tail}
-          onChange={(e) => setTail(Math.max(50, Math.min(5000, Number(e.target.value) || 400)))}
+          onChange={(e) => setTail(Math.max(0, Math.min(5000, Number(e.target.value) || 0)))}
           className="w-24 h-8"
         />
-        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-          {loading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
-          Refresh
+        {paused ? (
+          <Button size="sm" variant="outline" onClick={resume}>
+            <Play className="mr-1 h-3 w-3" /> Resume
+            {pausedBufferRef.current.length > 0 && (
+              <span className="ml-1 text-muted-foreground">
+                (+{pausedBufferRef.current.length})
+              </span>
+            )}
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => setPaused(true)}>
+            <Pause className="mr-1 h-3 w-3" /> Pause
+          </Button>
+        )}
+        <Button size="sm" variant="outline" onClick={() => setLines([])}>
+          <Trash2 className="mr-1 h-3 w-3" /> Clear
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={reconnect}
+          disabled={state === "connecting"}
+        >
+          <RefreshCw className="mr-1 h-3 w-3" /> Reconnect
+        </Button>
+        <label className="flex items-center gap-1 text-xs ml-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={follow}
+            onChange={(e) => setFollow(e.target.checked)}
+          />
+          Follow
+        </label>
+        <span className="ml-auto text-xs">{statusBadge}</span>
         {server.status !== "running" && (
-          <span className="ml-2 text-muted-foreground italic">
-            Server is {server.status} - logs may be empty or stale.
+          <span className="w-full text-muted-foreground italic">
+            Server is {server.status} — logs may be empty or stale.
           </span>
         )}
       </div>
@@ -708,8 +835,15 @@ function LogsRail({ serverName, server }: { serverName: string; server: Server }
           {error}
         </div>
       )}
-      <pre className="bg-muted/30 border rounded-md p-3 text-xs font-mono whitespace-pre-wrap break-all max-h-[70vh] overflow-y-auto">
-        {logs ?? "(loading...)"}
+      <pre
+        ref={preRef}
+        className="bg-muted/30 border rounded-md p-3 text-xs font-mono whitespace-pre-wrap break-all min-h-[400px] max-h-[70vh] overflow-y-auto"
+      >
+        {lines.length === 0
+          ? state === "connecting"
+            ? "(connecting…)"
+            : "(no log lines yet)"
+          : lines.join("\n")}
       </pre>
     </div>
   );
