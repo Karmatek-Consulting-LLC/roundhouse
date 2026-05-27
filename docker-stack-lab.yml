@@ -191,6 +191,7 @@ networks:
     attachable: true
   traefik_traefik-public:
     external: true
+    name: ${TRAEFIK_NETWORK:-traefik_traefik-public}
 
 volumes:
   pgdata:
