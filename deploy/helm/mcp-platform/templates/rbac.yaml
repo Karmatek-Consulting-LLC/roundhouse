@@ -1,0 +1,83 @@
+{{- /*
+The api pod needs full control over the four resource kinds KubernetesClient
+manages — Deployments, Services, IngressRoutes, Middlewares — plus read access
+to Pods and pod logs (for getServerLogs). Scoped to the workloads namespace.
+*/ -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "mcp-platform.api.fullname" . }}-workloads
+  namespace: {{ .Values.workloadsNamespace.name }}
+  labels:
+    {{- include "mcp-platform.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["traefik.io"]
+    resources: ["ingressroutes", "middlewares"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mcp-platform.api.fullname" . }}-workloads
+  namespace: {{ .Values.workloadsNamespace.name }}
+  labels:
+    {{- include "mcp-platform.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "mcp-platform.api.fullname" . }}-workloads
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "mcp-platform.api.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- if eq .Values.imageBuilder.kind "kaniko" }}
+---
+# The api pod creates one-shot kaniko Jobs in its own namespace to build MCP
+# server images. It needs to read back Job status and the Job pod's logs to
+# surface build failures.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "mcp-platform.api.fullname" . }}-builder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mcp-platform.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mcp-platform.api.fullname" . }}-builder
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mcp-platform.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "mcp-platform.api.fullname" . }}-builder
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "mcp-platform.api.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

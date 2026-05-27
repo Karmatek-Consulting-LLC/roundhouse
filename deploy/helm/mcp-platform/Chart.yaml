@@ -1,0 +1,14 @@
+apiVersion: v2
+name: mcp-platform
+description: |
+  Internal MCP server hosting platform — deploys the platform-api (Laravel),
+  React frontend, optional Postgres, and the RBAC needed for the platform-api
+  to manage spawned MCP server workloads inside the cluster.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.26.0-0"
+keywords:
+  - mcp
+  - llm
+  - laravel

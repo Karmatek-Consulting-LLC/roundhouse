@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mcp-platform.fullname" . }}
+  labels:
+    {{- include "mcp-platform.labels" . | nindent 4 }}
+data:
+  MCP_BASE_URL: {{ .Values.baseUrl | quote }}
+  MCP_ORCHESTRATOR: kubernetes
+  MCP_K8S_API_URL: https://kubernetes.default.svc
+  MCP_K8S_NAMESPACE: {{ .Values.workloadsNamespace.name | quote }}
+  MCP_K8S_TOKEN_PATH: /var/run/secrets/kubernetes.io/serviceaccount/token
+  MCP_K8S_CA_PATH: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+{{- if .Values.kubernetes.imagePullSecret }}
+  MCP_K8S_IMAGE_PULL_SECRET: {{ .Values.kubernetes.imagePullSecret | quote }}
+{{- end }}
+  MCP_TRAEFIK_ENTRYPOINTS: {{ .Values.traefik.entrypoints | quote }}
+  MCP_DEFAULT_SERVER_REPLICAS: "1"
+  MCP_MAX_SERVER_REPLICAS: "32"
+{{- if eq .Values.imageBuilder.kind "kaniko" }}
+  MCP_K8S_BUILDER: kaniko
+  MCP_K8S_BUILDER_NAMESPACE: {{ .Release.Namespace | quote }}
+  MCP_K8S_BUILDER_IMAGE: {{ .Values.imageBuilder.kaniko.image | quote }}
+  MCP_K8S_BUILDER_PVC: {{ include "mcp-platform.api.fullname" . }}-server-data
+  MCP_K8S_BUILDER_REGISTRY_SECRET: {{ required "imageBuilder.kaniko.registrySecret is required when imageBuilder.kind=kaniko" .Values.imageBuilder.kaniko.registrySecret | quote }}
+  MCP_K8S_BUILDER_TIMEOUT: {{ .Values.imageBuilder.kaniko.timeoutSeconds | quote }}
+{{- else if eq .Values.imageBuilder.kind "docker" }}
+  MCP_K8S_BUILDER: docker
+  MCP_DOCKER_HOST: {{ required "imageBuilder.host is required when imageBuilder.kind=docker" .Values.imageBuilder.host | quote }}
+{{- else }}
+  {{ fail (printf "Unknown imageBuilder.kind=%q; expected 'kaniko' or 'docker'" .Values.imageBuilder.kind) }}
+{{- end }}

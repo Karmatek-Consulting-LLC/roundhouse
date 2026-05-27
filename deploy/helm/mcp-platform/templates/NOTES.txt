@@ -1,0 +1,38 @@
+mcp-platform {{ .Chart.AppVersion }} installed as release {{ .Release.Name }}
+in namespace "{{ .Release.Namespace }}".
+
+Spawned MCP server workloads will land in "{{ .Values.workloadsNamespace.name }}".
+
+Next steps:
+
+1. Confirm Traefik is routing your hostname to the cluster. The IngressRoute
+   created here expects entrypoints: "{{ .Values.traefik.entrypoints }}".
+{{- if not .Values.traefik.hostname }}
+   You did not set traefik.hostname — routes match on path only. For multi-tenant
+   clusters, set traefik.hostname to scope routes to your domain.
+{{- end }}
+
+2. Image builder mode: {{ .Values.imageBuilder.kind }}
+{{- if eq .Values.imageBuilder.kind "kaniko" }}
+   One-shot Kaniko Jobs will be created in namespace "{{ .Release.Namespace }}"
+   pinned to the api pod's node, using the registry Secret "{{ .Values.imageBuilder.kaniko.registrySecret }}".
+{{- else }}
+   The api pod will build images via MCP_DOCKER_HOST = "{{ .Values.imageBuilder.host }}".
+   If that endpoint is unreachable, spawning a new MCP server will fail.
+{{- end }}
+
+3. Open the UI and sign in as:
+     {{ .Values.admin.email }}
+   The initial password is set by .Values.admin.password.
+
+4. Configure a Docker registry in Platform Settings — the cluster needs to be
+   able to pull images this platform builds and pushes.
+   {{- if not .Values.kubernetes.imagePullSecret }}
+   If the registry is private, create an imagePullSecret in "{{ .Values.workloadsNamespace.name }}"
+   and re-install with --set kubernetes.imagePullSecret=<name>.
+   {{- end }}
+
+To uninstall, run:
+  helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+The "{{ include "mcp-platform.fullname" . }}" Secret is annotated helm.sh/resource-policy=keep
+so APP_KEY survives reinstalls. Delete it manually if you want a clean slate.
