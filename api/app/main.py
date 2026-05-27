@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
 from app.db import db_session, init_db
+
+FRONTEND_DIR = Path("/app/public/frontend")
 
 logger = logging.getLogger("mcp-platform-api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -95,3 +99,28 @@ app.include_router(server_tokens_route.router)
 app.include_router(invoke_route.router)
 app.include_router(pypi_route.router)
 app.include_router(settings_route.router)
+
+
+class SPAStaticFiles(StaticFiles):
+    """Serve the React SPA: static assets when they exist, index.html for
+    every other path so client-side routing (React Router) resolves."""
+
+    async def get_response(self, path: str, scope):
+        # Routers handle /api/* first; this guard is a safety net so a stray
+        # /api request that fell through still returns a JSON 404, not HTML.
+        if path == "api" or path.startswith("api/"):
+            raise StarletteHTTPException(status_code=404)
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as e:
+            if e.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
+
+
+# Must be mounted AFTER all routers so /api/* wins. The dir existence check
+# keeps `uvicorn app.main:app` runnable in dev without a frontend build.
+if FRONTEND_DIR.is_dir():
+    app.mount("/", SPAStaticFiles(directory=FRONTEND_DIR, html=True), name="spa")
+else:
+    logger.warning("Frontend dir %s not found; SPA will not be served", FRONTEND_DIR)
