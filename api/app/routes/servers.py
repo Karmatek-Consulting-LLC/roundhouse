@@ -17,6 +17,7 @@ from app.deps import current_user
 from app.models import ServerOwner, ServerScope, User
 from app.services import global_env, permissions
 from app.services.docker import DockerError, DockerNotFoundError, get_docker
+from app.services.git_manifest import parse_manifest
 from app.services.server_service import get_server_service
 from app.services.spec import (
     MODE_CODE,
@@ -559,11 +560,13 @@ def deploy_from_git(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Clone a git repo and deploy it as a code-mode server. The repo must
-    contain `server.py` at its root (and may include a `Dockerfile`; if
-    absent, codegen synthesizes one from any pip_packages declared in the
-    spec - but for git-deploy the simplest path is: bring your own
-    Dockerfile)."""
+    """Clone a git repo and register it as a code-mode server WITHOUT building.
+
+    The repo must contain `server.py` at its root. Dependencies and required
+    env vars are declared in a `roundhouse.json` manifest (see git_manifest);
+    Roundhouse owns the generated Dockerfile, so any Dockerfile in the repo is
+    ignored. The server lands in `not_deployed` state: the operator fills in
+    the seeded env vars on the editor, then explicitly deploys."""
     cfg = get_settings()
     name = payload.name
     if not _SERVER_NAME_RE.match(name):
@@ -617,54 +620,45 @@ def deploy_from_git(
             status_code=422,
             detail="Repo does not contain server.py at its root.",
         )
-    has_dockerfile = (server_dir / "Dockerfile").is_file()
+
+    # Roundhouse generates the Dockerfile from the spec (pip/apt). Remove any
+    # Dockerfile the repo ships so it can't be mistaken for the source of
+    # truth - codegen overwrites it at deploy time anyway.
+    repo_dockerfile = server_dir / "Dockerfile"
+    if repo_dockerfile.is_file():
+        repo_dockerfile.unlink()
+
+    manifest = parse_manifest(server_dir)
 
     db.add(ServerOwner(server_name=name, owner_id=user.id))
     db.flush()
 
-    # Materialize a code-mode spec so the editor knows what this is. We
-    # don't blow away the cloned files - just save the spec alongside.
-    spec = ServerSpec(
-        name=name,
-        description=payload.description or "",
-        replicas=payload.replicas,
-        mode=MODE_CODE,
-        source=server_py.read_text(encoding="utf-8"),
-    )
-    service.store.save(spec)
-
     try:
-        if not has_dockerfile:
-            # No Dockerfile in the repo - let codegen drop a default one in.
-            from app.services.codegen import generate_dockerfile
-            (server_dir / "Dockerfile").write_text(
-                generate_dockerfile(spec, service.custom_ca_cert(db)),
-                encoding="utf-8",
-            )
-        result = docker.build_and_start(
-            server_name=name,
-            build_context=server_dir,
-            template_name="git",
-            env_vars=service.effective_env(db, spec),
-            replicas=service.effective_replicas(spec),
-            registry_prefix=service.registry_prefix(db),
-            registry_auth=service.registry_auth(db),
+        # Materialize a code-mode spec seeded from the manifest. Env values are
+        # empty - the operator fills them before the first deploy. The cloned
+        # files stay in place to serve as the build context on deploy.
+        spec = ServerSpec(
+            name=name,
+            description=payload.description or "",
+            replicas=payload.replicas,
+            mode=MODE_CODE,
+            source=server_py.read_text(encoding="utf-8"),
+            pip_packages=manifest.pip_packages,
+            apt_packages=manifest.apt_packages,
+            env_vars=manifest.env_vars,
         )
-        audit_record(db, user, "server.deploy_from_git", "server", name, {
+        service.store.save(spec)
+        audit_record(db, user, "server.import_from_git", "server", name, {
             "git_url": payload.git_url, "ref": payload.ref,
         })
-        return _to_response(db, result, spec)
+        return _to_response(db, _docker_snapshot(name), spec)
     except HTTPException:
         db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
         raise
     except Exception as e:  # noqa: BLE001
-        logger.error("Git deploy failed for '%s': %s", name, e)
+        logger.error("Git import failed for '%s': %s", name, e)
         db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
         service.store.delete(name)
-        try:
-            docker.remove_server(name, service.registry_prefix(db))
-        except Exception:  # noqa: BLE001
-            pass
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

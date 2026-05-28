@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +46,7 @@ if __name__ == "__main__":
 `;
 
 export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [method, setMethod] = useState<CreateMethod>("structured");
 
@@ -140,9 +142,13 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
           ...(name ? { name_override: name } : {}),
         });
       }
+      // A git import lands as not_deployed; take the operator straight to the
+      // editor to fill in env vars and deploy.
+      const goToEditor = method === "git" ? name : null;
       setOpen(false);
       reset();
       onCreated();
+      if (goToEditor) navigate(`/servers/${encodeURIComponent(goToEditor)}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create server");
     } finally {
@@ -160,7 +166,7 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
   const subtitle = {
     structured: "Create an empty server, then add tools, resources, and prompts.",
     code: 'Paste a full FastMCP server.py - the platform handles Docker, Traefik, and env.',
-    git: "Clone a git repo containing server.py and deploy it directly.",
+    git: "Clone a git repo containing server.py. It imports unconfigured — set env vars, then deploy.",
     import: "Restore a server from a previously exported JSON spec.",
   }[method];
 
@@ -289,8 +295,9 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
                 <Label htmlFor="git-url">Git URL</Label>
                 <p className="text-xs text-muted-foreground">
                   Public HTTPS or SSH URL. The repo must contain <code>server.py</code> at
-                  its root. If a <code>Dockerfile</code> isn't included, the platform
-                  generates one.
+                  its root. Declare dependencies and required env vars in a{" "}
+                  <code>roundhouse.json</code> manifest — the platform builds the
+                  Dockerfile, so you don't ship one.
                 </p>
                 <Input
                   id="git-url"
