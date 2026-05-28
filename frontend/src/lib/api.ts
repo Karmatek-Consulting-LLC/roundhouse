@@ -289,6 +289,9 @@ export interface Server {
   cpu_limit?: number | null;
   /** Docker --memory in MB. null = no cap. */
   memory_limit_mb?: number | null;
+  /** Set when the server was imported via "Deploy from Git"; enables "Update from Git". */
+  git_url?: string | null;
+  git_ref?: string | null;
 }
 
 export interface ServerScope {
@@ -549,6 +552,8 @@ export const api = {
     request<Server>(`/servers/${name}/stop`, { method: "POST" }),
   redeployServer: (name: string) =>
     request<Server>(`/servers/${name}/redeploy`, { method: "POST" }),
+  updateFromGit: (name: string) =>
+    request<Server>(`/servers/${encodeURIComponent(name)}/update-from-git`, { method: "POST" }),
   deleteServer: (name: string) =>
     request<void>(`/servers/${name}`, { method: "DELETE" }),
 
