@@ -108,6 +108,25 @@ export interface UsageSnapshot {
   available: boolean;
 }
 
+export interface DashboardTopServer {
+  name: string;
+  calls: number;
+  errors: number;
+  p95_ms: number | null;
+}
+
+/** Platform-wide usage rollup. Point-in-time: each fetch fans out a live
+ * /metrics scrape across the caller's running servers - no history. */
+export interface DashboardUsage {
+  running_servers: number;
+  scraped_servers: number;
+  total_calls: number;
+  total_errors: number;
+  error_rate: number;
+  by_kind: Record<string, number>;
+  top_servers: DashboardTopServer[];
+}
+
 export interface TemplateVariable {
   name: string;
   description: string;
@@ -448,6 +467,7 @@ export const api = {
     requestText(`/servers/${encodeURIComponent(name)}/logs?tail=${tail}`),
   getServerUsage: (name: string) =>
     request<UsageSnapshot>(`/servers/${encodeURIComponent(name)}/usage`),
+  getDashboardUsage: () => request<DashboardUsage>("/dashboard/usage"),
   listAssets: (serverName: string) =>
     request<AssetListResponse>(`/servers/${encodeURIComponent(serverName)}/assets`),
   uploadAsset: async (serverName: string, file: File): Promise<Asset> => {

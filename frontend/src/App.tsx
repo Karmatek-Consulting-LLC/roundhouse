@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Navigate,
+  NavLink,
   Outlet,
   Route,
   Routes,
@@ -12,6 +13,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useServers } from "@/hooks/use-servers";
 import { ServerTable } from "@/components/server-table";
+import { Dashboard } from "@/components/dashboard";
 import { ServerEdit } from "@/components/server-edit";
 import { CreateServerDialog } from "@/components/create-server-dialog";
 import { LoginPage } from "@/components/login-page";
@@ -76,31 +78,48 @@ function AppShell() {
   if (!user) return null;
 
   const isSuperAdmin = user.role === "superadmin";
-  const isServerList = location.pathname === "/";
+  const isServerList = location.pathname === "/servers";
 
   function goHome() {
     navigate("/");
   }
 
+  const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+      isActive
+        ? "bg-muted text-foreground"
+        : "text-muted-foreground hover:text-foreground"
+    }`;
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b">
         <div className="mx-auto flex w-full max-w-screen-2xl items-center justify-between px-6 py-4">
-          <button
-            type="button"
-            onClick={goHome}
-            className="flex items-center gap-3 text-left"
-          >
-            <Logo className="h-10 w-auto shrink-0" />
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight">
-                Roundhouse
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Deploy and manage MCP servers
-              </p>
-            </div>
-          </button>
+          <div className="flex items-center gap-6">
+            <button
+              type="button"
+              onClick={goHome}
+              className="flex items-center gap-3 text-left"
+            >
+              <Logo className="h-10 w-auto shrink-0" />
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight">
+                  Roundhouse
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  Deploy and manage MCP servers
+                </p>
+              </div>
+            </button>
+            <nav className="hidden items-center gap-1 sm:flex">
+              <NavLink to="/" end className={navLinkClass}>
+                Dashboard
+              </NavLink>
+              <NavLink to="/servers" className={navLinkClass}>
+                Servers
+              </NavLink>
+            </nav>
+          </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
             {isServerList && <CreateServerDialog onCreated={serversState.refresh} />}
@@ -171,7 +190,31 @@ function AppShell() {
   );
 }
 
-function HomePage() {
+function DashboardRoute() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { servers, loading, error } = useOutletContext<ServersOutletContext>();
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
+        {error}
+      </div>
+    );
+  }
+  return (
+    <Dashboard
+      servers={servers}
+      loading={loading}
+      isSuperAdmin={user?.role === "superadmin"}
+      onSelectServer={(name) => {
+        navigate(`/servers/${encodeURIComponent(name)}`);
+      }}
+    />
+  );
+}
+
+function ServersPage() {
   const navigate = useNavigate();
   const { servers, loading, error, refresh } =
     useOutletContext<ServersOutletContext>();
@@ -237,7 +280,8 @@ export default function App() {
       <Route path="/login" element={<LoginRoute />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<DashboardRoute />} />
+          <Route path="/servers" element={<ServersPage />} />
           <Route path="/servers/:serverName/*" element={<ServerEditRoute />} />
           <Route
             path="/users"
