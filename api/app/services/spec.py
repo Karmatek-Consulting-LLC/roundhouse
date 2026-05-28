@@ -94,6 +94,10 @@ class ServerSpec:
     # None = no cap (Docker default). cpu_limit is whole CPUs (0.5 = half).
     cpu_limit: float | None = None
     memory_limit_mb: int | None = None
+    # Set for servers imported via "Deploy from Git" - lets the platform
+    # re-clone the same source on "Update from Git". None for other servers.
+    git_url: str | None = None
+    git_ref: str | None = None
     # Hydrated at codegen time only - never persisted with plaintext.
     tokens: list[dict] = field(default_factory=list)
 
@@ -155,6 +159,8 @@ class ServerSpec:
             middleware_defaults=mw_defaults,
             cpu_limit=_opt_float(data.get("cpu_limit")),
             memory_limit_mb=_opt_int(data.get("memory_limit_mb")),
+            git_url=data.get("git_url") if isinstance(data.get("git_url"), str) else None,
+            git_ref=data.get("git_ref") if isinstance(data.get("git_ref"), str) else None,
         )
 
     def to_dict(self) -> dict:
@@ -173,4 +179,6 @@ class ServerSpec:
             "middleware_defaults": self.middleware_defaults,
             "cpu_limit": self.cpu_limit,
             "memory_limit_mb": self.memory_limit_mb,
+            "git_url": self.git_url,
+            "git_ref": self.git_ref,
         }

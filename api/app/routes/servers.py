@@ -175,6 +175,8 @@ def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
         "placement": snap.get("placement") or [],
         "cpu_limit": spec.cpu_limit if spec else None,
         "memory_limit_mb": spec.memory_limit_mb if spec else None,
+        "git_url": spec.git_url if spec else None,
+        "git_ref": spec.git_ref if spec else None,
     }
 
 
@@ -532,6 +534,8 @@ EXPORT_VERSION = 1
 
 import shutil
 import subprocess
+import tempfile
+from pathlib import Path
 from urllib.parse import urlparse
 
 
@@ -543,6 +547,74 @@ def _looks_like_git_url(url: str) -> bool:
         return parsed.scheme in ("http", "https") and bool(parsed.netloc)
     except ValueError:
         return False
+
+
+def _clone_repo(git_url: str, ref: str | None, dest: Path) -> Path:
+    """Clone git_url@ref into dest (which must not already exist), strip .git,
+    require server.py at the root, and drop any Dockerfile the repo ships
+    (Roundhouse generates its own). Returns the path to server.py. Raises
+    HTTPException on any failure; the caller owns cleanup of `dest`."""
+    git_args = ["git", "clone", "--depth", "1"]
+    if ref:
+        git_args.extend(["--branch", ref])
+    git_args.extend([git_url, str(dest)])
+    try:
+        result = subprocess.run(git_args, capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="git clone timed out") from None
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=502, detail=f"git clone failed: {result.stderr.strip()[:500]}"
+        )
+    git_dir = dest / ".git"
+    if git_dir.exists():
+        shutil.rmtree(git_dir, ignore_errors=True)
+    server_py = dest / "server.py"
+    if not server_py.is_file():
+        raise HTTPException(
+            status_code=422, detail="Repo does not contain server.py at its root."
+        )
+    repo_dockerfile = dest / "Dockerfile"
+    if repo_dockerfile.is_file():
+        repo_dockerfile.unlink()
+    return server_py
+
+
+def _merge_unique(existing: list[str], incoming: list[str]) -> list[str]:
+    """existing + any incoming items not already present, order preserved."""
+    out = list(existing)
+    have = set(existing)
+    for item in incoming:
+        if item not in have:
+            have.add(item)
+            out.append(item)
+    return out
+
+
+# Platform-owned files in a server's dir that a git sync must never clobber.
+_GIT_SYNC_PRESERVE = {"server.json", "assets"}
+
+
+def _sync_repo_into(server_dir: Path, src: Path) -> None:
+    """Replace the cloned repo files in server_dir with those from src,
+    preserving the spec file and uploaded assets/. Lets multi-file repos pick
+    up added/removed modules on update; codegen rewrites server.py + Dockerfile
+    from the spec afterward."""
+    for child in server_dir.iterdir():
+        if child.name in _GIT_SYNC_PRESERVE:
+            continue
+        if child.is_dir():
+            shutil.rmtree(child, ignore_errors=True)
+        else:
+            child.unlink(missing_ok=True)
+    for item in src.iterdir():
+        if item.name in _GIT_SYNC_PRESERVE:
+            continue
+        dest = server_dir / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest, dirs_exist_ok=True)
+        else:
+            shutil.copy2(item, dest)
 
 
 class GitDeployIn(BaseModel):
@@ -591,42 +663,11 @@ def deploy_from_git(
     server_dir = service.store.server_dir(name)
     if server_dir.exists():
         shutil.rmtree(server_dir)
-
-    git_args = ["git", "clone", "--depth", "1"]
-    if payload.ref:
-        git_args.extend(["--branch", payload.ref])
-    git_args.extend([payload.git_url, str(server_dir)])
-
     try:
-        result = subprocess.run(git_args, capture_output=True, text=True, timeout=120)
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="git clone timed out") from None
-    if result.returncode != 0:
-        raise HTTPException(
-            status_code=502,
-            detail=f"git clone failed: {result.stderr.strip()[:500]}",
-        )
-
-    # Drop the .git directory before tar-ing the context - keeps the image
-    # smaller and avoids embedding the repo history in the deployable.
-    git_dir = server_dir / ".git"
-    if git_dir.exists():
-        shutil.rmtree(git_dir, ignore_errors=True)
-
-    server_py = server_dir / "server.py"
-    if not server_py.is_file():
+        server_py = _clone_repo(payload.git_url, payload.ref, server_dir)
+    except HTTPException:
         shutil.rmtree(server_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=422,
-            detail="Repo does not contain server.py at its root.",
-        )
-
-    # Roundhouse generates the Dockerfile from the spec (pip/apt). Remove any
-    # Dockerfile the repo ships so it can't be mistaken for the source of
-    # truth - codegen overwrites it at deploy time anyway.
-    repo_dockerfile = server_dir / "Dockerfile"
-    if repo_dockerfile.is_file():
-        repo_dockerfile.unlink()
+        raise
 
     manifest = parse_manifest(server_dir)
 
@@ -646,6 +687,8 @@ def deploy_from_git(
             pip_packages=manifest.pip_packages,
             apt_packages=manifest.apt_packages,
             env_vars=manifest.env_vars,
+            git_url=payload.git_url,
+            git_ref=payload.ref,
         )
         service.store.save(spec)
         audit_record(db, user, "server.import_from_git", "server", name, {
@@ -660,6 +703,58 @@ def deploy_from_git(
         db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
         service.store.delete(name)
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/{name}/update-from-git")
+def update_from_git(
+    name: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    """Re-clone the server's git source and merge it into the spec, WITHOUT
+    deploying. `server.py` is replaced wholesale; env / pip / apt are merged
+    additively - entries the new manifest declares are added if missing, while
+    existing entries (and their values) are left untouched. Flags the server
+    as needing a redeploy so the operator can fill any new env vars, then
+    deploy."""
+    _assert_access(db, user, name)
+    service = get_server_service()
+    spec = service.store.load(name)
+    if spec is None:
+        raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
+    if not spec.git_url:
+        raise HTTPException(
+            status_code=409, detail="This server was not imported from Git; nothing to update."
+        )
+
+    server_dir = service.store.server_dir(name)
+    tmp = Path(tempfile.mkdtemp(prefix="rh-git-update-"))
+    try:
+        repo = tmp / "repo"
+        server_py = _clone_repo(spec.git_url, spec.git_ref, repo)
+        manifest = parse_manifest(repo)
+
+        # Replace source wholesale; merge deps/env additively.
+        spec.source = server_py.read_text(encoding="utf-8")
+        existing_env = {ev.name for ev in spec.env_vars}
+        added_env = [ev.name for ev in manifest.env_vars if ev.name not in existing_env]
+        spec.env_vars.extend(ev for ev in manifest.env_vars if ev.name not in existing_env)
+        spec.pip_packages = _merge_unique(spec.pip_packages, manifest.pip_packages)
+        spec.apt_packages = _merge_unique(spec.apt_packages, manifest.apt_packages)
+
+        # Refresh build-context files (helper modules) from the new clone, then
+        # let save_spec rewrite server.py + Dockerfile and flag redeploy.
+        _sync_repo_into(server_dir, repo)
+        service.save_spec(db, spec)
+        audit_record(db, user, "server.update_from_git", "server", name, {
+            "git_url": spec.git_url, "ref": spec.git_ref, "added_env": added_env,
+        })
+        return _to_response(db, _docker_snapshot(name), spec)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error("Git update failed for '%s': %s", name, e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 @router.get("/{name}/export")

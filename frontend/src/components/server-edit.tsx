@@ -489,7 +489,7 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
     docker_swarm_mode: boolean;
   } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [lifecycle, setLifecycle] = useState<"" | "start" | "stop" | "redeploy" | "delete">("");
+  const [lifecycle, setLifecycle] = useState<"" | "start" | "stop" | "redeploy" | "update-git" | "delete">("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -555,7 +555,7 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
     }
   }
 
-  async function lifecycleAction(action: "start" | "stop" | "redeploy" | "delete") {
+  async function lifecycleAction(action: "start" | "stop" | "redeploy" | "update-git" | "delete") {
     setError(null);
     if (action === "delete" && !confirm(`Delete server "${serverName}"? This removes the container/service and the stored spec.`)) {
       return;
@@ -565,6 +565,7 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
       if (action === "start") await api.startServer(serverName);
       else if (action === "stop") await api.stopServer(serverName);
       else if (action === "redeploy") await api.redeployServer(serverName);
+      else if (action === "update-git") await api.updateFromGit(serverName);
       else {
         await api.deleteServer(serverName);
         onDeleted();
@@ -704,6 +705,18 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
           {lifecycle === "redeploy" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Rocket className="mr-1 h-3 w-3" />}
           Redeploy
         </Button>
+        {server.git_url && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!!lifecycle}
+            title={`Re-clone ${server.git_url}${server.git_ref ? ` @ ${server.git_ref}` : ""} and merge into the spec`}
+            onClick={() => lifecycleAction("update-git")}
+          >
+            {lifecycle === "update-git" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
+            Update from Git
+          </Button>
+        )}
         <Button
           size="sm"
           variant="outline"
