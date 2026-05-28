@@ -566,11 +566,12 @@ def generate_dockerfile(spec: ServerSpec, custom_ca: str | None = None) -> str:
     if spec.pip_packages:
         pip_install += " " + " ".join(spec.pip_packages)
     lines.append(f"RUN pip install --no-cache-dir {pip_install}")
-    lines.append("COPY server.py .")
-    # Bake uploaded assets into the image at /app/assets/. write_build_context
-    # always creates an assets/ subdir (possibly empty) so this COPY stays
-    # valid even when the user hasn't uploaded anything.
-    lines.append("COPY assets/ /app/assets/")
+    # Copy the whole build context so multi-file servers work (helper modules,
+    # data files, git-imported repos). write_build_context always writes
+    # server.py plus an assets/ dir here, so ASSETS_DIR=/app/assets stays valid
+    # even when nothing was uploaded. Roundhouse owns the Dockerfile, so the
+    # context is small and self-contained.
+    lines.append("COPY . .")
     lines.append("EXPOSE 8000")
     # python's urllib avoids needing curl in the base image. exit 0 on 200,
     # non-zero otherwise; Docker flips the container to unhealthy after the

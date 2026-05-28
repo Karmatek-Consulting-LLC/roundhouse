@@ -589,15 +589,24 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
       {statusBad && (
         <div
           className={
-            server.status === "unknown"
-              ? "rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
-              : "rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100"
+            "flex items-center gap-3 rounded-lg border px-4 py-3 text-sm " +
+            (server.status === "unknown"
+              ? "border-destructive/50 bg-destructive/10 text-destructive"
+              : "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100")
           }
         >
-          {server.status === "unknown" ? (
-            <><strong>Docker status unavailable.</strong> Platform could not read this server from Docker.</>
-          ) : (
-            <><strong>Not deployed.</strong> The spec is registered but no service/container exists. Click <strong>Redeploy</strong> below.</>
+          <span className="flex-1">
+            {server.status === "unknown" ? (
+              <><strong>Docker status unavailable.</strong> Platform could not read this server from Docker.</>
+            ) : (
+              <><strong>Not deployed.</strong> Set any required environment variables, then deploy to build and start the server.</>
+            )}
+          </span>
+          {server.status === "not_deployed" && (
+            <Button size="sm" disabled={!!lifecycle} onClick={() => lifecycleAction("redeploy")}>
+              {lifecycle === "redeploy" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Rocket className="mr-1 h-3 w-3" />}
+              Deploy
+            </Button>
           )}
         </div>
       )}
