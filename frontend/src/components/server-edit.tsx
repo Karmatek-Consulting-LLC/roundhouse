@@ -1614,7 +1614,7 @@ export function ServerEdit({ serverName }: ServerEditProps) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/servers")}
         >
           <ArrowLeft className="mr-1 h-4 w-4" /> Servers
         </Button>
@@ -1645,7 +1645,7 @@ export function ServerEdit({ serverName }: ServerEditProps) {
             onSaved={() => {
               refresh();
             }}
-            onDeleted={() => navigate("/")}
+            onDeleted={() => navigate("/servers")}
             gotoPrimitive={(name) => goto(`primitives/${encodeURIComponent(name)}`)}
           />
         </main>
