@@ -6,10 +6,10 @@ to Pods and pod logs (for getServerLogs). Scoped to the workloads namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "mcp-platform.api.fullname" . }}-workloads
+  name: {{ include "roundhouse.api.fullname" . }}-workloads
   namespace: {{ .Values.workloadsNamespace.name }}
   labels:
-    {{- include "mcp-platform.labels" . | nindent 4 }}
+    {{- include "roundhouse.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments", "deployments/scale"]
@@ -30,17 +30,17 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "mcp-platform.api.fullname" . }}-workloads
+  name: {{ include "roundhouse.api.fullname" . }}-workloads
   namespace: {{ .Values.workloadsNamespace.name }}
   labels:
-    {{- include "mcp-platform.labels" . | nindent 4 }}
+    {{- include "roundhouse.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "mcp-platform.api.fullname" . }}-workloads
+  name: {{ include "roundhouse.api.fullname" . }}-workloads
 subjects:
   - kind: ServiceAccount
-    name: {{ include "mcp-platform.api.fullname" . }}
+    name: {{ include "roundhouse.api.fullname" . }}
     namespace: {{ .Release.Namespace }}
 {{- if eq .Values.imageBuilder.kind "kaniko" }}
 ---
@@ -50,10 +50,10 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "mcp-platform.api.fullname" . }}-builder
+  name: {{ include "roundhouse.api.fullname" . }}-builder
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "mcp-platform.labels" . | nindent 4 }}
+    {{- include "roundhouse.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
@@ -68,16 +68,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "mcp-platform.api.fullname" . }}-builder
+  name: {{ include "roundhouse.api.fullname" . }}-builder
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "mcp-platform.labels" . | nindent 4 }}
+    {{- include "roundhouse.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "mcp-platform.api.fullname" . }}-builder
+  name: {{ include "roundhouse.api.fullname" . }}-builder
 subjects:
   - kind: ServiceAccount
-    name: {{ include "mcp-platform.api.fullname" . }}
+    name: {{ include "roundhouse.api.fullname" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}

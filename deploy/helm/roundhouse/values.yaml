@@ -1,5 +1,5 @@
 ## ---------------------------------------------------------------------------
-## mcp-platform default values
+## roundhouse default values
 ##
 ## Prerequisites (see README.md for detail):
 ##   - Traefik installed in the cluster (CRDs IngressRoute + Middleware)
@@ -23,11 +23,11 @@ workloadsNamespace:
 ## static-serve build whenever one ships.
 image:
   api:
-    repository: mcp-platform/api
+    repository: roundhouse/api
     tag: ""              ## empty -> uses .Chart.AppVersion
     pullPolicy: IfNotPresent
   frontend:
-    repository: mcp-platform/frontend
+    repository: roundhouse/frontend
     tag: ""
     pullPolicy: IfNotPresent
   pullSecrets: []        ## list of {name: ...} secrets referenced by api + frontend pods

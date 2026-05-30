@@ -9,12 +9,12 @@ entryPoints:
 providers:
   swarm:
     # Talks to docker-socket-proxy-traefik (tecnativa/docker-socket-proxy) over
-    # the mcp-network instead of the raw /var/run/docker.sock. The proxy only
+    # the roundhouse-network instead of the raw /var/run/docker.sock. The proxy only
     # exposes CONTAINERS/NETWORKS/SERVICES/TASKS endpoints to Traefik.
     endpoint: "tcp://docker-socket-proxy-traefik:2375"
     exposedByDefault: false
-    # Must match `docker network ls`: {stack}_mcp-network (stack = `docker stack deploy` name).
-    network: mcp-platform_mcp-network
+    # Must match `docker network ls`: {stack}_roundhouse-network (stack = `docker stack deploy` name).
+    network: roundhouse_roundhouse-network
   file:
     directory: /etc/traefik/dynamic
     watch: true

@@ -1,10 +1,10 @@
 {{/* vim: set filetype=mustache: */}}
 
-{{- define "mcp-platform.name" -}}
+{{- define "roundhouse.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "mcp-platform.fullname" -}}
+{{- define "roundhouse.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
@@ -17,50 +17,50 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "mcp-platform.chart" -}}
+{{- define "roundhouse.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "mcp-platform.labels" -}}
-helm.sh/chart: {{ include "mcp-platform.chart" . }}
-{{ include "mcp-platform.selectorLabels" . }}
+{{- define "roundhouse.labels" -}}
+helm.sh/chart: {{ include "roundhouse.chart" . }}
+{{ include "roundhouse.selectorLabels" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
-{{- define "mcp-platform.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "mcp-platform.name" . }}
+{{- define "roundhouse.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "roundhouse.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/* per-component names */}}
-{{- define "mcp-platform.api.fullname" -}}
-{{ include "mcp-platform.fullname" . }}-api
+{{- define "roundhouse.api.fullname" -}}
+{{ include "roundhouse.fullname" . }}-api
 {{- end -}}
 
-{{- define "mcp-platform.frontend.fullname" -}}
-{{ include "mcp-platform.fullname" . }}-frontend
+{{- define "roundhouse.frontend.fullname" -}}
+{{ include "roundhouse.fullname" . }}-frontend
 {{- end -}}
 
-{{- define "mcp-platform.postgres.fullname" -}}
-{{ include "mcp-platform.fullname" . }}-postgres
+{{- define "roundhouse.postgres.fullname" -}}
+{{ include "roundhouse.fullname" . }}-postgres
 {{- end -}}
 
-{{- define "mcp-platform.api.image" -}}
+{{- define "roundhouse.api.image" -}}
 {{ .Values.image.api.repository }}:{{ .Values.image.api.tag | default .Chart.AppVersion }}
 {{- end -}}
 
-{{- define "mcp-platform.frontend.image" -}}
+{{- define "roundhouse.frontend.image" -}}
 {{ .Values.image.frontend.repository }}:{{ .Values.image.frontend.tag | default .Chart.AppVersion }}
 {{- end -}}
 
 {{/* DB env block — sourced from bundled Postgres or external. */}}
-{{- define "mcp-platform.dbEnv" -}}
+{{- define "roundhouse.dbEnv" -}}
 - name: DB_CONNECTION
   value: pgsql
 {{- if .Values.postgres.enabled }}
 - name: DB_HOST
-  value: {{ include "mcp-platform.postgres.fullname" . | quote }}
+  value: {{ include "roundhouse.postgres.fullname" . | quote }}
 - name: DB_PORT
   value: "5432"
 - name: DB_DATABASE
@@ -70,7 +70,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 - name: DB_PASSWORD
   valueFrom:
     secretKeyRef:
-      name: {{ include "mcp-platform.fullname" . }}-db
+      name: {{ include "roundhouse.fullname" . }}-db
       key: password
 {{- else }}
 - name: DB_HOST

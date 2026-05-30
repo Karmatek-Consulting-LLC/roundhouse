@@ -72,9 +72,9 @@ def test_build_and_start_emits_manifests_and_returns_running_status(client, http
             return {
                 "metadata": {
                     "labels": {
-                        "mcp-platform.managed": "true",
-                        "mcp-platform.server-name": "demo",
-                        "mcp-platform.template": "custom",
+                        "roundhouse.managed": "true",
+                        "roundhouse.server-name": "demo",
+                        "roundhouse.template": "custom",
                     },
                     "creationTimestamp": "2026-05-27T00:00:00Z",
                 },
@@ -149,12 +149,12 @@ def test_scale_server_patches_scale_subresource(client, http):
     http.get.side_effect = [
         # findDeployment
         {
-            "metadata": {"labels": {"mcp-platform.managed": "true", "mcp-platform.server-name": "demo"}},
+            "metadata": {"labels": {"roundhouse.managed": "true", "roundhouse.server-name": "demo"}},
             "spec": {"replicas": 3},
         },
         # getServer at the end
         {
-            "metadata": {"labels": {"mcp-platform.managed": "true", "mcp-platform.server-name": "demo"}},
+            "metadata": {"labels": {"roundhouse.managed": "true", "roundhouse.server-name": "demo"}},
             "spec": {"replicas": 3},
             "status": {"availableReplicas": 3, "readyReplicas": 3},
         },
@@ -174,7 +174,7 @@ def test_scale_server_patches_scale_subresource(client, http):
 def test_remove_server_deletes_all_four_resources(client, http):
     # findDeployment returns a managed deployment so we record existed=True.
     http.get.return_value = {
-        "metadata": {"labels": {"mcp-platform.managed": "true"}},
+        "metadata": {"labels": {"roundhouse.managed": "true"}},
         "spec": {"replicas": 1},
     }
     deleted: list[str] = []
@@ -197,9 +197,9 @@ def test_list_servers_maps_deployments_to_canonical_shape(client, http):
                 {
                     "metadata": {
                         "labels": {
-                            "mcp-platform.managed": "true",
-                            "mcp-platform.server-name": "demo",
-                            "mcp-platform.template": "custom",
+                            "roundhouse.managed": "true",
+                            "roundhouse.server-name": "demo",
+                            "roundhouse.template": "custom",
                         },
                         "creationTimestamp": "2026-05-27T00:00:00Z",
                     },
@@ -223,7 +223,7 @@ def test_kaniko_path_writes_job_with_node_affinity(client, http, build_context, 
     monkeypatch.setenv("MCP_K8S_BUILDER", "kaniko")
     monkeypatch.setenv("MCP_K8S_BUILDER_PVC", "mcp-server-data")
     monkeypatch.setenv("MCP_K8S_BUILDER_REGISTRY_SECRET", "mcp-registry-creds")
-    monkeypatch.setenv("MCP_K8S_BUILDER_NAMESPACE", "mcp-platform")
+    monkeypatch.setenv("MCP_K8S_BUILDER_NAMESPACE", "roundhouse")
     monkeypatch.setenv("MCP_K8S_BUILDER_IMAGE", "gcr.io/kaniko-project/executor:v1.20.0")
     monkeypatch.setenv("MCP_K8S_BUILDER_TIMEOUT", "60")
     monkeypatch.setenv("NODE_NAME", "node-a")
@@ -239,11 +239,11 @@ def test_kaniko_path_writes_job_with_node_affinity(client, http, build_context, 
 
     # First GET on the Job returns succeeded=1.
     def get(path, query=None):
-        if re.match(r"apis/batch/v1/namespaces/mcp-platform/jobs/mcp-build-demo-\d+$", path):
+        if re.match(r"apis/batch/v1/namespaces/roundhouse/jobs/mcp-build-demo-\d+$", path):
             return {"status": {"succeeded": 1}}
         if path.endswith("/deployments/mcp-demo"):
             return {
-                "metadata": {"labels": {"mcp-platform.managed": "true", "mcp-platform.server-name": "demo"}},
+                "metadata": {"labels": {"roundhouse.managed": "true", "roundhouse.server-name": "demo"}},
                 "spec": {"replicas": 1},
                 "status": {"availableReplicas": 1, "readyReplicas": 1},
             }
@@ -290,16 +290,16 @@ def test_kaniko_failure_surfaces_pod_logs(client, http, build_context, monkeypat
     monkeypatch.setenv("MCP_K8S_BUILDER", "kaniko")
     monkeypatch.setenv("MCP_K8S_BUILDER_PVC", "mcp-server-data")
     monkeypatch.setenv("MCP_K8S_BUILDER_REGISTRY_SECRET", "mcp-registry-creds")
-    monkeypatch.setenv("MCP_K8S_BUILDER_NAMESPACE", "mcp-platform")
+    monkeypatch.setenv("MCP_K8S_BUILDER_NAMESPACE", "roundhouse")
     monkeypatch.setenv("MCP_K8S_BUILDER_TIMEOUT", "60")
     from app.config import get_settings
 
     get_settings.cache_clear()
 
     def get(path, query=None):
-        if re.match(r"apis/batch/v1/namespaces/mcp-platform/jobs/mcp-build-demo-\d+$", path):
+        if re.match(r"apis/batch/v1/namespaces/roundhouse/jobs/mcp-build-demo-\d+$", path):
             return {"status": {"failed": 1}}
-        if path == "api/v1/namespaces/mcp-platform/pods":
+        if path == "api/v1/namespaces/roundhouse/pods":
             return {"items": [{"metadata": {"name": "mcp-build-demo-pod-xyz"}}]}
         raise AssertionError(f"unexpected GET {path}")
 
@@ -337,7 +337,7 @@ def test_resource_limits_omitted_when_unset(client, http, build_context, monkeyp
         "metadata": {"name": body["metadata"]["name"]}
     }
     http.get.return_value = {
-        "metadata": {"labels": {"mcp-platform.managed": "true", "mcp-platform.server-name": "demo"}},
+        "metadata": {"labels": {"roundhouse.managed": "true", "roundhouse.server-name": "demo"}},
         "spec": {"replicas": 1},
         "status": {"availableReplicas": 1, "readyReplicas": 1},
     }

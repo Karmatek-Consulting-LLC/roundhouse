@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # MCP platform
     mcp_base_url: str = Field(default="http://localhost:3080", alias="MCP_BASE_URL")
-    mcp_docker_network: str = Field(default="mcp-network", alias="MCP_DOCKER_NETWORK")
+    mcp_docker_network: str = Field(default="roundhouse-network", alias="MCP_DOCKER_NETWORK")
     mcp_docker_host: str = Field(
         default="/var/run/docker.sock", alias="MCP_DOCKER_HOST"
     )
@@ -44,13 +44,13 @@ class Settings(BaseSettings):
         default="/var/run/docker.sock", alias="MCP_DOCKER_SOCKET"
     )
     mcp_servers_data_dir: str = Field(
-        default="/var/lib/mcp-platform/servers", alias="MCP_SERVERS_DATA_DIR"
+        default="/var/lib/roundhouse/servers", alias="MCP_SERVERS_DATA_DIR"
     )
     mcp_templates_dir: str = Field(
-        default="/var/lib/mcp-platform/templates", alias="MCP_TEMPLATES_DIR"
+        default="/var/lib/roundhouse/templates", alias="MCP_TEMPLATES_DIR"
     )
     mcp_traefik_dynamic_dir: str = Field(
-        default="/var/lib/mcp-platform/traefik-dynamic",
+        default="/var/lib/roundhouse/traefik-dynamic",
         alias="MCP_TRAEFIK_DYNAMIC_DIR",
     )
     mcp_traefik_entrypoints: str = Field(

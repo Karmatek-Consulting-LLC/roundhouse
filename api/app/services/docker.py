@@ -19,9 +19,9 @@ from app.services.docker_http import DockerError, DockerHttp, DockerNotFoundErro
 logger = logging.getLogger(__name__)
 
 
-LABEL_MANAGED = "mcp-platform.managed"
-LABEL_SERVER_NAME = "mcp-platform.server-name"
-LABEL_TEMPLATE = "mcp-platform.template"
+LABEL_MANAGED = "roundhouse.managed"
+LABEL_SERVER_NAME = "roundhouse.server-name"
+LABEL_TEMPLATE = "roundhouse.template"
 CONTAINER_PREFIX = "mcp-"
 
 

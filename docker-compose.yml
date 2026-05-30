@@ -1,6 +1,10 @@
 # Local development stack. Plain HTTP, hot reload, single Docker daemon.
 # For Swarm/lab/customer deploys see docker-stack-lab.yml.
 
+# Compose project name. Pinned so it does NOT track the host folder name —
+# lets you rename or move the checkout without orphaning existing volumes.
+name: roundhouse
+
 services:
   traefik:
     image: traefik:v3.6
@@ -12,7 +16,7 @@ services:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
     networks:
-      - mcp-network
+      - roundhouse-network
 
   postgres:
     image: postgres:16-alpine
@@ -23,7 +27,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
-      - mcp-network
+      - roundhouse-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mcp"]
       interval: 5s
@@ -43,8 +47,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./api:/app
       - ./templates:/app/templates:ro
-      - server-data:/var/lib/mcp-platform/servers
-      - traefik-dynamic:/var/lib/mcp-platform/traefik-dynamic
+      - server-data:/var/lib/roundhouse/servers
+      - traefik-dynamic:/var/lib/roundhouse/traefik-dynamic
     environment:
       - PYTHONUNBUFFERED=1
       # APP_KEY (base64:<32-byte-key>) keys the at-rest encryption for
@@ -64,16 +68,16 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
 
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:3080}
-      - MCP_DOCKER_NETWORK=${DOCKER_NETWORK:-mcp-network}
+      - MCP_DOCKER_NETWORK=${DOCKER_NETWORK:-roundhouse-network}
       - MCP_DOCKER_SOCKET=/var/run/docker.sock
       - MCP_DOCKER_MODE=${MCP_DOCKER_MODE:-auto}
-      - MCP_SERVERS_DATA_DIR=/var/lib/mcp-platform/servers
+      - MCP_SERVERS_DATA_DIR=/var/lib/roundhouse/servers
       - MCP_TEMPLATES_DIR=/app/templates
-      - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/mcp-platform/traefik-dynamic
+      - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/roundhouse/traefik-dynamic
       - MCP_DEFAULT_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
       - MCP_MAX_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
     networks:
-      - mcp-network
+      - roundhouse-network
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.platform-api.entrypoints=web"
@@ -90,7 +94,7 @@ services:
       - frontend_node_modules:/app/node_modules
       - frontend_pnpm_store:/var/cache/pnpm-store
     networks:
-      - mcp-network
+      - roundhouse-network
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.entrypoints=web"
@@ -100,13 +104,18 @@ services:
       - "traefik.http.services.frontend.loadbalancer.server.port=5173"
 
 networks:
-  mcp-network:
-    name: mcp-network
+  roundhouse-network:
+    name: roundhouse-network
     driver: bridge
 
 volumes:
+  # Pinned to the legacy `mcp-platform_*` names so a folder/project rename
+  # does NOT cause Compose to create empty replacements. Drop the explicit
+  # `name:` once any host predating the roundhouse rebrand has migrated.
   pgdata:
+    name: mcp-platform_pgdata
   server-data:
+    name: mcp-platform_server-data
   traefik-dynamic:
   frontend_node_modules:
   frontend_pnpm_store:

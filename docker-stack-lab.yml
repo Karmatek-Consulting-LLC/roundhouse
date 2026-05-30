@@ -11,10 +11,10 @@ version: "3.8"
 #
 # Traefik is on an external ingress network so cluster ingress Traefik can reach it.
 # Ingress terminates TLS (websecure) and forwards HTTP to this stack's traefik:80
-# (e.g. mcp-traefik-svc -> http://mcp-platform_traefik:80). This embedded Traefik
+# (e.g. mcp-traefik-svc -> http://roundhouse_traefik:80). This embedded Traefik
 # only listens on :80 (entrypoint `web`); it does not terminate TLS or use Let's Encrypt.
-# Backends stay on mcp-network. The external ingress overlay is fixed in `networks` (traefik-public).
-#   Stack name is fixed at `mcp-platform` (see workflow + traefik.swarm.yml network name).
+# Backends stay on roundhouse-network. The external ingress overlay is fixed in `networks` (traefik-public).
+#   Stack name is fixed at `roundhouse` (see workflow + traefik.swarm.yml network name).
 #   Set PUBLIC_HOSTNAME in the deploy env to the host clients reach the SPA at
 #   - must match the cluster ingress Host() rule that fronts this stack.
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
@@ -36,7 +36,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - mcp-network
+      - roundhouse-network
     deploy:
       placement:
         constraints:
@@ -61,7 +61,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - mcp-network
+      - roundhouse-network
     deploy:
       placement:
         constraints:
@@ -77,7 +77,7 @@ services:
       - source: traefik-config
         target: /etc/traefik/traefik.yml
     networks:
-      - mcp-network
+      - roundhouse-network
       - traefik_traefik-public
     depends_on:
       - docker-socket-proxy-traefik
@@ -99,7 +99,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
-      - mcp-network
+      - roundhouse-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mcp"]
       interval: 5s
@@ -120,8 +120,8 @@ services:
       - mcp_admin_password
       - mcp_postgres_password
     volumes:
-      - server-data:/var/lib/mcp-platform/servers
-      - traefik-dynamic:/var/lib/mcp-platform/traefik-dynamic
+      - server-data:/var/lib/roundhouse/servers
+      - traefik-dynamic:/var/lib/roundhouse/traefik-dynamic
     environment:
       - PYTHONUNBUFFERED=1
 
@@ -139,18 +139,18 @@ services:
 
       - AUTH_TOKEN_EXPIRATION_MINUTES=1440
 
-      # Must match `docker network ls` overlay: {stack}_mcp-network.
-      - MCP_DOCKER_NETWORK=mcp-platform_mcp-network
+      # Must match `docker network ls` overlay: {stack}_roundhouse-network.
+      - MCP_DOCKER_NETWORK=roundhouse_roundhouse-network
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       - MCP_TRAEFIK_ENTRYPOINTS=web
       - MCP_BASE_URL=https://${PUBLIC_HOSTNAME}
-      - MCP_SERVERS_DATA_DIR=/var/lib/mcp-platform/servers
+      - MCP_SERVERS_DATA_DIR=/var/lib/roundhouse/servers
       - MCP_TEMPLATES_DIR=/app/templates
-      - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/mcp-platform/traefik-dynamic
+      - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/roundhouse/traefik-dynamic
       - MCP_DEFAULT_SERVER_REPLICAS=1
       - MCP_MAX_SERVER_REPLICAS=4
     networks:
-      - mcp-network
+      - roundhouse-network
     # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     deploy:
@@ -160,7 +160,7 @@ services:
       labels:
         - "traefik.enable=true"
         # Traefik v3 Swarm provider uses traefik.swarm.network (not traefik.docker.network).
-        - "traefik.swarm.network=mcp-platform_mcp-network"
+        - "traefik.swarm.network=roundhouse_roundhouse-network"
         # Plain HTTP only — TLS is at cluster ingress. !PathPrefix(`/s/`) leaves /s/{server} to MCP services.
         - "traefik.http.routers.platform-api.entrypoints=web"
         - "traefik.http.routers.platform-api.rule=Host(`${PUBLIC_HOSTNAME}`) && !PathPrefix(`/s/`)"
@@ -182,11 +182,11 @@ configs:
   traefik-config:
     # Swarm configs cannot be updated in place; change the name (e.g. v4) when
     # editing traefik/traefik.swarm.yml, then `docker config rm` the old one if unused.
-    name: mcp-platform_traefik-static-v4
+    name: roundhouse_traefik-static-v4
     file: ./traefik/traefik.swarm.yml
 
 networks:
-  mcp-network:
+  roundhouse-network:
     driver: overlay
     attachable: true
   traefik_traefik-public:

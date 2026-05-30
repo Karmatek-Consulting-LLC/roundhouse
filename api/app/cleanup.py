@@ -1,4 +1,4 @@
-"""Tear down every container/service labelled mcp-platform.managed=true.
+"""Tear down every container/service labelled roundhouse.managed=true.
 
 Invoked from the dev/prod entrypoint's SIGTERM trap so `docker compose down`
 removes spawned MCP servers along with the platform. DB rows and on-disk
@@ -12,7 +12,7 @@ import sys
 
 from app.services.docker import get_docker
 
-logger = logging.getLogger("mcp-platform-cleanup")
+logger = logging.getLogger("roundhouse-cleanup")
 
 
 def main() -> int:
@@ -41,7 +41,7 @@ def main() -> int:
 
     if failed:
         logger.warning(
-            "%d removal(s) failed - inspect `docker ps --filter label=mcp-platform.managed=true`.",
+            "%d removal(s) failed - inspect `docker ps --filter label=roundhouse.managed=true`.",
             failed,
         )
         return 1

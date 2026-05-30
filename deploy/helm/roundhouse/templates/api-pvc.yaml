@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "mcp-platform.api.fullname" . }}-server-data
+  name: {{ include "roundhouse.api.fullname" . }}-server-data
   labels:
-    {{- include "mcp-platform.labels" . | nindent 4 }}
+    {{- include "roundhouse.labels" . | nindent 4 }}
 spec:
   accessModes:
     - {{ .Values.api.storage.serverData.accessMode | default "ReadWriteOnce" }}
