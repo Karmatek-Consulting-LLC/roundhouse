@@ -15,7 +15,7 @@ from app.db import db_session, init_db
 
 FRONTEND_DIR = Path("/app/public/frontend")
 
-logger = logging.getLogger("mcp-platform-api")
+logger = logging.getLogger("roundhouse-api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 

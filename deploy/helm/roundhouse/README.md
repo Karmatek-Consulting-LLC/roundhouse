@@ -1,6 +1,6 @@
-# mcp-platform Helm chart
+# Roundhouse Helm chart
 
-Deploys the MCP Platform (FastAPI backend + React frontend + optional Postgres) into a Kubernetes cluster and grants it the RBAC it needs to spawn MCP server workloads on the same cluster.
+Deploys Roundhouse (FastAPI backend + React frontend + optional Postgres) into a Kubernetes cluster and grants it the RBAC it needs to spawn MCP server workloads on the same cluster.
 
 ## What this chart does NOT do
 
@@ -23,8 +23,8 @@ Deploys the MCP Platform (FastAPI backend + React frontend + optional Postgres) 
 First, create the registry-push Secret in the chart's namespace:
 
 ```bash
-kubectl create namespace mcp-platform
-kubectl -n mcp-platform create secret docker-registry mcp-registry-creds \
+kubectl create namespace roundhouse
+kubectl -n roundhouse create secret docker-registry mcp-registry-creds \
   --docker-server=registry.example.com \
   --docker-username=mcp-bot \
   --docker-password=$REGISTRY_TOKEN
@@ -33,8 +33,8 @@ kubectl -n mcp-platform create secret docker-registry mcp-registry-creds \
 Then install:
 
 ```bash
-helm install mcp deploy/helm/mcp-platform \
-  --namespace mcp-platform \
+helm install mcp deploy/helm/roundhouse \
+  --namespace roundhouse \
   --set baseUrl=https://mcp.example.com \
   --set traefik.hostname=mcp.example.com \
   --set imageBuilder.kaniko.registrySecret=mcp-registry-creds \
@@ -47,8 +47,8 @@ helm install mcp deploy/helm/mcp-platform \
 Set `imageBuilder.kind=docker` and provide `imageBuilder.host`. The api pod will then talk to that endpoint for builds (the legacy path), and the Kaniko Job/RBAC are skipped.
 
 ```bash
-helm install mcp deploy/helm/mcp-platform \
-  --namespace mcp-platform --create-namespace \
+helm install mcp deploy/helm/roundhouse \
+  --namespace roundhouse --create-namespace \
   --set imageBuilder.kind=docker \
   --set imageBuilder.host=tcp://buildkitd.build.svc:1234 \
   --set baseUrl=https://mcp.example.com \
@@ -57,7 +57,7 @@ helm install mcp deploy/helm/mcp-platform \
 
 The chart creates two namespaces' worth of resources:
 
-- `mcp-platform` (release namespace): api Deployment + Service + PVC, frontend Deployment + Service, ConfigMap, Secret, optional Postgres StatefulSet, ServiceAccount, IngressRoute.
+- `roundhouse` (release namespace): api Deployment + Service + PVC, frontend Deployment + Service, ConfigMap, Secret, optional Postgres StatefulSet, ServiceAccount, IngressRoute.
 - `mcp-servers` (configurable via `workloadsNamespace.name`): empty at install time — the platform writes a Deployment + Service + IngressRoute + Middleware here for every MCP server users create through the UI. A `Role` + `RoleBinding` granting the api `ServiceAccount` permission to manage those resources is also created here.
 
 ## Required values

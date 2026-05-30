@@ -59,7 +59,7 @@ COPY api/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Writable dirs for spec storage + Traefik dynamic config.
-RUN mkdir -p /var/lib/mcp-platform/servers /var/lib/mcp-platform/traefik-dynamic
+RUN mkdir -p /var/lib/roundhouse/servers /var/lib/roundhouse/traefik-dynamic
 
 EXPOSE 8000
 

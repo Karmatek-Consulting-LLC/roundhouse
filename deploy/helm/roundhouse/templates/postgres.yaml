@@ -2,14 +2,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "mcp-platform.postgres.fullname" . }}
+  name: {{ include "roundhouse.postgres.fullname" . }}
   labels:
-    {{- include "mcp-platform.labels" . | nindent 4 }}
+    {{- include "roundhouse.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
   type: ClusterIP
   selector:
-    {{- include "mcp-platform.selectorLabels" . | nindent 4 }}
+    {{- include "roundhouse.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
   ports:
     - name: postgres
@@ -20,21 +20,21 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "mcp-platform.postgres.fullname" . }}
+  name: {{ include "roundhouse.postgres.fullname" . }}
   labels:
-    {{- include "mcp-platform.labels" . | nindent 4 }}
+    {{- include "roundhouse.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
-  serviceName: {{ include "mcp-platform.postgres.fullname" . }}
+  serviceName: {{ include "roundhouse.postgres.fullname" . }}
   replicas: 1
   selector:
     matchLabels:
-      {{- include "mcp-platform.selectorLabels" . | nindent 6 }}
+      {{- include "roundhouse.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: postgres
   template:
     metadata:
       labels:
-        {{- include "mcp-platform.selectorLabels" . | nindent 8 }}
+        {{- include "roundhouse.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: postgres
     spec:
       containers:
@@ -51,7 +51,7 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "mcp-platform.fullname" . }}-db
+                  name: {{ include "roundhouse.fullname" . }}-db
                   key: password
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata

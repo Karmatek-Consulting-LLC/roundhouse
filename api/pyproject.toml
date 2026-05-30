@@ -1,7 +1,7 @@
 [project]
-name = "mcp-platform-api"
+name = "roundhouse-api"
 version = "0.1.0"
-description = "FastAPI backend for the MCP Platform."
+description = "FastAPI backend for Roundhouse — self-hosted MCP server hosting."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

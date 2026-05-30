@@ -1,13 +1,13 @@
-# MCP Platform Lab CI/CD
+# Roundhouse Lab CI/CD
 #
 # Full build -> smoke -> push -> swarm deploy. Works identically on github.com and
 # GitHub Enterprise; only the registry host and runner location differ.
 #
 # Repo/org configuration:
-#   Deploy stack name is fixed: mcp-platform (must match docker-stack-lab.yml / traefik.swarm.yml network prefix).
+#   Deploy stack name is fixed: roundhouse (must match docker-stack-lab.yml / traefik.swarm.yml network prefix).
 #   Registry image path is built from the `lab` environment vars:
 #     REGISTRY_HOST       (required) - used for docker login, e.g. registry.example.com
-#     REGISTRY_NAMESPACE  (optional) - project/org segment, e.g. mcp-platform-stack.
+#     REGISTRY_NAMESPACE  (optional) - project/org segment, e.g. roundhouse.
 #                                      Leave unset for flat registries with no namespace.
 #   The "Compute image repo" step combines them into IMAGE_REPO and exports it via
 #   $GITHUB_ENV. docker stack deploy then interpolates ${IMAGE_REPO} into
@@ -28,7 +28,7 @@
 #   - External secrets: mcp_app_key, mcp_admin_email, mcp_admin_password, mcp_postgres_password
 #   - External overlay traefik_traefik-public (see docker-stack-lab.yml networks.traefik_edge)
 
-name: MCP Platform Lab CI
+name: Roundhouse Lab CI
 
 on:
   push:
@@ -39,7 +39,7 @@ on:
       - "templates/**"
       - "traefik/**"
       - "docker-stack-lab.yml"
-      - ".github/workflows/mcp-platform-lab-ci.yml"
+      - ".github/workflows/roundhouse-lab-ci.yml"
   pull_request:
     branches: [lab]
     paths:
@@ -48,11 +48,11 @@ on:
       - "templates/**"
       - "traefik/**"
       - "docker-stack-lab.yml"
-      - ".github/workflows/mcp-platform-lab-ci.yml"
+      - ".github/workflows/roundhouse-lab-ci.yml"
   workflow_dispatch: {}
 
 concurrency:
-  group: mcp-platform-ci-${{ github.workflow }}-${{ github.ref }}
+  group: roundhouse-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -79,9 +79,9 @@ jobs:
           : "${REGISTRY_HOST:?REGISTRY_HOST not set on the lab environment}"
           # REGISTRY_NAMESPACE is optional - flat registries (no project segment) leave it unset.
           if [[ -n "${REGISTRY_NAMESPACE:-}" ]]; then
-            IMAGE_REPO="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/mcp-platform"
+            IMAGE_REPO="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/roundhouse"
           else
-            IMAGE_REPO="${REGISTRY_HOST}/mcp-platform"
+            IMAGE_REPO="${REGISTRY_HOST}/roundhouse"
           fi
           echo "IMAGE_REPO=${IMAGE_REPO}" >> "$GITHUB_ENV"
           echo "Using image repo: ${IMAGE_REPO}"
@@ -94,16 +94,16 @@ jobs:
             --load \
             --platform "$PLATFORM" \
             -f api/Dockerfile \
-            -t "mcp-platform-ci:${LAB_SHA_TAG}" \
+            -t "roundhouse-ci:${LAB_SHA_TAG}" \
             -t "${IMAGE_REPO}:${LAB_SHA_TAG}" \
             .
 
       - name: Smoke test (platform + ephemeral Postgres)
         run: |
           set -euo pipefail
-          NET="mcp-platform-smoke-net-${GITHUB_RUN_ID}"
-          DB="mcp-platform-smoke-db-${GITHUB_RUN_ID}"
-          APP="mcp-platform-smoke-app-${GITHUB_RUN_ID}"
+          NET="roundhouse-smoke-net-${GITHUB_RUN_ID}"
+          DB="roundhouse-smoke-db-${GITHUB_RUN_ID}"
+          APP="roundhouse-smoke-app-${GITHUB_RUN_ID}"
           LAB_SHA_TAG="lab-${GITHUB_SHA}"
           docker network create "$NET"
           trap 'docker rm -f "$APP" "$DB" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true' EXIT
@@ -144,14 +144,14 @@ jobs:
             -e ADMIN_EMAIL=ci-admin@example.local \
             -e ADMIN_PASSWORD=ci-admin-password \
             -e MCP_BASE_URL=http://localhost \
-            "mcp-platform-ci:${LAB_SHA_TAG}" >/dev/null
+            "roundhouse-ci:${LAB_SHA_TAG}" >/dev/null
 
           # Health probe via /api/health (uvicorn serves on :8000).
           for i in $(seq 1 120); do
             RUNNING="$(docker inspect -f '{{.State.Running}}' "$APP" 2>/dev/null || echo false)"
             if [[ "$RUNNING" != "true" ]]; then
               EXIT_CODE="$(docker inspect -f '{{.State.ExitCode}}' "$APP" 2>/dev/null || echo unknown)"
-              echo "::error::MCP Platform container exited before health check passed (exit=${EXIT_CODE})."
+              echo "::error::Roundhouse container exited before health check passed (exit=${EXIT_CODE})."
               docker logs "$APP" 2>&1 || true
               exit 1
             fi
@@ -163,7 +163,7 @@ jobs:
             sleep 1
           done
 
-          echo "::error::MCP Platform did not become healthy on /api/health"
+          echo "::error::Roundhouse did not become healthy on /api/health"
           docker logs "$APP" 2>&1 || true
           exit 1
 
@@ -211,4 +211,4 @@ jobs:
             --with-registry-auth \
             --resolve-image always \
             -c docker-stack-lab.yml \
-            mcp-platform
+            roundhouse

@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "mcp-platform.frontend.fullname" . }}
+  name: {{ include "roundhouse.frontend.fullname" . }}
   labels:
-    {{- include "mcp-platform.labels" . | nindent 4 }}
+    {{- include "roundhouse.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
   replicas: {{ .Values.frontend.replicas }}
   selector:
     matchLabels:
-      {{- include "mcp-platform.selectorLabels" . | nindent 6 }}
+      {{- include "roundhouse.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: frontend
   template:
     metadata:
       labels:
-        {{- include "mcp-platform.selectorLabels" . | nindent 8 }}
+        {{- include "roundhouse.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
     spec:
       {{- with .Values.image.pullSecrets }}
@@ -22,14 +22,14 @@ spec:
       {{- end }}
       containers:
         - name: frontend
-          image: {{ include "mcp-platform.frontend.image" . }}
+          image: {{ include "roundhouse.frontend.image" . }}
           imagePullPolicy: {{ .Values.image.frontend.pullPolicy }}
           ports:
             - name: http
               containerPort: 5173
           env:
             - name: API_PROXY_TARGET
-              value: "http://{{ include "mcp-platform.api.fullname" . }}:8000"
+              value: "http://{{ include "roundhouse.api.fullname" . }}:8000"
           readinessProbe:
             tcpSocket:
               port: http
@@ -51,14 +51,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "mcp-platform.frontend.fullname" . }}
+  name: {{ include "roundhouse.frontend.fullname" . }}
   labels:
-    {{- include "mcp-platform.labels" . | nindent 4 }}
+    {{- include "roundhouse.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
   type: ClusterIP
   selector:
-    {{- include "mcp-platform.selectorLabels" . | nindent 4 }}
+    {{- include "roundhouse.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
   ports:
     - name: http
