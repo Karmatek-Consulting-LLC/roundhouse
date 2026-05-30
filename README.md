@@ -59,8 +59,8 @@ turns "I wrote a tool" into "my team can use it from Claude."
 > Requires **Docker** and **Docker Compose**.
 
 ```bash
-git clone https://github.com/Karmatek-Consulting-LLC/mcp-platform.git
-cd mcp-platform
+git clone https://github.com/Karmatek-Consulting-LLC/roundhouse.git
+cd roundhouse
 cp .env.example .env
 docker compose up -d
 ```
