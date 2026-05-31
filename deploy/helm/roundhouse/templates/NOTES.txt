@@ -1,4 +1,4 @@
-mcp-platform {{ .Chart.AppVersion }} installed as release {{ .Release.Name }}
+roundhouse {{ .Chart.AppVersion }} installed as release {{ .Release.Name }}
 in namespace "{{ .Release.Namespace }}".
 
 Spawned MCP server workloads will land in "{{ .Values.workloadsNamespace.name }}".
@@ -34,5 +34,5 @@ Next steps:
 
 To uninstall, run:
   helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
-The "{{ include "mcp-platform.fullname" . }}" Secret is annotated helm.sh/resource-policy=keep
+The "{{ include "roundhouse.fullname" . }}" Secret is annotated helm.sh/resource-policy=keep
 so APP_KEY survives reinstalls. Delete it manually if you want a clean slate.
