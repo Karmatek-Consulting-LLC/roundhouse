@@ -1,0 +1,13 @@
+{
+  "name": "roundhouse-docs-capture",
+  "private": true,
+  "description": "Playwright pipeline that captures the user-guide screenshots.",
+  "scripts": {
+    "capture": "node capture.mjs --theme both",
+    "capture:dark": "node capture.mjs --theme dark",
+    "capture:light": "node capture.mjs --theme light"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
+}
