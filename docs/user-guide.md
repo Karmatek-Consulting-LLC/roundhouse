@@ -2,17 +2,9 @@
 
 A visual tour of every menu, dialog, and editor surface in Roundhouse.
 
-The screenshots in this guide were captured against a live stack seeded with
-demo servers named after the industrial empires of *Atlas Shrugged* —
-Taggart Transcontinental, Rearden Metal, d'Anconia Copper, Wyatt Oil, the
-Galt Engine, Mulligan Bank, and Stockton Foundry. They are stand-ins; in
-your own deployment the names will reflect your team's MCP servers.
-
-> All screenshots in this guide are shown in **dark theme**. A light-theme
-> set lives under `docs/screenshots/light/` for anyone who prefers it.
-
-> To re-capture after a UI change: see
-> [`docs/capture/README.md`](capture/README.md).
+> Screenshots in this guide are shown in **dark theme**. A light-theme set
+> lives under `docs/screenshots/light/`. See
+> [`docs/capture/README.md`](capture/README.md) for how to re-capture.
 
 ---
 
@@ -168,9 +160,16 @@ reference at runtime.
 
 Per-primitive call counts, p50/p95/p99 latency, error rate, and the busiest
 client tokens. Sampled in-process by the platform middleware and surfaced
-without an extra metrics backend.
+without an extra metrics backend — no Prometheus, no Grafana, no add-on
+agent. Drilling into a server's usage tab is how you find latency
+regressions or the one tool that's getting hammered.
 
-![Editor — usage](screenshots/dark/21-editor-usage.png)
+![Editor — usage (Taggart)](screenshots/dark/21-editor-usage.png)
+
+A busier server (Galt Engine, with several thousand calls across three
+tools) makes the chart variety obvious:
+
+![Editor — usage (Galt Engine)](screenshots/dark/21a-editor-usage-busy.png)
 
 ### Logs
 
@@ -221,14 +220,19 @@ imported into spec-based servers.
 
 ### Users
 
-User accounts with role assignment. Superadmins can reset passwords and
-revoke access.
+User accounts with role assignment. The seeded demo includes a handful of
+operators alongside the platform admin; superadmins can reset passwords
+and revoke access from this page.
 
 ![Users](screenshots/dark/51-users.png)
 
 ### Teams
 
-Teams group users and grant shared access to a set of servers.
+Teams group users into shared-access bundles. A team can own one or more
+servers, and any team member inherits access to those servers without
+needing per-server token grants. The seed creates three teams that mirror
+the demo servers' industries — Taggart Operations, Rearden Industries, and
+Galt's Gulch — each with its own member roster.
 
 ![Teams](screenshots/dark/52-teams.png)
 
