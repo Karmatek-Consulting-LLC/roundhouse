@@ -14,6 +14,13 @@ import {
 import { ServerAuthPanel } from "@/components/server-auth-panel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
@@ -129,7 +136,7 @@ function RightRail({ serverName, server, selection, onSaved, onDeleted, gotoPrim
     );
   }
   if (selection.kind === "logs") {
-    return <LogsRail serverName={serverName} server={server} />;
+    return <LogsRail serverName={serverName} server={server} onMutated={onSaved} />;
   }
   if (selection.kind === "source") {
     return <SourceRail serverName={serverName} server={server} onSaved={onSaved} />;
@@ -750,13 +757,58 @@ type StreamState = "connecting" | "open" | "closed" | "error";
 // inspection; the underlying Docker stream is always queryable from scratch.
 const MAX_LOG_LINES = 5000;
 
-function LogsRail({ serverName, server }: { serverName: string; server: Server }) {
+const LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] as const;
+type LogLevel = (typeof LOG_LEVELS)[number];
+
+function LogsRail({
+  serverName,
+  server,
+  onMutated,
+}: {
+  serverName: string;
+  server: Server;
+  onMutated: () => void;
+}) {
   const [lines, setLines] = useState<string[]>([]);
   const [state, setState] = useState<StreamState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [tail, setTail] = useState(400);
   const [follow, setFollow] = useState(true);
   const [paused, setPaused] = useState(false);
+  const [savingLevel, setSavingLevel] = useState(false);
+  const [levelError, setLevelError] = useState<string | null>(null);
+
+  // Dropdown only applies to spec-based servers: the platform middleware reads
+  // LOG_LEVEL and configures stdlib logging. Code-mode servers own their own
+  // logging surface, so the dropdown would be a hollow promise there.
+  const showLogLevel = server.mode === "structured";
+  const currentLevel: LogLevel = (() => {
+    const v = (server.env_vars ?? []).find((ev) => ev.name === "LOG_LEVEL")?.value;
+    const upper = (v || "").trim().toUpperCase();
+    return (LOG_LEVELS as readonly string[]).includes(upper) ? (upper as LogLevel) : "INFO";
+  })();
+
+  async function changeLogLevel(next: LogLevel) {
+    if (next === currentLevel) return;
+    setLevelError(null);
+    setSavingLevel(true);
+    try {
+      const existing = server.env_vars ?? [];
+      const has = existing.some((ev) => ev.name === "LOG_LEVEL");
+      const env_vars = has
+        ? existing.map((ev) => (ev.name === "LOG_LEVEL" ? { ...ev, value: next } : ev))
+        : [...existing, { name: "LOG_LEVEL", value: next, secret: false }];
+      await api.updateEnvVars(serverName, {
+        env_global_imports: server.env_global_imports ?? [],
+        env_vars,
+      });
+      onMutated();
+    } catch (e) {
+      setLevelError(e instanceof Error ? e.message : "Failed to set log level");
+    } finally {
+      setSavingLevel(false);
+    }
+  }
 
   // Used to force-reconnect on demand (button click) or when tail changes.
   const [streamKey, setStreamKey] = useState(0);
@@ -911,7 +963,36 @@ function LogsRail({ serverName, server }: { serverName: string; server: Server }
           />
           Follow
         </label>
+        {showLogLevel && (
+          <div className="flex items-center gap-1.5 ml-1">
+            <Label className="text-xs">Level</Label>
+            <Select
+              value={currentLevel}
+              onValueChange={(v) => changeLogLevel(v as LogLevel)}
+              disabled={savingLevel}
+            >
+              <SelectTrigger className="h-8 w-[120px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LOG_LEVELS.map((lvl) => (
+                  <SelectItem key={lvl} value={lvl} className="text-xs font-mono">
+                    {lvl}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <span className="ml-auto text-xs">{statusBadge}</span>
+        {showLogLevel && levelError && (
+          <span className="w-full text-destructive">{levelError}</span>
+        )}
+        {showLogLevel && !levelError && (
+          <span className="w-full text-muted-foreground italic">
+            Log level is read from the <code className="font-mono">LOG_LEVEL</code> env var; changes save instantly and take effect on the next redeploy.
+          </span>
+        )}
         {server.status !== "running" && (
           <span className="w-full text-muted-foreground italic">
             Server is {server.status} — logs may be empty or stale.
