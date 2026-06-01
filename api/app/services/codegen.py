@@ -263,6 +263,15 @@ class _PlatformMiddleware(_Middleware):
         started = _time.perf_counter()
         err_type: str | None = None
         gate_info = None
+        if _PLATFORM_LOG.isEnabledFor(_logging.DEBUG):
+            try:
+                _PLATFORM_LOG.debug(_json.dumps(
+                    {"event": "mcp.call.start", "kind": kind, "name": name,
+                     "client_id": client_id, "arguments": arguments},
+                    default=str,
+                ))
+            except Exception:
+                pass
         try:
             max_args = cfg.get("max_argument_bytes")
             if isinstance(max_args, int) and max_args > 0 and arguments is not None:
@@ -296,13 +305,17 @@ class _PlatformMiddleware(_Middleware):
                     "duration_ms": duration_ms,
                     "error": err_type,
                 }
-                if cfg.get("log_arguments") and arguments is not None:
+                debug_on = _PLATFORM_LOG.isEnabledFor(_logging.DEBUG)
+                if (cfg.get("log_arguments") or debug_on) and arguments is not None:
                     try:
                         rec["arguments"] = arguments
                     except Exception:
                         pass
                 try:
-                    _PLATFORM_LOG.info(_json.dumps(rec, default=str))
+                    if err_type is not None:
+                        _PLATFORM_LOG.warning(_json.dumps(rec, default=str))
+                    else:
+                        _PLATFORM_LOG.info(_json.dumps(rec, default=str))
                 except Exception:
                     pass
 '''
@@ -432,6 +445,7 @@ def _gen_middleware(spec: ServerSpec, metrics_token: str) -> tuple[list[str], st
         "import asyncio as _asyncio",
         "import json as _json",
         "import logging as _logging",
+        "import os as _os",
         "import time as _time",
         "from fastmcp.exceptions import ToolError as _ToolError",
         "from fastmcp.server.middleware import Middleware as _Middleware",
@@ -445,12 +459,18 @@ def _gen_middleware(spec: ServerSpec, metrics_token: str) -> tuple[list[str], st
         "    _get_access_token = lambda: None",
         "",
         "_PLATFORM_LOG = _logging.getLogger('mcp.platform')",
-        "_PLATFORM_LOG.setLevel(_logging.INFO)",
+        "_PLATFORM_LOG_LEVEL_NAME = (_os.environ.get('LOG_LEVEL') or 'INFO').strip().upper()",
+        "_PLATFORM_LOG_LEVEL = _logging.getLevelName(_PLATFORM_LOG_LEVEL_NAME)",
+        "if not isinstance(_PLATFORM_LOG_LEVEL, int):",
+        "    _PLATFORM_LOG_LEVEL = _logging.INFO",
+        "    _PLATFORM_LOG_LEVEL_NAME = 'INFO'",
+        "_PLATFORM_LOG.setLevel(_PLATFORM_LOG_LEVEL)",
         "if not _PLATFORM_LOG.handlers:",
         "    _h = _logging.StreamHandler()",
-        "    _h.setFormatter(_logging.Formatter('%(message)s'))",
+        "    _h.setFormatter(_logging.Formatter('%(asctime)s %(levelname)s %(message)s'))",
         "    _PLATFORM_LOG.addHandler(_h)",
         "    _PLATFORM_LOG.propagate = False",
+        "_PLATFORM_LOG.info(_json.dumps({'event': 'mcp.startup', 'log_level': _PLATFORM_LOG_LEVEL_NAME}))",
         "",
         "_METRICS_TOKEN = " + _py_string(metrics_token),
         "",
