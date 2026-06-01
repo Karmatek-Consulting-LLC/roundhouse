@@ -28,7 +28,11 @@ const BASE = args.base ?? "http://localhost:3080";
 const EMAIL = args.email ?? "admin@mcp.local";
 const PASSWORD = args.password ?? "admin";
 const THEME = args.theme ?? "both"; // "dark" | "light" | "both"
-const VIEWPORT = { width: 1440, height: 900 };
+const VIEWPORT = { width: 1600, height: 1050 };
+// fullPage=true captures the entire scrollable height of each route so
+// content that runs past the viewport (charts, primitives list, audit log)
+// is visible end-to-end in the docs.
+const FULL_PAGE = true;
 
 // The set of routes we walk. The `wait` field lets each step express its
 // own readiness condition (e.g. wait for a specific selector or a chart to
@@ -62,10 +66,14 @@ const STEPS = [
   { name: "19-editor-auth",      url: "/servers/taggart-transcontinental/auth",                          wait: { selector: 'text=/tokens|auth/i', delay: 500 } },
   { name: "20-editor-assets",    url: "/servers/taggart-transcontinental/assets",                        wait: { selector: 'text=/assets|upload/i', delay: 500 } },
   { name: "21-editor-usage",     url: "/servers/taggart-transcontinental/usage",                         wait: { selector: 'text=/metrics|calls|usage/i', delay: 1500 } },
+  // Galt Engine carries the heaviest traffic in the seed, so its usage page
+  // shows the most chart variety + token attribution.
+  { name: "21a-editor-usage-busy", url: "/servers/galt-engine/usage",                                     wait: { selector: 'text=/metrics|calls|usage/i', delay: 1500 } },
 
   // Logs tab — Galt Engine has LOG_LEVEL=DEBUG so the dropdown shows it.
-  // Logs page opens an SSE stream so networkidle would never fire.
-  { name: "22-editor-logs",      url: "/servers/galt-engine/logs",                                       waitUntil: "domcontentloaded", wait: { selector: 'pre', delay: 2400 } },
+  // Logs page opens an SSE stream so networkidle would never fire. Tail can
+  // be very long; cap at viewport to keep the shot scannable.
+  { name: "22-editor-logs",      url: "/servers/galt-engine/logs",                                       fullPage: false, waitUntil: "domcontentloaded", wait: { selector: 'pre', delay: 2400 } },
 
   // Code-mode editor — Wyatt Oil
   { name: "30-editor-source",    url: "/servers/wyatt-oil/source",                                       wait: { selector: '.cm-editor', delay: 1500 } },
@@ -78,7 +86,9 @@ const STEPS = [
   { name: "50-settings",         url: "/settings",                                                       wait: { selector: 'text=/settings|hostname/i', delay: 600 } },
   { name: "51-users",            url: "/users",                                                          wait: { selector: 'text=/users|email/i', delay: 600 } },
   { name: "52-teams",            url: "/teams",                                                          wait: { selector: 'text=/teams|members/i', delay: 600 } },
-  { name: "53-audit",            url: "/audit",                                                          wait: { selector: 'text=/audit|action/i', delay: 800 } },
+  // Audit log can be hundreds of rows long; cap at viewport so the shot
+  // doesn't become a 20k-pixel scroll-roll.
+  { name: "53-audit",            url: "/audit",                                                          fullPage: false, wait: { selector: 'text=/audit|action/i', delay: 800 } },
 ];
 
 async function main() {
@@ -128,7 +138,10 @@ async function captureTheme({ theme, outDir, token }) {
       if (step.prep) await step.prep(page);
       await waitForStep(page, step.wait);
       const out = path.join(outDir, `${step.name}.png`);
-      await page.screenshot({ path: out, fullPage: false });
+      // Per-step override wins. Otherwise fullPage everywhere except when
+      // a `prep` opens a modal (fullPage would tile the dimmed page behind).
+      const useFullPage = step.fullPage ?? (FULL_PAGE && !step.prep);
+      await page.screenshot({ path: out, fullPage: useFullPage });
     } catch (err) {
       console.error(`    ! ${step.name} failed: ${err.message}`);
     }
