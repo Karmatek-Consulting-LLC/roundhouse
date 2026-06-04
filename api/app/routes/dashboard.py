@@ -29,8 +29,10 @@ def _scrape_metrics(name: str) -> dict | None:
     """Pull the running container's /metrics snapshot. Returns None when the
     server is unreachable or hasn't served its first request - callers treat
     that as 'no data' rather than an error."""
+    from app.services.server_service import get_server_service
+
     token = metrics_token_for(name)
-    url = f"http://mcp-{name}:8000/metrics"
+    url = get_server_service().metrics_url(name)
     try:
         with httpx.Client(timeout=2.0) as client:
             resp = client.get(url, headers={"Authorization": f"Bearer {token}"})

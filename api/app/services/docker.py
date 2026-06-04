@@ -22,7 +22,12 @@ logger = logging.getLogger(__name__)
 LABEL_MANAGED = "roundhouse.managed"
 LABEL_SERVER_NAME = "roundhouse.server-name"
 LABEL_TEMPLATE = "roundhouse.template"
+# Records the container port Traefik routes to (8000 for structured servers,
+# 8001 for code-first servers fronted by the platform proxy). Persisted so an
+# env update, which recreates the container, can restore the same routing.
+LABEL_ROUTE_PORT = "roundhouse.route-port"
 CONTAINER_PREFIX = "mcp-"
+DEFAULT_ROUTE_PORT = 8000
 
 
 def _container_name(server_name: str) -> str:
@@ -50,7 +55,7 @@ def _encode_auth(auth: dict[str, str]) -> str:
     ).rstrip(b"=").decode("ascii")
 
 
-def _traefik_labels(server_name: str) -> dict[str, str]:
+def _traefik_labels(server_name: str, route_port: int = DEFAULT_ROUTE_PORT) -> dict[str, str]:
     router = f"mcp-{server_name}"
     entrypoints = get_settings().mcp_traefik_entrypoints
     return {
@@ -58,17 +63,20 @@ def _traefik_labels(server_name: str) -> dict[str, str]:
         f"traefik.http.routers.{router}.rule": f"PathPrefix(`/s/{server_name}`)",
         f"traefik.http.middlewares.{router}-strip.stripprefix.prefixes": f"/s/{server_name}",
         f"traefik.http.routers.{router}.middlewares": f"{router}-strip",
-        f"traefik.http.services.{router}.loadbalancer.server.port": "8000",
+        f"traefik.http.services.{router}.loadbalancer.server.port": str(route_port),
         f"traefik.http.routers.{router}.entrypoints": entrypoints,
     }
 
 
-def _all_labels(server_name: str, template_name: str) -> dict[str, str]:
+def _all_labels(
+    server_name: str, template_name: str, route_port: int = DEFAULT_ROUTE_PORT
+) -> dict[str, str]:
     return {
         LABEL_MANAGED: "true",
         LABEL_SERVER_NAME: server_name,
         LABEL_TEMPLATE: template_name,
-        **_traefik_labels(server_name),
+        LABEL_ROUTE_PORT: str(route_port),
+        **_traefik_labels(server_name, route_port),
     }
 
 
@@ -230,17 +238,18 @@ class DockerClient:
         registry_auth: dict[str, str] | None = None,
         cpu_limit: float | None = None,
         memory_limit_mb: int | None = None,
+        route_port: int = DEFAULT_ROUTE_PORT,
     ) -> dict:
         env_vars = env_vars or {}
         tag = self.build_image(server_name, build_context, registry_prefix, registry_auth)
         if self.swarm_mode():
             return self._create_service(
                 server_name, tag, template_name, env_vars, replicas, registry_auth,
-                cpu_limit=cpu_limit, memory_limit_mb=memory_limit_mb,
+                cpu_limit=cpu_limit, memory_limit_mb=memory_limit_mb, route_port=route_port,
             )
         return self._create_container(
             server_name, tag, template_name, env_vars,
-            cpu_limit=cpu_limit, memory_limit_mb=memory_limit_mb,
+            cpu_limit=cpu_limit, memory_limit_mb=memory_limit_mb, route_port=route_port,
         )
 
     def list_servers(self) -> list[dict]:
@@ -298,9 +307,17 @@ class DockerClient:
         labels = (container.get("Config") or {}).get("Labels") or {}
         template_name = labels.get(LABEL_TEMPLATE, "custom")
         image = (container.get("Config") or {}).get("Image") or container.get("Image", "")
+        # Preserve the routed port across the recreate so a code-first server
+        # keeps pointing Traefik at its proxy (8001), not the backend (8000).
+        try:
+            route_port = int(labels.get(LABEL_ROUTE_PORT) or DEFAULT_ROUTE_PORT)
+        except (TypeError, ValueError):
+            route_port = DEFAULT_ROUTE_PORT
         self._stop_container(server_name)
         self._remove_container(server_name)
-        return self._create_container(server_name, image, template_name, env_vars)
+        return self._create_container(
+            server_name, image, template_name, env_vars, route_port=route_port
+        )
 
     def get_server_logs(self, server_name: str, tail: int = 200) -> str:
         tail = max(1, min(tail, 5000))
@@ -360,9 +377,10 @@ class DockerClient:
         env_vars: dict[str, str],
         cpu_limit: float | None = None,
         memory_limit_mb: int | None = None,
+        route_port: int = DEFAULT_ROUTE_PORT,
     ) -> dict:
         name = _container_name(server_name)
-        labels = _all_labels(server_name, template_name)
+        labels = _all_labels(server_name, template_name, route_port)
         env_list = [f"{k}={v}" for k, v in env_vars.items()]
         logger.info("Creating container %s", name)
         host_config: dict[str, Any] = {
@@ -454,9 +472,10 @@ class DockerClient:
         registry_auth: dict[str, str] | None = None,
         cpu_limit: float | None = None,
         memory_limit_mb: int | None = None,
+        route_port: int = DEFAULT_ROUTE_PORT,
     ) -> dict:
         name = _container_name(server_name)
-        labels = _all_labels(server_name, template_name)
+        labels = _all_labels(server_name, template_name, route_port)
         env_list = [f"{k}={v}" for k, v in env_vars.items()]
         logger.info("Creating swarm service %s (replicas=%d)", name, replicas)
         task_template: dict[str, Any] = {

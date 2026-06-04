@@ -104,6 +104,7 @@ class KubernetesClient:
         registry_auth: dict[str, str] | None = None,
         cpu_limit: float | None = None,
         memory_limit_mb: int | None = None,
+        route_port: int = 8000,
     ) -> dict:
         if not registry_prefix:
             raise DockerError(
@@ -121,8 +122,9 @@ class KubernetesClient:
             replicas=replicas,
             cpu_limit=cpu_limit,
             memory_limit_mb=memory_limit_mb,
+            route_port=route_port,
         )
-        self._apply_service(server_name, template_name)
+        self._apply_service(server_name, template_name, route_port)
         self._apply_middleware(server_name)
         self._apply_ingressroute(server_name)
 
@@ -440,13 +442,18 @@ class KubernetesClient:
         replicas: int,
         cpu_limit: float | None,
         memory_limit_mb: int | None,
+        route_port: int = 8000,
     ) -> None:
         name = _resource_name(server_name)
+        # Code-first pods run two processes: the user's server (8000) and the
+        # platform proxy (route_port). Declare both so the proxy port is the
+        # one the Service targets. dict.fromkeys dedups when they're equal.
+        container_ports = [{"containerPort": p} for p in dict.fromkeys([8000, route_port])]
         container: dict[str, Any] = {
             "name": "mcp",
             "image": tag,
             "imagePullPolicy": "Always",
-            "ports": [{"containerPort": 8000}],
+            "ports": container_ports,
             "env": _env_list(env_vars),
         }
         resources = _container_resources(cpu_limit, memory_limit_mb)
@@ -481,8 +488,13 @@ class KubernetesClient:
         }
         self._create_or_replace("apis/apps/v1", "deployments", name, manifest)
 
-    def _apply_service(self, server_name: str, template_name: str) -> None:
+    def _apply_service(
+        self, server_name: str, template_name: str, route_port: int = 8000
+    ) -> None:
         name = _resource_name(server_name)
+        # Keep the Service port at 8000 (the stable contract the IngressRoute and
+        # the platform's internal McpClient depend on) but aim targetPort at the
+        # routed port, so code-first traffic lands on the proxy.
         manifest = {
             "apiVersion": "v1",
             "kind": "Service",
@@ -494,7 +506,7 @@ class KubernetesClient:
             "spec": {
                 "selector": {"app": name},
                 "ports": [
-                    {"port": 8000, "targetPort": 8000, "protocol": "TCP"}
+                    {"port": 8000, "targetPort": route_port, "protocol": "TCP"}
                 ],
                 "type": "ClusterIP",
             },

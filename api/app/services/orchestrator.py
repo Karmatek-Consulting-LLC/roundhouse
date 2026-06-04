@@ -58,6 +58,7 @@ class Orchestrator(Protocol):
         registry_auth: dict[str, str] | None = None,
         cpu_limit: float | None = None,
         memory_limit_mb: int | None = None,
+        route_port: int = 8000,
     ) -> dict: ...
 
     def list_servers(self) -> list[dict]: ...
