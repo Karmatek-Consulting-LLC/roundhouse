@@ -336,7 +336,7 @@ def usage(
         return {"primitives": [], "tokens": [], "started_ts": 0, "now_ts": 0, "available": False}
 
     token = metrics_token_for(name)
-    url = f"http://mcp-{name}:8000/metrics"
+    url = get_server_service().metrics_url(name)
     try:
         with httpx.Client(timeout=2.0) as client:
             resp = client.get(url, headers={"Authorization": f"Bearer {token}"})

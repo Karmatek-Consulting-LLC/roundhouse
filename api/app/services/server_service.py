@@ -17,7 +17,7 @@ from app.platform_settings import (
     get_setting,
 )
 from app.services import codegen, global_env, server_auth
-from app.services.docker import DockerClient
+from app.services.docker import CONTAINER_PREFIX, DockerClient
 from app.services.spec import ServerSpec
 from app.services.store import ServerStore
 from app.services.template_engine import TemplateEngine
@@ -89,6 +89,21 @@ class ServerService:
         scheme = "https" if get_setting(db, SETTING_EXTERNAL_HTTPS, "") == "true" else "http"
         return f"{scheme}://{hostname}"
 
+    def metrics_url(self, server_name: str) -> str:
+        """Internal URL the platform scrapes for a server's /metrics snapshot.
+
+        Code-first servers expose /metrics on the platform proxy, not their own
+        process. The port to hit differs by backend: Kubernetes reaches servers
+        through a Service on the stable port 8000 (which remaps to the proxy's
+        targetPort internally), while Docker/Swarm hit the container directly and
+        so must target the actual listening port - the proxy port for code-first."""
+        port = codegen.BACKEND_PORT
+        if self.docker.mode() != "kubernetes":
+            spec = self.store.load(server_name)
+            if spec is not None:
+                port = codegen.route_port_for(spec)
+        return f"http://{CONTAINER_PREFIX}{server_name}:{port}/metrics"
+
     # ---- Deploy orchestration ----
 
     def save_spec(self, db: Session, spec: ServerSpec) -> None:
@@ -117,6 +132,7 @@ class ServerService:
             registry_auth=self.registry_auth(db),
             cpu_limit=spec.cpu_limit,
             memory_limit_mb=spec.memory_limit_mb,
+            route_port=codegen.route_port_for(spec),
         )
         server_auth.clear_redeploy_required(db, spec.name)
         return result
