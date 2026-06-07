@@ -81,9 +81,25 @@ def _param_signature(params: list[dict]) -> str:
     return ", ".join([*required, *optional])
 
 
-def _any_primitive_has_scopes(primitives: list[dict]) -> bool:
+# Tool/prompt scopes are enforced dynamically in _PlatformMiddleware (so the
+# same path covers structured, code-first, and remote servers). Resources and
+# resource_templates keep the codegen-baked require_scopes decorator: the
+# middleware identifies a resource by URI, which can't reliably match a
+# *templated* resource's scope rule, and silently down-grading that to the
+# default-allow policy would be a fail-open regression. Decorators stay where
+# middleware keying is unreliable; middleware owns the rest.
+_DECORATED_SCOPE_KINDS = frozenset({"resource", "resource_template"})
+_MIDDLEWARE_SCOPE_KINDS = frozenset({"tool", "prompt"})
+
+
+def _any_decorated_scope(primitives: list[dict]) -> bool:
+    """True if any resource/resource_template carries scopes - the only kinds
+    that still emit a require_scopes decorator (and thus need the import)."""
     return any(
-        isinstance(p, dict) and isinstance(p.get("scopes"), list) and p["scopes"]
+        isinstance(p, dict)
+        and p.get("kind") in _DECORATED_SCOPE_KINDS
+        and isinstance(p.get("scopes"), list)
+        and p["scopes"]
         for p in primitives
     )
 
@@ -125,8 +141,8 @@ def _gen_tool(t: dict, auth_enabled: bool) -> str:
     body = (t.get("code") or "").strip() or default_body
     doc = _py_string(t.get("description") or t.get("name") or "")
     name = t.get("name", "")
-    args = _decorator_args("", _auth_clause(t, auth_enabled))
-    return f"\n@mcp.tool({args})\ndef {name}({sig}) -> {ret_py}:\n    {doc}\n{_indent(body)}\n"
+    # Tool scopes are enforced in _PlatformMiddleware, not via an auth= clause.
+    return f"\n@mcp.tool()\ndef {name}({sig}) -> {ret_py}:\n    {doc}\n{_indent(body)}\n"
 
 
 def _gen_resource(r: dict, auth_enabled: bool) -> str:
@@ -157,8 +173,8 @@ def _gen_prompt(p: dict, auth_enabled: bool) -> str:
     body = (p.get("code") or "").strip() or 'return "Not implemented"'
     doc = _py_string(p.get("description") or p.get("name") or "")
     name = p.get("name", "")
-    args = _decorator_args("", _auth_clause(p, auth_enabled))
-    return f"\n@mcp.prompt({args})\ndef {name}({sig}) -> str:\n    {doc}\n{_indent(body)}\n"
+    # Prompt scopes are enforced in _PlatformMiddleware, not via an auth= clause.
+    return f"\n@mcp.prompt()\ndef {name}({sig}) -> str:\n    {doc}\n{_indent(body)}\n"
 
 
 def _gen_primitive(p: dict, auth_enabled: bool) -> str:
@@ -185,18 +201,31 @@ def _merge_middleware_config(spec: ServerSpec) -> dict[str, dict]:
     """Resolve the per-primitive middleware config map emitted into server.py.
 
     The map always contains a "_default" entry (base defaults overlaid with
-    spec.middleware_defaults). Entries for individual primitives are emitted
-    only when that primitive carries a non-empty `middleware` dict."""
+    spec.middleware_defaults). A per-primitive entry is emitted when that
+    primitive carries a non-empty `middleware` dict and/or (for tool/prompt
+    kinds) assigned `scopes` - the latter become `required_scopes`, which
+    _PlatformMiddleware enforces. Archived primitives (removed upstream) are
+    skipped; they're no longer exposed."""
     base = dict(_MIDDLEWARE_BASE_DEFAULTS)
     if isinstance(spec.middleware_defaults, dict):
         base.update({k: v for k, v in spec.middleware_defaults.items() if isinstance(k, str)})
     out: dict[str, dict] = {"_default": base}
     for p in spec.primitives:
         name = p.get("name")
-        cfg = p.get("middleware")
-        if not isinstance(name, str) or not name or not isinstance(cfg, dict) or not cfg:
+        if not isinstance(name, str) or not name or p.get("archived"):
             continue
-        out[name] = {k: v for k, v in cfg.items() if isinstance(k, str)}
+        entry: dict = {}
+        cfg = p.get("middleware")
+        if isinstance(cfg, dict) and cfg:
+            entry.update({k: v for k, v in cfg.items() if isinstance(k, str)})
+        if p.get("kind") in _MIDDLEWARE_SCOPE_KINDS:
+            scopes = p.get("scopes")
+            if isinstance(scopes, list):
+                clean = [s for s in scopes if isinstance(s, str) and s]
+                if clean:
+                    entry["required_scopes"] = clean
+        if entry:
+            out[name] = entry
     return out
 
 
@@ -277,6 +306,20 @@ class _PlatformMiddleware(_Middleware):
         msg = context.message
         return await self._invoke("prompt", getattr(msg, "name", ""), getattr(msg, "arguments", None), context, call_next)
 
+    async def on_list_tools(self, context, call_next):
+        # Visibility parity with require_scopes: hide tools the caller can't call
+        # (FastMCP's decorator-based list filtering is gone for tools now).
+        tools = await call_next(context)
+        if not _MW_AUTH_ENABLED:
+            return tools
+        return [t for t in tools if _mw_scope_allows("tool", getattr(t, "name", ""))]
+
+    async def on_list_prompts(self, context, call_next):
+        prompts = await call_next(context)
+        if not _MW_AUTH_ENABLED:
+            return prompts
+        return [p for p in prompts if _mw_scope_allows("prompt", getattr(p, "name", ""))]
+
     async def _invoke(self, kind, name, arguments, context, call_next):
         cfg = _mw_config_for(name)
         client_id = _mw_client_id()
@@ -294,6 +337,8 @@ class _PlatformMiddleware(_Middleware):
             except Exception:
                 pass
         try:
+            if not _mw_scope_allows(kind, name):
+                raise _ToolError(f"Not authorized: caller is missing a required scope for {name!r}")
             max_args = cfg.get("max_argument_bytes")
             if isinstance(max_args, int) and max_args > 0 and arguments is not None:
                 try:
@@ -462,6 +507,11 @@ def _gen_middleware(spec: ServerSpec, metrics_token: str) -> tuple[list[str], st
     The body is inserted after the `mcp = FastMCP(...)` line and is followed
     by `mcp.add_middleware(_PlatformMiddleware())` and the /metrics route."""
     config_map = _merge_middleware_config(spec)
+    # Scope enforcement is a no-op unless the server has tokens (StaticTokenVerifier
+    # supplies caller scopes). deny_unlisted controls the default for primitives
+    # with no assigned scope: True = locked (remote), False = open (structured/code).
+    auth_enabled = bool(spec.tokens)
+    deny_unlisted = bool(spec.deny_unlisted)
     imports = [
         "import asyncio as _asyncio",
         "import json as _json",
@@ -509,6 +559,27 @@ def _gen_middleware(spec: ServerSpec, metrics_token: str) -> tuple[list[str], st
         "    except Exception:",
         "        return None",
         "    return getattr(tok, 'client_id', None) if tok is not None else None",
+        "",
+        "_MW_AUTH_ENABLED = " + repr(auth_enabled),
+        "_MW_DENY_UNLISTED = " + repr(deny_unlisted),
+        "",
+        "def _mw_client_scopes():",
+        "    try:",
+        "        tok = _get_access_token()",
+        "    except Exception:",
+        "        return None",
+        "    return list(getattr(tok, 'scopes', None) or []) if tok is not None else None",
+        "",
+        "def _mw_scope_allows(kind, name):",
+        "    # AND semantics, matching fastmcp require_scopes. No tokens -> open.",
+        "    # A primitive with no required_scopes follows _MW_DENY_UNLISTED:",
+        "    # locked (remote) or open (structured/code).",
+        "    if not _MW_AUTH_ENABLED:",
+        "        return True",
+        "    required = (_MIDDLEWARE_CONFIG.get(name) or {}).get('required_scopes')",
+        "    if required:",
+        "        return set(required).issubset(set(_mw_client_scopes() or []))",
+        "    return not _MW_DENY_UNLISTED",
         _METRICS_MODULE_SRC,
         _MIDDLEWARE_CLASS_SRC,
         "mcp.add_middleware(_PlatformMiddleware())",
@@ -522,7 +593,9 @@ def generate_server_py(spec: ServerSpec, *, format_output: bool = True) -> str:
     from app.services.metrics_auth import metrics_token_for
 
     auth_enabled = bool(spec.tokens)
-    any_scoped = auth_enabled and _any_primitive_has_scopes(spec.primitives)
+    # require_scopes is now only emitted for resource/resource_template decorators;
+    # tool/prompt scopes are enforced in _PlatformMiddleware.
+    any_scoped = auth_enabled and _any_decorated_scope(spec.primitives)
 
     primitives_code = "\n".join(_gen_primitive(p, auth_enabled) for p in spec.primitives).strip()
 
@@ -620,48 +693,123 @@ if __name__ == "__main__":
 '''
 
 
-def generate_proxy_py(spec: ServerSpec, *, format_output: bool = True) -> str:
-    """Generate the platform proxy that fronts a code-first server.
+def _remote_run_src() -> str:
+    """`__main__` for a remote proxy: it's the sole process (no child backend),
+    so it just runs on BACKEND_PORT - the orchestrator routes there directly."""
+    return f'''
+if __name__ == "__main__":
+    mcp.run(
+        transport="streamable-http",
+        host="0.0.0.0",
+        port={BACKEND_PORT},
+        stateless_http=True,
+        json_response=True,
+    )
+'''
 
-    The proxy re-exposes the user's MCP server through the SAME middleware that
-    structured servers get (call logging, rate limiting, concurrency caps,
-    /metrics, /healthz) - the only way to apply platform policy to code we don't
-    author. It forwards to the user's server over loopback on BACKEND_PORT."""
-    from app.services.metrics_auth import metrics_token_for
 
-    mw_imports, mw_body = _gen_middleware(spec, metrics_token_for(spec.name))
+def _code_proxy_construct(spec: ServerSpec, auth_clause: str) -> list[str]:
+    """Lines defining `mcp` for a code-first proxy: forward to the user's server
+    over loopback. ProxyClient forwards the caller's context (auth header,
+    sampling, progress) to the backend, which is the existing behavior."""
     backend_url = f"http://127.0.0.1:{BACKEND_PORT}/mcp"
     proxy_name = spec.name + "-proxy"
-
-    lines: list[str] = [
-        '"""Auto-generated platform proxy for a code-first MCP server.',
-        "",
-        f"Fronts the user's server (127.0.0.1:{BACKEND_PORT}) and re-exposes it on",
-        f"port {PROXY_PORT} with platform middleware that code-first servers would",
-        "otherwise bypass. Generated by codegen.generate_proxy_py - do not edit.",
-        '"""',
-        *mw_imports,
-        "",
+    return [
         # Prefer the modern create_proxy API (fastmcp >= 3.3); fall back to the
-        # deprecated FastMCP.as_proxy on older builds. ProxyClient forwards
-        # client context (auth header, sampling, progress) to the backend.
+        # deprecated FastMCP.as_proxy on older builds.
         "try:",
         "    from fastmcp.server import create_proxy as _create_proxy",
         "    from fastmcp.server.providers.proxy import ProxyClient as _ProxyClient",
-        "    mcp = _create_proxy(_ProxyClient("
-        + _py_string(backend_url)
-        + "), name="
-        + _py_string(proxy_name)
-        + ")",
+        "    mcp = _create_proxy(_ProxyClient(" + _py_string(backend_url) + ")"
+        + auth_clause + ", name=" + _py_string(proxy_name) + ")",
         "except Exception:  # noqa: BLE001 - older fastmcp without create_proxy",
         "    from fastmcp import FastMCP as _FastMCP",
-        "    mcp = _FastMCP.as_proxy("
-        + _py_string(backend_url)
-        + ", name="
-        + _py_string(proxy_name)
-        + ")",
+        "    mcp = _FastMCP.as_proxy(" + _py_string(backend_url)
+        + auth_clause + ", name=" + _py_string(proxy_name) + ")",
+    ]
+
+
+def _remote_proxy_construct(spec: ServerSpec, auth_clause: str) -> list[str]:
+    """Lines defining `mcp` for a remote proxy: a streamable-http transport to
+    the upstream URL carrying injected (env-sourced) headers. Incoming-header
+    forwarding is OFF - Roundhouse is the trust boundary, so the upstream only
+    ever receives our credential, never the calling client's token."""
+    header_items = []
+    for h in spec.remote_headers:
+        header = (h.get("header") or "").strip()
+        env = (h.get("env") or "").strip()
+        if header and env:
+            header_items.append(
+                _py_string(header) + ": _os.environ.get(" + _py_string(env) + ', "")'
+            )
+    headers_literal = "{" + ", ".join(header_items) + "}"
+    # FastMCPProxy(client_factory=...) is the explicit-factory path (create_proxy
+    # only takes non-callable targets and would re-wrap the client, re-enabling
+    # header forwarding). The factory builds a ProxyClient per request and then
+    # disables forward_incoming_headers on its transport.
+    return [
+        "from fastmcp.server.providers.proxy import FastMCPProxy as _FastMCPProxy, ProxyClient as _ProxyClient",
+        "from fastmcp.client.transports import StreamableHttpTransport as _StreamableHttpTransport",
+        "",
+        "_REMOTE_URL = " + _py_string((spec.remote_url or "").strip()),
+        "",
+        "def _mk_proxy_client():",
+        "    _t = _StreamableHttpTransport(_REMOTE_URL, headers=" + headers_literal + ")",
+        "    _pc = _ProxyClient(_t)",
+        "    # ProxyClient.__init__ sets forward_incoming_headers=True; force it",
+        "    # off so the caller's Authorization is never relayed to the upstream.",
+        "    try:",
+        "        _t.forward_incoming_headers = False",
+        "    except Exception:",
+        "        pass",
+        "    return _pc",
+        "",
+        "mcp = _FastMCPProxy(client_factory=_mk_proxy_client, name="
+        + _py_string(spec.name) + auth_clause + ")",
+    ]
+
+
+def generate_proxy_py(spec: ServerSpec, *, format_output: bool = True) -> str:
+    """Generate the platform proxy that fronts a server the platform did not
+    author - code-first (loopback to the user's server.py) or remote (an
+    external MCP URL). Either way the proxy re-exposes the upstream through the
+    SAME middleware structured servers get (scope enforcement, call logging,
+    rate limiting, concurrency caps, /metrics, /healthz). Tool/prompt scopes are
+    enforced in middleware; when the server has tokens, a StaticTokenVerifier is
+    attached so the caller's scopes are available to that check."""
+    from app.services.metrics_auth import metrics_token_for
+
+    mw_imports, mw_body = _gen_middleware(spec, metrics_token_for(spec.name))
+    auth_enabled = bool(spec.tokens)
+
+    extra_imports = list(mw_imports)
+    auth_clause = ""
+    if auth_enabled:
+        extra_imports.append(
+            "from fastmcp.server.auth import StaticTokenVerifier as _StaticTokenVerifier"
+        )
+        auth_clause = ", auth=_StaticTokenVerifier(tokens=" + _py_dict(_tokens_map(spec.tokens)) + ")"
+
+    if spec.is_remote_mode():
+        construct = _remote_proxy_construct(spec, auth_clause)
+        supervisor = _remote_run_src()
+        summary = f"Fronts the remote MCP server at {(spec.remote_url or '').strip()!r}"
+    else:
+        construct = _code_proxy_construct(spec, auth_clause)
+        supervisor = _proxy_supervisor_src()
+        summary = f"Fronts the user's server (127.0.0.1:{BACKEND_PORT})"
+
+    lines: list[str] = [
+        '"""Auto-generated platform proxy. Do not edit - codegen rewrites it.',
+        "",
+        summary + " and re-exposes it with platform middleware",
+        "(scope enforcement, logging, rate limits, /metrics, /healthz).",
+        '"""',
+        *extra_imports,
+        "",
+        *construct,
         mw_body,
-        _proxy_supervisor_src(),
+        supervisor,
     ]
     output = "\n".join(lines)
     if format_output:
@@ -707,17 +855,19 @@ def generate_dockerfile(spec: ServerSpec, custom_ca: str | None = None) -> str:
     # even when nothing was uploaded. Roundhouse owns the Dockerfile, so the
     # context is small and self-contained.
     lines.append("COPY . .")
-    # Code-first servers run behind the platform proxy: the proxy listens on
-    # PROXY_PORT (the public/routed port) and supervises the user's server.py
-    # on BACKEND_PORT. Structured servers are a single process on BACKEND_PORT.
-    code_mode = spec.is_code_mode()
-    public_port = PROXY_PORT if code_mode else BACKEND_PORT
-    entry = "proxy.py" if code_mode else "server.py"
+    # Proxied servers (code-first + remote) run proxy.py as the entrypoint:
+    #   - code-first: proxy.py listens on PROXY_PORT and supervises the user's
+    #     server.py on BACKEND_PORT.
+    #   - remote: proxy.py is the sole process, listening on BACKEND_PORT.
+    # Structured servers are a single process (server.py) on BACKEND_PORT.
+    proxied = spec.is_proxied()
+    public_port = route_port_for(spec)
+    entry = "proxy.py" if proxied else "server.py"
     lines.append(f"EXPOSE {public_port}")
     # python's urllib avoids needing curl in the base image. exit 0 on 200,
     # non-zero otherwise; Docker flips the container to unhealthy after the
     # configured retries. Probe the public port so health reflects whatever
-    # actually serves traffic (the proxy in code mode, the server otherwise).
+    # actually serves traffic (the proxy when proxied, the server otherwise).
     lines.append(
         'HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n'
         '  CMD python -c "import urllib.request,sys; '
@@ -732,14 +882,21 @@ def generate_dockerfile(spec: ServerSpec, custom_ca: str | None = None) -> str:
 def write_build_context(spec: ServerSpec, output_dir: Path | str, custom_ca: str | None = None) -> Path:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    server_py = (spec.source or "") if spec.is_code_mode() else generate_server_py(spec)
-    (out / "server.py").write_text(server_py, encoding="utf-8")
+    server_path = out / "server.py"
+    # Remote servers have no server.py - proxy.py is the whole process. Code-first
+    # ships the user's source; structured ships generated code.
+    if spec.is_remote_mode():
+        if server_path.exists():
+            server_path.unlink()
+    else:
+        server_py = (spec.source or "") if spec.is_code_mode() else generate_server_py(spec)
+        server_path.write_text(server_py, encoding="utf-8")
     (out / "Dockerfile").write_text(generate_dockerfile(spec, custom_ca), encoding="utf-8")
-    # Code-first servers get a platform proxy alongside their own server.py so
-    # their tool calls pass through platform middleware. Structured servers have
-    # the middleware baked into server.py and need no proxy - drop any stale one.
+    # Proxied servers (code-first + remote) get a platform proxy so their tool
+    # calls pass through platform middleware. Structured servers bake middleware
+    # into server.py and need no proxy - drop any stale one.
     proxy_path = out / "proxy.py"
-    if spec.is_code_mode():
+    if spec.is_proxied():
         proxy_path.write_text(generate_proxy_py(spec), encoding="utf-8")
     elif proxy_path.exists():
         proxy_path.unlink()
