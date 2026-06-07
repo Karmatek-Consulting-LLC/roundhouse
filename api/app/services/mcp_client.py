@@ -30,7 +30,31 @@ class McpClient:
         )
 
     def call(self, server_name: str, method: str, params: dict | None = None) -> dict:
-        url = self._server_url(server_name)
+        return self._rpc(self._server_url(server_name), method, params, what=f"server {server_name!r}")
+
+    def call_url(
+        self,
+        url: str,
+        method: str,
+        params: dict | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> dict:
+        """JSON-RPC against an arbitrary MCP endpoint with extra headers - used
+        to introspect EXTERNAL (remote-proxy) servers during discovery. Unlike
+        our own servers, an upstream may answer streamable-http with an SSE
+        body rather than json_response=True JSON, so _decode handles both."""
+        return self._rpc(url, method, params, extra_headers=headers, what=url)
+
+    def _rpc(
+        self,
+        url: str,
+        method: str,
+        params: dict | None = None,
+        *,
+        extra_headers: dict[str, str] | None = None,
+        what: str = "",
+    ) -> dict:
         envelope = {
             "jsonrpc": "2.0",
             "id": secrets.randbelow(2**62),
@@ -38,18 +62,15 @@ class McpClient:
             "params": params or {},
         }
         try:
-            resp = self._client.post(url, json=envelope)
+            resp = self._client.post(url, json=envelope, headers=extra_headers or None)
         except httpx.ConnectError as e:
-            raise McpError(f"Cannot reach MCP server '{server_name}' ({e})") from e
+            raise McpError(f"Cannot reach MCP {what} ({e})") from e
         except httpx.HTTPError as e:
             raise McpError(f"MCP request failed: {e}") from e
 
         if resp.status_code >= 400:
-            raise McpError(f"MCP server returned HTTP {resp.status_code}: {resp.text[:300]}")
-        try:
-            decoded = resp.json()
-        except ValueError as e:
-            raise McpError(f"MCP server returned non-JSON response: {resp.text[:200]}") from e
+            raise McpError(f"MCP {what} returned HTTP {resp.status_code}: {resp.text[:300]}")
+        decoded = self._decode(resp)
         if not isinstance(decoded, dict):
             raise McpError("MCP server returned non-dict response")
         if "error" in decoded:
@@ -59,6 +80,29 @@ class McpClient:
         if not isinstance(result, dict):
             raise McpError("MCP response missing result object")
         return result
+
+    @staticmethod
+    def _decode(resp: httpx.Response) -> dict:
+        """Parse a JSON-RPC reply that may arrive as plain JSON (our servers,
+        json_response=True) or as a text/event-stream SSE frame (some upstreams).
+        For SSE, the JSON-RPC message rides the last `data:` line."""
+        ctype = resp.headers.get("content-type", "")
+        if "text/event-stream" in ctype:
+            payload = None
+            for line in resp.text.splitlines():
+                if line.startswith("data:"):
+                    payload = line[len("data:"):].strip()
+            if payload is None:
+                raise McpError("SSE response carried no data frame")
+            import json as _json
+            try:
+                return _json.loads(payload)
+            except ValueError as e:
+                raise McpError(f"SSE data frame was not JSON: {payload[:200]}") from e
+        try:
+            return resp.json()
+        except ValueError as e:
+            raise McpError(f"MCP server returned non-JSON response: {resp.text[:200]}") from e
 
     def list_tools(self, server_name: str) -> list[dict]:
         return self.call(server_name, "tools/list").get("tools", [])
@@ -81,6 +125,36 @@ class McpClient:
 
     def get_prompt(self, server_name: str, prompt_name: str, arguments: dict) -> dict:
         return self.call(server_name, "prompts/get", {"name": prompt_name, "arguments": arguments or {}})
+
+    # ---- External (remote-proxy) introspection ----
+
+    def initialize_url(self, url: str, headers: dict[str, str] | None = None) -> dict:
+        """Best-effort MCP initialize handshake against an external endpoint.
+        Stateless upstreams (Elastic Agent Builder) answer tools/list without it,
+        but stricter servers require it first; harmless either way."""
+        return self.call_url(
+            url,
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "roundhouse-discovery", "version": "1"},
+            },
+            headers=headers,
+        )
+
+    def list_tools_url(self, url: str, headers: dict[str, str] | None = None) -> list[dict]:
+        return self.call_url(url, "tools/list", headers=headers).get("tools", [])
+
+    def list_resources_url(self, url: str, headers: dict[str, str] | None = None) -> list[dict]:
+        result = self.call_url(url, "resources/list", headers=headers)
+        out = list(result.get("resources", []))
+        for t in result.get("resourceTemplates", []) or []:
+            out.append({**t, "isTemplate": True})
+        return out
+
+    def list_prompts_url(self, url: str, headers: dict[str, str] | None = None) -> list[dict]:
+        return self.call_url(url, "prompts/list", headers=headers).get("prompts", [])
 
     @staticmethod
     def _server_url(server_name: str) -> str:
