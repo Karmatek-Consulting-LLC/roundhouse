@@ -69,6 +69,31 @@ class ServerService:
         raw = (get_setting(db, SETTING_CUSTOM_CA_CERT, "") or "").strip()
         return raw or None
 
+    def resolve_remote_headers(self, db: Session, spec: ServerSpec) -> dict[str, str]:
+        """Map a remote server's outbound header definitions to their decrypted
+        values. The header name (e.g. "Authorization") pairs with the env var
+        that holds its secret value; effective_env does the decryption. Headers
+        whose env var is unset are dropped (discovery will then 401 visibly)."""
+        if not spec.is_remote_mode() or not spec.remote_headers:
+            return {}
+        env = self.effective_env(db, spec)
+        out: dict[str, str] = {}
+        for h in spec.remote_headers:
+            header = (h.get("header") or "").strip()
+            env_name = (h.get("env") or "").strip()
+            if header and env_name and env.get(env_name):
+                out[header] = env[env_name]
+        return out
+
+    def discover_primitives(self, db: Session, spec: ServerSpec) -> list[dict]:
+        """Introspect a proxied server (code-first or remote) and return its
+        primitives reconciled into the existing overlay. Caller persists."""
+        from app.services import discovery
+        from app.services.mcp_client import get_mcp_client
+
+        headers = self.resolve_remote_headers(db, spec)
+        return discovery.discover(get_mcp_client(), spec, remote_headers=headers)
+
     def registry_prefix(self, db: Session) -> str | None:
         raw = (get_setting(db, SETTING_DOCKER_REGISTRY, "") or "").strip()
         return raw.rstrip("/") if raw else None
