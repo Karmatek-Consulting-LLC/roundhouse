@@ -21,10 +21,12 @@ from app.services.git_manifest import parse_manifest
 from app.services.server_service import get_server_service
 from app.services.spec import (
     MODE_CODE,
+    MODE_REMOTE,
     MODE_STRUCTURED,
     EnvVar,
     ServerSpec,
     normalize_env_imports,
+    normalize_env_name,
 )
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
@@ -177,6 +179,11 @@ def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
         "memory_limit_mb": spec.memory_limit_mb if spec else None,
         "git_url": spec.git_url if spec else None,
         "git_ref": spec.git_ref if spec else None,
+        # Remote-proxy config (secret header values are never echoed - only the
+        # header->env mapping, mirroring how secret env_vars are masked above).
+        "remote_url": spec.remote_url if spec else None,
+        "remote_headers": spec.remote_headers if spec else [],
+        "deny_unlisted": spec.deny_unlisted if spec else False,
     }
 
 
@@ -354,14 +361,44 @@ def usage(
 
 # ---- Create ----
 
+class RemoteHeaderIn(BaseModel):
+    # An outbound header sent to the upstream MCP server. `value` is the secret
+    # credential (e.g. "ApiKey <base64>"); it's stored encrypted as an env var
+    # and never echoed back.
+    header: str
+    value: str
+
+
 class CreateServerIn(BaseModel):
     name: str
     description: str | None = ""
     template: str | None = None
     config: dict[str, Any] = {}
     replicas: int | None = None
-    mode: Literal["structured", "code"] = MODE_STRUCTURED
+    mode: Literal["structured", "code", "remote"] = MODE_STRUCTURED
     source: str | None = None
+    # Remote-proxy fields (mode == "remote").
+    remote_url: str | None = None
+    remote_headers: list[RemoteHeaderIn] = []
+
+
+def _apply_remote_headers(spec: ServerSpec, headers: list[RemoteHeaderIn]) -> None:
+    """Stash each outbound header's secret value as an encrypted env var and
+    record the header->env mapping on the spec. The generated proxy reads the
+    value from os.environ at runtime; the plaintext never touches the spec, the
+    image, or any API response."""
+    mapping: list[dict] = []
+    for h in headers:
+        header = (h.header or "").strip()
+        value = h.value or ""
+        if not header or not value.strip():
+            continue
+        env_name = "RH_REMOTE_" + normalize_env_name(header)
+        # Replace any prior row for this env name (re-create / edit).
+        spec.env_vars = [ev for ev in spec.env_vars if ev.name != env_name]
+        spec.env_vars.append(EnvVar(name=env_name, value=_encrypt_env(value), secret=True))
+        mapping.append({"header": header, "env": env_name})
+    spec.remote_headers = mapping
 
 
 @router.post("", status_code=201)
@@ -385,6 +422,15 @@ def store(
             raise HTTPException(
                 status_code=422,
                 detail="Cannot specify both a template and code-mode source",
+            )
+    if payload.mode == MODE_REMOTE:
+        if not (payload.remote_url and payload.remote_url.strip()):
+            raise HTTPException(status_code=422, detail='remote_url is required when mode is "remote"')
+        if not payload.remote_url.strip().startswith(("http://", "https://")):
+            raise HTTPException(status_code=422, detail="remote_url must be an http(s) URL")
+        if payload.template:
+            raise HTTPException(
+                status_code=422, detail="Cannot specify both a template and a remote URL"
             )
 
     service = get_server_service()
@@ -413,7 +459,20 @@ def store(
             source=(payload.source if payload.mode == MODE_CODE else None),
         )
 
-        if payload.template:
+        if payload.mode == MODE_REMOTE:
+            spec.remote_url = payload.remote_url.strip()
+            spec.deny_unlisted = True  # remote defaults to locked-until-granted
+            _apply_remote_headers(spec, payload.remote_headers)
+            service.store.save(spec)
+            # Discover the upstream toolset before the first deploy so the nav
+            # populates immediately. Best-effort: a transient upstream/credential
+            # problem shouldn't block creation - the operator can Rediscover.
+            try:
+                spec.primitives = service.discover_primitives(db, spec)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Initial discovery failed for remote '%s': %s", name, e)
+            result = service.build_and_deploy(db, spec)
+        elif payload.template:
             tmpl = service.templates.get_template(payload.template)
             if tmpl is None:
                 raise HTTPException(
@@ -523,6 +582,34 @@ def redeploy(
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to redeploy '%s': %s", name, e)
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/{name}/rediscover")
+def rediscover(
+    name: str, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    """Re-introspect a proxied server (code-first or remote) and reconcile its
+    primitives: new tools added, removed tools archived, assigned scopes kept.
+    Flags a redeploy so the regenerated proxy picks up the new scope config.
+    Remote servers can be rediscovered any time (the API reaches the upstream
+    directly); code-first servers must be deployed and running first."""
+    _assert_access(db, user, name)
+    service = get_server_service()
+    spec = _ensure_spec(db, name)
+    if not spec.is_proxied():
+        raise HTTPException(
+            status_code=409,
+            detail="Rediscovery only applies to code-first or remote servers.",
+        )
+    try:
+        spec.primitives = service.discover_primitives(db, spec)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Discovery failed: {e}") from e
+    service.save_spec(db, spec)
+    audit_record(db, user, "server.rediscover", "server", name, {
+        "primitive_count": len(spec.primitives),
+    })
+    return _to_response(db, _docker_snapshot(name), spec)
 
 
 # ---- Export / Import ----
@@ -1133,14 +1220,23 @@ def update_primitive(
     _assert_access(db, user, name)
     _assert_scopes_exist(db, name, payload.primitive.scopes or [])
     spec = _ensure_spec(db, name)
-    _assert_structured(spec, "update primitives")
 
     idx = next(
         (i for i, p in enumerate(spec.primitives) if p.get("name") == prim_name), None
     )
     if idx is None:
         raise HTTPException(status_code=404, detail=f"Primitive '{prim_name}' not found")
-    spec.primitives[idx] = _primitive_to_dict(payload.primitive)
+    if spec.is_proxied():
+        # Discovered primitives are an overlay: their schema comes from the
+        # upstream and is read-only here. Only operator-assigned scopes (and
+        # optional middleware) are editable - never overwrite the discovered body.
+        existing = spec.primitives[idx]
+        existing["scopes"] = [s for s in (payload.primitive.scopes or []) if isinstance(s, str)][:128]
+        if payload.primitive.middleware is not None:
+            existing["middleware"] = payload.primitive.middleware
+    else:
+        _assert_structured(spec, "update primitives")
+        spec.primitives[idx] = _primitive_to_dict(payload.primitive)
     return _save_and_respond(db, spec)
 
 
