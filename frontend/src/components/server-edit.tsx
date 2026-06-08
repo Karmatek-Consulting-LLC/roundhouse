@@ -34,6 +34,7 @@ import {
   FileCode,
   FileText,
   Files,
+  Globe,
   KeyRound,
   Loader2,
   Package,
@@ -74,7 +75,8 @@ type Selection =
   | { kind: "assets" }
   | { kind: "usage" }
   | { kind: "logs" }
-  | { kind: "source" };
+  | { kind: "source" }
+  | { kind: "remote" };
 
 function parseSelection(path: string): Selection {
   // Empty path defaults to overview - that's the editor's home base.
@@ -93,6 +95,7 @@ function parseSelection(path: string): Selection {
   if (path === "usage") return { kind: "usage" };
   if (path === "logs") return { kind: "logs" };
   if (path === "source") return { kind: "source" };
+  if (path === "remote") return { kind: "remote" };
   return { kind: "overview" };
 }
 
@@ -141,6 +144,9 @@ function RightRail({ serverName, server, selection, onSaved, onDeleted, gotoPrim
   if (selection.kind === "source") {
     return <SourceRail serverName={serverName} server={server} onSaved={onSaved} />;
   }
+  if (selection.kind === "remote") {
+    return <RemoteRail serverName={serverName} server={server} onSaved={onSaved} />;
+  }
   if (selection.kind === "primitive-new") {
     return (
       <>
@@ -181,6 +187,7 @@ function RightRail({ serverName, server, selection, onSaved, onDeleted, gotoPrim
             layout="panel"
             serverRunning={server.status === "running"}
             redeployPending={!!server.redeploy_required_at}
+            readOnlySchema={!!prim.discovered}
             onSaved={onSaved}
           />
         </div>
@@ -1464,16 +1471,123 @@ function SourceEditor({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
+// ---------------- Rediscover + Remote rail ----------------
+
+/** Re-introspects a proxied server's toolset and refreshes on success. */
+function RediscoverButton({ serverName, onDone }: { serverName: string; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <div className="px-3 mb-3">
+      <Button
+        size="sm"
+        variant="outline"
+        className="w-full justify-start"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setErr(null);
+          try {
+            await api.rediscoverServer(serverName);
+            onDone();
+          } catch (e) {
+            setErr(e instanceof Error ? e.message : "Rediscovery failed");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <RefreshCw className={`mr-1 h-3 w-3 ${busy ? "animate-spin" : ""}`} />
+        {busy ? "Rediscovering…" : "Rediscover"}
+      </Button>
+      {err && <p className="mt-1 text-[11px] text-destructive">{err}</p>}
+    </div>
+  );
+}
+
+interface RemoteRailProps {
+  serverName: string;
+  server: Server;
+  onSaved: () => void;
+}
+
+/** Read-only view of a remote server's upstream config + access policy, with a
+ * Rediscover action. Secret header values are never shown. */
+function RemoteRail({ serverName, server, onSaved }: RemoteRailProps) {
+  const headers = server.remote_headers ?? [];
+  return (
+    <>
+      <RailHeader>Upstream</RailHeader>
+      <div className="max-w-2xl space-y-5">
+        <div className="grid gap-1">
+          <Label>MCP URL</Label>
+          <code className="break-all rounded bg-muted px-2 py-1 text-xs font-mono">
+            {server.remote_url ?? "—"}
+          </code>
+        </div>
+
+        <div className="grid gap-1">
+          <Label>Outbound headers</Label>
+          {headers.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No outbound headers configured.</p>
+          ) : (
+            <ul className="space-y-1 text-xs font-mono">
+              {headers.map((h) => (
+                <li key={h.env} className="rounded bg-muted px-2 py-1">
+                  {h.header}{" "}
+                  <span className="text-muted-foreground">{`→ $${h.env} (encrypted)`}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Secret values are stored encrypted and never displayed. To rotate a credential, update
+            its env var under <span className="font-medium">Env vars</span>, then redeploy. The
+            caller's own token is never forwarded to the upstream.
+          </p>
+        </div>
+
+        <div className="grid gap-1">
+          <Label>Access policy</Label>
+          <p className="text-xs text-muted-foreground">
+            {server.deny_unlisted
+              ? "Default-deny — discovered tools are locked until you assign a scope (create scopes under Auth, then assign per tool)."
+              : "Default-allow — tools with no assigned scope are callable by any valid token."}
+          </p>
+        </div>
+
+        <div className="grid gap-1">
+          <Label>Toolset</Label>
+          <p className="text-xs text-muted-foreground">
+            {(server.primitives ?? []).length} discovered primitive(s). Rediscover after the
+            upstream's tools change.
+          </p>
+          <div className="-mx-3">
+            <RediscoverButton serverName={serverName} onDone={onSaved} />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ---------------- Left nav ----------------
 
 interface LeftNavProps {
   server: Server;
   selection: Selection;
   onSelect: (path: string) => void;
+  /** Refresh after a Rediscover so the new toolset renders. */
+  onMutated: () => void;
 }
 
-function LeftNav({ server, selection, onSelect }: LeftNavProps) {
+function LeftNav({ server, selection, onSelect, onMutated }: LeftNavProps) {
   const isCodeMode = server.mode === "code";
+  const isRemote = server.mode === "remote";
+  // Proxied = the platform fronts a server it didn't author (code or remote):
+  // primitives are DISCOVERED (read-only schema, scope-only edits) rather than
+  // authored in the UI.
+  const isProxied = isCodeMode || isRemote;
 
   // Group primitives by their display group.
   const groups = useMemo(() => {
@@ -1489,6 +1603,34 @@ function LeftNav({ server, selection, onSelect }: LeftNavProps) {
     return out;
   }, [server.primitives]);
 
+  // Primitive groups render identically for authored (structured) and
+  // discovered (proxied) servers; archived (vanished-upstream) entries are
+  // shown struck-through so an operator can see what disappeared.
+  const groupsNode = groupOrder.map((group) => {
+    const items = groups.get(group) ?? [];
+    if (items.length === 0) return null;
+    return (
+      <div key={group} className="mb-3 border-t pt-3">
+        <NavHeading>{group}</NavHeading>
+        {items.map((p) => (
+          <NavItem
+            key={`${p.kind}:${p.name}`}
+            active={selection.kind === "primitive" && selection.name === p.name}
+            onClick={() => onSelect(`primitives/${encodeURIComponent(p.name)}`)}
+          >
+            <span className={`mr-2 inline-block h-2 w-2 rounded-full ${kindDotColor[p.kind]}`} />
+            <span className={`font-mono text-xs ${p.archived ? "text-muted-foreground line-through" : ""}`}>
+              {p.name}
+            </span>
+            {p.archived && (
+              <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
+            )}
+          </NavItem>
+        ))}
+      </div>
+    );
+  });
+
   return (
     <nav className="flex flex-col py-3">
       <div className="mb-3">
@@ -1501,40 +1643,37 @@ function LeftNav({ server, selection, onSelect }: LeftNavProps) {
         </NavItem>
       </div>
 
-      {isCodeMode ? (
-        // Code-first mode: single Source entry, no primitive list (those come from the live server).
-        <div className="border-t pt-3 mb-3">
-          <NavHeading>Source</NavHeading>
-          <NavItem
-            icon={<FileCode className="h-3.5 w-3.5" />}
-            active={selection.kind === "source"}
-            onClick={() => onSelect("source")}
-          >
-            server.py
-          </NavItem>
-        </div>
+      {isProxied ? (
+        // Code-first + remote: primitives are DISCOVERED from the live server,
+        // listed read-only with a Rediscover action. Code-first also keeps a
+        // server.py source entry.
+        <>
+          {groupsNode}
+          {(server.primitives ?? []).length === 0 && (
+            <div className="mb-3 border-t px-3 pt-3 text-xs text-muted-foreground">
+              No primitives discovered yet.{" "}
+              {isRemote
+                ? "Confirm the upstream URL/credential, then Rediscover."
+                : "Deploy the server, then Rediscover."}
+            </div>
+          )}
+          <RediscoverButton serverName={server.name} onDone={onMutated} />
+          {isCodeMode && (
+            <div className="mb-3 border-t pt-3">
+              <NavHeading>Source</NavHeading>
+              <NavItem
+                icon={<FileCode className="h-3.5 w-3.5" />}
+                active={selection.kind === "source"}
+                onClick={() => onSelect("source")}
+              >
+                server.py
+              </NavItem>
+            </div>
+          )}
+        </>
       ) : (
         <>
-          {groupOrder.map((group) => {
-            const items = groups.get(group) ?? [];
-            if (items.length === 0) return null;
-            return (
-              <div key={group} className="mb-3 border-t pt-3">
-                <NavHeading>{group}</NavHeading>
-                {items.map((p) => (
-                  <NavItem
-                    key={`${p.kind}:${p.name}`}
-                    active={selection.kind === "primitive" && selection.name === p.name}
-                    onClick={() => onSelect(`primitives/${encodeURIComponent(p.name)}`)}
-                  >
-                    <span className={`mr-2 inline-block h-2 w-2 rounded-full ${kindDotColor[p.kind]}`} />
-                    <span className="font-mono text-xs">{p.name}</span>
-                  </NavItem>
-                ))}
-              </div>
-            );
-          })}
-
+          {groupsNode}
           <div className="px-3 mb-3">
             <Button
               size="sm"
@@ -1550,7 +1689,16 @@ function LeftNav({ server, selection, onSelect }: LeftNavProps) {
 
       <div className="border-t pt-3">
         <NavHeading>Configuration</NavHeading>
-        {!isCodeMode && (
+        {isRemote && (
+          <NavItem
+            icon={<Globe className="h-3.5 w-3.5" />}
+            active={selection.kind === "remote"}
+            onClick={() => onSelect("remote")}
+          >
+            Upstream
+          </NavItem>
+        )}
+        {!isProxied && (
           <NavItem
             icon={<FileCode className="h-3.5 w-3.5" />}
             active={selection.kind === "imports"}
@@ -1559,20 +1707,24 @@ function LeftNav({ server, selection, onSelect }: LeftNavProps) {
             Imports &amp; globals
           </NavItem>
         )}
-        <NavItem
-          icon={<Package className="h-3.5 w-3.5" />}
-          active={selection.kind === "packages"}
-          onClick={() => onSelect("packages")}
-        >
-          PyPI packages
-        </NavItem>
-        <NavItem
-          icon={<Boxes className="h-3.5 w-3.5" />}
-          active={selection.kind === "apt-packages"}
-          onClick={() => onSelect("apt-packages")}
-        >
-          OS packages
-        </NavItem>
+        {!isRemote && (
+          <>
+            <NavItem
+              icon={<Package className="h-3.5 w-3.5" />}
+              active={selection.kind === "packages"}
+              onClick={() => onSelect("packages")}
+            >
+              PyPI packages
+            </NavItem>
+            <NavItem
+              icon={<Boxes className="h-3.5 w-3.5" />}
+              active={selection.kind === "apt-packages"}
+              onClick={() => onSelect("apt-packages")}
+            >
+              OS packages
+            </NavItem>
+          </>
+        )}
         <NavItem
           icon={<Variable className="h-3.5 w-3.5" />}
           active={selection.kind === "env"}
@@ -1738,6 +1890,7 @@ export function ServerEdit({ serverName }: ServerEditProps) {
             server={server}
             selection={selection}
             onSelect={goto}
+            onMutated={refresh}
           />
         </aside>
         <main className="px-6 py-4 text-sm min-w-0">

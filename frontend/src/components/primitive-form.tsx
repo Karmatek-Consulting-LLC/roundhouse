@@ -32,6 +32,9 @@ interface PrimitiveFormProps {
   serverRunning?: boolean;
   /** When true, show a "testing last deploy" warning next to the Run button. */
   redeployPending?: boolean;
+  /** Discovered (proxied) primitive: the schema is owned by the upstream and is
+   * read-only here; only scopes/limits are editable. */
+  readOnlySchema?: boolean;
 }
 
 const EMPTY_PARAM: ToolParameter = {
@@ -55,6 +58,7 @@ export function PrimitiveForm({
   layout = "dialog",
   serverRunning = false,
   redeployPending = false,
+  readOnlySchema = false,
 }: PrimitiveFormProps) {
   const isEdit = !!existing;
   const { resolvedTheme } = useTheme();
@@ -156,7 +160,18 @@ export function PrimitiveForm({
   );
   const [snapshot, setSnapshot] = useState<string | null>(savedSnapshot);
   const current = JSON.stringify(buildPrimitive());
-  const dirty = snapshot === null ? !!name : current !== snapshot;
+  // For discovered primitives only scopes/limits are editable, so base "dirty"
+  // on those alone (the schema fields are fixed and would otherwise never match).
+  const dirty = readOnlySchema
+    ? JSON.stringify([scopes, rateLimitRpm, maxConcurrent]) !==
+      JSON.stringify([
+        existing?.scopes ?? [],
+        existing?.middleware?.rate_limit_rpm != null ? String(existing.middleware.rate_limit_rpm) : "",
+        existing?.middleware?.max_concurrent != null ? String(existing.middleware.max_concurrent) : "",
+      ])
+    : snapshot === null
+      ? !!name
+      : current !== snapshot;
 
   function resetFields() {
     if (!existing) return;
@@ -210,6 +225,13 @@ export function PrimitiveForm({
   return (
     <div className="flex flex-col">
       <div className="grid gap-4 py-4">
+        {readOnlySchema && (
+          <div className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            Discovered from the upstream server — its schema is read-only here. Assign{" "}
+            <strong>scopes</strong> and per-tool limits below to control access; changes take effect
+            on the next redeploy.
+          </div>
+        )}
         {!isEdit && (
           <div className="grid gap-2">
             <Label>Type</Label>
@@ -244,13 +266,14 @@ export function PrimitiveForm({
             className="min-h-[100px]"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={readOnlySchema}
           />
         </div>
 
         {kind === "tool" && (
           <div className="grid gap-2">
             <Label>Return type</Label>
-            <Select value={returnType} onValueChange={(v) => setReturnType(v as "str" | "dict")}>
+            <Select value={returnType} onValueChange={(v) => setReturnType(v as "str" | "dict")} disabled={readOnlySchema}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="str">Text (str)</SelectItem>
@@ -268,6 +291,7 @@ export function PrimitiveForm({
                 placeholder={kind === "resource_template" ? "users://{user_id}/profile" : "config://app-settings"}
                 value={uri}
                 onChange={(e) => setUri(e.target.value)}
+                disabled={readOnlySchema}
               />
             </div>
             <div className="grid gap-2">
@@ -276,6 +300,7 @@ export function PrimitiveForm({
                 placeholder="text/plain"
                 value={mimeType}
                 onChange={(e) => setMimeType(e.target.value)}
+                disabled={readOnlySchema}
               />
             </div>
           </div>
@@ -285,20 +310,22 @@ export function PrimitiveForm({
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
               <Label>Parameters</Label>
-              <Button variant="outline" size="sm" onClick={addParam}>
-                <Plus className="mr-1 h-3 w-3" /> Add
-              </Button>
+              {!readOnlySchema && (
+                <Button variant="outline" size="sm" onClick={addParam}>
+                  <Plus className="mr-1 h-3 w-3" /> Add
+                </Button>
+              )}
             </div>
             {params.map((p, idx) => (
               <div key={idx} className="space-y-2 rounded-md border p-3">
                 <div className="flex items-end gap-2">
                   <div className="flex-1">
                     <Label className="text-xs text-muted-foreground">Name</Label>
-                    <Input value={p.name} onChange={(e) => updateParam(idx, "name", e.target.value)} />
+                    <Input value={p.name} onChange={(e) => updateParam(idx, "name", e.target.value)} disabled={readOnlySchema} />
                   </div>
                   <div className="w-[100px]">
                     <Label className="text-xs text-muted-foreground">Type</Label>
-                    <Select value={p.type} onValueChange={(v) => updateParam(idx, "type", v)}>
+                    <Select value={p.type} onValueChange={(v) => updateParam(idx, "type", v)} disabled={readOnlySchema}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="str">str</SelectItem>
@@ -310,9 +337,11 @@ export function PrimitiveForm({
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => removeParam(idx)}>
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
+                  {!readOnlySchema && (
+                    <Button variant="ghost" size="icon" onClick={() => removeParam(idx)}>
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -320,6 +349,7 @@ export function PrimitiveForm({
                     <Input
                       value={p.description}
                       onChange={(e) => updateParam(idx, "description", e.target.value)}
+                      disabled={readOnlySchema}
                     />
                   </div>
                   <div>
@@ -334,6 +364,7 @@ export function PrimitiveForm({
                           required: val === "",
                         });
                       }}
+                      disabled={readOnlySchema}
                     />
                   </div>
                 </div>
@@ -342,29 +373,31 @@ export function PrimitiveForm({
           </div>
         )}
 
-        <div className="grid gap-2">
-          <Label>Python Code</Label>
-          <p className="text-xs text-muted-foreground">
-            Function body only - parameters are defined above.
-          </p>
-          <div className="rounded-md border overflow-hidden">
-            <CodeMirror
-              value={code}
-              onChange={setCode}
-              theme={resolvedTheme}
-              extensions={[python()]}
-              minHeight={codeMinHeight}
-              basicSetup={{
-                lineNumbers: true,
-                foldGutter: false,
-                highlightActiveLine: true,
-                indentOnInput: true,
-                bracketMatching: true,
-                autocompletion: true,
-              }}
-            />
+        {!readOnlySchema && (
+          <div className="grid gap-2">
+            <Label>Python Code</Label>
+            <p className="text-xs text-muted-foreground">
+              Function body only - parameters are defined above.
+            </p>
+            <div className="rounded-md border overflow-hidden">
+              <CodeMirror
+                value={code}
+                onChange={setCode}
+                theme={resolvedTheme}
+                extensions={[python()]}
+                minHeight={codeMinHeight}
+                basicSetup={{
+                  lineNumbers: true,
+                  foldGutter: false,
+                  highlightActiveLine: true,
+                  indentOnInput: true,
+                  bracketMatching: true,
+                  autocompletion: true,
+                }}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="grid gap-2">
           <Label>Required scopes</Label>
