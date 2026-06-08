@@ -69,6 +69,7 @@ jobs:
       PLATFORM: linux/amd64
       REGISTRY_HOST: ${{ vars.REGISTRY_HOST }}
       REGISTRY_NAMESPACE: ${{ vars.REGISTRY_NAMESPACE }}
+      PUBLIC_HOSTNAME: ${{ vars.PUBLIC_HOSTNAME }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
