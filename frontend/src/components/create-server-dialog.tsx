@@ -23,7 +23,12 @@ interface CreateServerDialogProps {
   onCreated: () => void;
 }
 
-type CreateMethod = "structured" | "code" | "git" | "import";
+type CreateMethod = "structured" | "code" | "remote" | "git" | "import";
+
+interface RemoteHeaderRow {
+  header: string;
+  value: string;
+}
 
 const CODE_MODE_STARTER = `from fastmcp import FastMCP
 
@@ -58,6 +63,12 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
   // Code-first
   const [source, setSource] = useState(CODE_MODE_STARTER);
 
+  // Remote proxy
+  const [remoteUrl, setRemoteUrl] = useState("");
+  const [remoteHeaders, setRemoteHeaders] = useState<RemoteHeaderRow[]>([
+    { header: "Authorization", value: "" },
+  ]);
+
   // Git deploy
   const [gitUrl, setGitUrl] = useState("");
   const [gitRef, setGitRef] = useState("");
@@ -91,6 +102,8 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
     setDescription("");
     setReplicas("");
     setSource(CODE_MODE_STARTER);
+    setRemoteUrl("");
+    setRemoteHeaders([{ header: "Authorization", value: "" }]);
     setGitUrl("");
     setGitRef("");
     setImportJson("");
@@ -122,6 +135,17 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
           source,
           ...(rep !== undefined ? { replicas: rep } : {}),
         });
+      } else if (method === "remote") {
+        await api.createServer({
+          name,
+          description,
+          mode: "remote",
+          remote_url: remoteUrl.trim(),
+          remote_headers: remoteHeaders
+            .filter((h) => h.header.trim() && h.value.trim())
+            .map((h) => ({ header: h.header.trim(), value: h.value })),
+          ...(rep !== undefined ? { replicas: rep } : {}),
+        });
       } else if (method === "git") {
         await api.deployFromGit({
           name,
@@ -142,9 +166,11 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
           ...(name ? { name_override: name } : {}),
         });
       }
-      // A git import lands as not_deployed; take the operator straight to the
-      // editor to fill in env vars and deploy.
-      const goToEditor = method === "git" ? name : null;
+      // A git import lands as not_deployed; a remote server lands deployed with
+      // its toolset discovered but every tool locked (default-deny). Either way,
+      // take the operator straight to the editor - to fill env + deploy (git) or
+      // to assign scopes to the discovered tools (remote).
+      const goToEditor = method === "git" || method === "remote" ? name : null;
       setOpen(false);
       reset();
       onCreated();
@@ -160,12 +186,14 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
     creating ||
     (method === "structured" && !name) ||
     (method === "code" && (!name || !source.trim())) ||
+    (method === "remote" && (!name || !remoteUrl.trim())) ||
     (method === "git" && (!name || !gitUrl.trim())) ||
     (method === "import" && !importJson.trim());
 
   const subtitle = {
     structured: "Create an empty server, then add tools, resources, and prompts.",
     code: 'Paste a full FastMCP server.py - the platform handles Docker, Traefik, and env.',
+    remote: "Proxy an external MCP server. Roundhouse discovers its tools and layers your access control, metrics, and logging.",
     git: "Clone a git repo containing server.py. It imports unconfigured — set env vars, then deploy.",
     import: "Restore a server from a previously exported JSON spec.",
   }[method];
@@ -190,9 +218,10 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
         </DialogHeader>
 
         <Tabs value={method} onValueChange={(v) => setMethod(v as CreateMethod)}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="structured">Structured</TabsTrigger>
             <TabsTrigger value="code">Code-first</TabsTrigger>
+            <TabsTrigger value="remote">Remote</TabsTrigger>
             <TabsTrigger value="git">From Git</TabsTrigger>
             <TabsTrigger value="import">Import</TabsTrigger>
           </TabsList>
@@ -251,7 +280,7 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
             </div>
           )}
 
-          {(method === "structured" || method === "code" || method === "git") && (
+          {(method === "structured" || method === "code" || method === "remote" || method === "git") && (
             <div className="grid gap-2">
               <Label htmlFor="server-desc">Description</Label>
               <p className="text-xs text-muted-foreground">
@@ -287,6 +316,81 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
                 />
               </div>
             </div>
+          )}
+
+          {method === "remote" && (
+            <>
+              <div className="grid gap-2">
+                <Label htmlFor="remote-url">Upstream MCP URL</Label>
+                <p className="text-xs text-muted-foreground">
+                  The remote server's streamable-HTTP endpoint, e.g.{" "}
+                  <code>https://kibana.example/api/agent_builder/mcp</code>. Roundhouse
+                  discovers its tools on create; every tool starts locked until you grant
+                  a scope.
+                </p>
+                <Input
+                  id="remote-url"
+                  placeholder="https://host/mcp"
+                  value={remoteUrl}
+                  onChange={(e) => setRemoteUrl(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Auth / request headers</Label>
+                <p className="text-xs text-muted-foreground">
+                  Sent to the upstream on every call (e.g. <code>Authorization</code> ={" "}
+                  <code>ApiKey &lt;key&gt;</code>). Values are stored encrypted and never
+                  shown again. The caller's own token is never forwarded upstream.
+                </p>
+                {remoteHeaders.map((row, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Input
+                      className="w-1/3"
+                      placeholder="Header"
+                      value={row.header}
+                      onChange={(e) =>
+                        setRemoteHeaders((rows) =>
+                          rows.map((r, j) => (j === i ? { ...r, header: e.target.value } : r)),
+                        )
+                      }
+                    />
+                    <Input
+                      className="flex-1"
+                      type="password"
+                      placeholder="Value (secret)"
+                      value={row.value}
+                      onChange={(e) =>
+                        setRemoteHeaders((rows) =>
+                          rows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)),
+                        )
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={remoteHeaders.length === 1}
+                      onClick={() =>
+                        setRemoteHeaders((rows) => rows.filter((_, j) => j !== i))
+                      }
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="justify-self-start"
+                  onClick={() =>
+                    setRemoteHeaders((rows) => [...rows, { header: "", value: "" }])
+                  }
+                >
+                  + Add header
+                </Button>
+              </div>
+            </>
           )}
 
           {method === "git" && (

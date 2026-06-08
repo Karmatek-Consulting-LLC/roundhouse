@@ -28,6 +28,11 @@ export interface ToolPrimitive {
   /** Scope names required to invoke. Empty/absent = no scope check (token-only). */
   scopes?: string[];
   middleware?: PrimitiveMiddleware;
+  /** Discovered via proxy introspection (code/remote); its schema is read-only
+   * and only scopes are operator-editable. Absent on authored (structured). */
+  discovered?: boolean;
+  /** Previously discovered but no longer present upstream (kept, not deleted). */
+  archived?: boolean;
 }
 
 export interface ResourcePrimitive {
@@ -39,6 +44,11 @@ export interface ResourcePrimitive {
   code: string;
   scopes?: string[];
   middleware?: PrimitiveMiddleware;
+  /** Discovered via proxy introspection (code/remote); its schema is read-only
+   * and only scopes are operator-editable. Absent on authored (structured). */
+  discovered?: boolean;
+  /** Previously discovered but no longer present upstream (kept, not deleted). */
+  archived?: boolean;
 }
 
 export interface ResourceTemplatePrimitive {
@@ -50,6 +60,11 @@ export interface ResourceTemplatePrimitive {
   code: string;
   scopes?: string[];
   middleware?: PrimitiveMiddleware;
+  /** Discovered via proxy introspection (code/remote); its schema is read-only
+   * and only scopes are operator-editable. Absent on authored (structured). */
+  discovered?: boolean;
+  /** Previously discovered but no longer present upstream (kept, not deleted). */
+  archived?: boolean;
 }
 
 export interface PromptPrimitive {
@@ -60,6 +75,11 @@ export interface PromptPrimitive {
   code: string;
   scopes?: string[];
   middleware?: PrimitiveMiddleware;
+  /** Discovered via proxy introspection (code/remote); its schema is read-only
+   * and only scopes are operator-editable. Absent on authored (structured). */
+  discovered?: boolean;
+  /** Previously discovered but no longer present upstream (kept, not deleted). */
+  archived?: boolean;
 }
 
 export type Primitive =
@@ -238,7 +258,15 @@ export interface PlacementTask {
   error: string | null;
 }
 
-export type ServerMode = "structured" | "code";
+export type ServerMode = "structured" | "code" | "remote";
+
+/** Outbound header sent to a remote upstream. The mapping (header -> env var
+ * holding the secret value) is what's persisted/returned; the secret value
+ * itself is write-only (sent on create, never echoed back). */
+export interface RemoteHeaderMapping {
+  header: string;
+  env: string;
+}
 
 export interface AuditEvent {
   id: number;
@@ -292,6 +320,12 @@ export interface Server {
   /** Set when the server was imported via "Deploy from Git"; enables "Update from Git". */
   git_url?: string | null;
   git_ref?: string | null;
+  /** Remote-proxy (mode === "remote") upstream MCP URL. */
+  remote_url?: string | null;
+  /** Outbound header -> env mappings (secret values never returned). */
+  remote_headers?: RemoteHeaderMapping[];
+  /** When true, tools with no assigned scope are denied (remote default). */
+  deny_unlisted?: boolean;
 }
 
 export interface ServerScope {
@@ -356,10 +390,15 @@ export interface CreateServerRequest {
   /** Omit to use platform default (Swarm only for N>1). */
   replicas?: number | null;
   /** "structured" (default) - primitives managed via the UI.
-   *  "code"       - user provides a full server.py; primitive editor is hidden. */
+   *  "code"       - user provides a full server.py; primitive editor is hidden.
+   *  "remote"     - proxy an external MCP server (remote_url + remote_headers). */
   mode?: ServerMode;
   /** Required when mode === "code". The raw server.py text. */
   source?: string;
+  /** Required when mode === "remote". The upstream MCP endpoint URL. */
+  remote_url?: string;
+  /** Outbound headers for mode === "remote". Values are secret (write-only). */
+  remote_headers?: { header: string; value: string }[];
 }
 
 const BASE = "/api";
@@ -552,6 +591,10 @@ export const api = {
     request<Server>(`/servers/${name}/stop`, { method: "POST" }),
   redeployServer: (name: string) =>
     request<Server>(`/servers/${name}/redeploy`, { method: "POST" }),
+  /** Re-introspect a proxied server (code-first or remote) and reconcile its
+   * primitives. Flags a redeploy. Code-first must be deployed/running first. */
+  rediscoverServer: (name: string) =>
+    request<Server>(`/servers/${encodeURIComponent(name)}/rediscover`, { method: "POST" }),
   updateFromGit: (name: string) =>
     request<Server>(`/servers/${encodeURIComponent(name)}/update-from-git`, { method: "POST" }),
   deleteServer: (name: string) =>
