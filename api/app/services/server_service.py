@@ -132,10 +132,13 @@ class ServerService:
     def discover_primitives(self, db: Session, spec: ServerSpec) -> list[dict]:
         """Introspect a proxied server (code-first or remote) and return its
         primitives reconciled into the existing overlay. Caller persists."""
+        import ssl
+
         from app.services import discovery
-        from app.services.mcp_client import McpError, get_mcp_client
+        from app.services.mcp_client import McpError, get_mcp_client, verify_for_ca
 
         headers = self.resolve_remote_headers(db, spec)
+        verify = None
         if spec.is_remote_mode():
             # A configured outbound header whose secret didn't resolve would go
             # to the upstream as a missing/empty credential and come back as a
@@ -154,7 +157,15 @@ class ServerService:
                     "decrypt (most likely APP_KEY changed since they were saved). "
                     "Re-enter the value under Env vars, then rediscover."
                 )
-        return discovery.discover(get_mcp_client(), spec, remote_headers=headers)
+            # Trust the operator's custom CA for the upstream's TLS, if configured,
+            # so discovery doesn't fail with "unable to get local issuer".
+            try:
+                verify = verify_for_ca(self.custom_ca_cert(db))
+            except ssl.SSLError as e:
+                raise McpError(f"Configured custom CA certificate is not valid PEM: {e}") from e
+        return discovery.discover(
+            get_mcp_client(), spec, remote_headers=headers, verify=verify
+        )
 
     def registry_prefix(self, db: Session) -> str | None:
         raw = (get_setting(db, SETTING_DOCKER_REGISTRY, "") or "").strip()
