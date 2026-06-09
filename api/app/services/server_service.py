@@ -191,11 +191,26 @@ class ServerService:
             spec, self.store.server_dir(spec.name), self.custom_ca_cert(db)
         )
         self.store.save(spec)
+        env = self.effective_env(db, spec)
+        # Leave a deploy-time trail so a missing env var is never a mystery: name
+        # every declared secret and whether it actually made it into the env that
+        # the container will receive. effective_env() already logs *why* a secret
+        # was dropped (decrypt failure); this records the net outcome per deploy.
+        declared_secrets = [ev.name for ev in spec.env_vars if ev.secret]
+        dropped = [n for n in declared_secrets if not env.get(n)]
+        logger.info(
+            "Deploy %r: applying %d env var(s); secrets resolved %d/%d%s",
+            spec.name,
+            len(env),
+            len(declared_secrets) - len(dropped),
+            len(declared_secrets),
+            f"; NOT applied: {dropped}" if dropped else "",
+        )
         result = self.docker.build_and_start(
             server_name=spec.name,
             build_context=build_context,
             template_name="custom",
-            env_vars=self.effective_env(db, spec),
+            env_vars=env,
             replicas=self.effective_replicas(spec),
             registry_prefix=self.registry_prefix(db),
             registry_auth=self.registry_auth(db),
