@@ -133,9 +133,27 @@ class ServerService:
         """Introspect a proxied server (code-first or remote) and return its
         primitives reconciled into the existing overlay. Caller persists."""
         from app.services import discovery
-        from app.services.mcp_client import get_mcp_client
+        from app.services.mcp_client import McpError, get_mcp_client
 
         headers = self.resolve_remote_headers(db, spec)
+        if spec.is_remote_mode():
+            # A configured outbound header whose secret didn't resolve would go
+            # to the upstream as a missing/empty credential and come back as a
+            # bare 401 - indistinguishable from a wrong key. Fail early with an
+            # actionable message so the operator knows it's the stored secret,
+            # not the upstream, that's the problem.
+            unresolved = [
+                h.get("header")
+                for h in (spec.remote_headers or [])
+                if h.get("header") and h.get("env") and not headers.get(h.get("header"))
+            ]
+            if unresolved:
+                raise McpError(
+                    f"Outbound credential(s) {', '.join(unresolved)} could not be "
+                    "resolved: the backing secret env var(s) are empty or failed to "
+                    "decrypt (most likely APP_KEY changed since they were saved). "
+                    "Re-enter the value under Env vars, then rediscover."
+                )
         return discovery.discover(get_mcp_client(), spec, remote_headers=headers)
 
     def registry_prefix(self, db: Session) -> str | None:
