@@ -25,6 +25,43 @@ from app.services.template_engine import TemplateEngine
 logger = logging.getLogger(__name__)
 
 
+def _resolve_secret_env(name: str, value: str, app_key: str) -> str | None:
+    """Resolve a secret env var's stored value to the plaintext to inject into
+    the container. Returns None when it cannot be resolved (caller drops it).
+
+    Three cases, only the last of which loses data:
+      - `value` is not an encryption envelope: it's a plaintext value stored
+        under the no-APP_KEY dev fallback (`_encrypt_env`). Use it as-is.
+      - `value` is an envelope and APP_KEY decrypts it: return the plaintext.
+      - `value` is an envelope but decrypt fails (APP_KEY changed since the row
+        was saved, or no key is configured): we cannot recover the plaintext.
+        Log loudly and return None so the loss is diagnosable instead of the
+        silent drop that made env vars mysteriously vanish on redeploy.
+    """
+    from app.crypto import DecryptError, decrypt, looks_encrypted
+
+    if not looks_encrypted(value):
+        # Stored plaintext (APP_KEY was unset when this secret was saved).
+        return value
+    if not app_key:
+        logger.warning(
+            "Secret env %r is encrypted but APP_KEY is not configured; it will "
+            "be missing from the container until APP_KEY is set.",
+            name,
+        )
+        return None
+    try:
+        return decrypt(value, app_key)
+    except DecryptError as exc:
+        logger.warning(
+            "Secret env %r failed to decrypt (%s) - APP_KEY likely changed since "
+            "it was saved. Re-enter the value to restore it.",
+            name,
+            exc,
+        )
+        return None
+
+
 class ServerService:
     def __init__(
         self,
@@ -46,23 +83,30 @@ class ServerService:
 
     def effective_env(self, db: Session, spec: ServerSpec) -> dict[str, str]:
         from app.config import get_settings
-        from app.crypto import DecryptError, decrypt
         merged: dict[str, str] = {}
         gdict = global_env.globals_as_dict(db)
         for name in spec.env_global_imports:
             if name in gdict:
                 merged[name] = gdict[name]
+            else:
+                logger.warning(
+                    "Server %r imports global env %r but it is not defined in "
+                    "platform settings; it will be missing from the container.",
+                    spec.name,
+                    name,
+                )
         app_key = get_settings().app_key
         for ev in spec.env_vars:
-            if ev.secret and ev.value and app_key:
-                try:
-                    merged[ev.name] = decrypt(ev.value, app_key)
-                except DecryptError:
-                    # Most likely cause: row encrypted with a different APP_KEY.
-                    # Skipping is safer than leaking ciphertext into env.
-                    continue
-            else:
+            if not ev.secret:
                 merged[ev.name] = ev.value
+                continue
+            if not ev.value:
+                # Secret row declared but no value collected yet.
+                merged[ev.name] = ""
+                continue
+            resolved = _resolve_secret_env(ev.name, ev.value, app_key)
+            if resolved is not None:
+                merged[ev.name] = resolved
         return merged
 
     def custom_ca_cert(self, db: Session) -> str | None:
