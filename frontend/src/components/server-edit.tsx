@@ -690,6 +690,45 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
         </div>
       </div>
 
+      {(server.placement ?? []).length > 0 && (
+        <div className="grid gap-2">
+          <Label>Placement</Label>
+          <p className="text-xs text-muted-foreground">
+            Where this server's task(s) are currently scheduled.
+          </p>
+          <div className="max-w-md overflow-hidden rounded-md border">
+            {(server.placement ?? []).map((t, i) => (
+              <div
+                key={t.task_id || `${t.node_name}-${i}`}
+                className="flex items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0"
+              >
+                <span
+                  className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                    t.state === "running" || t.state === "Running"
+                      ? "bg-emerald-500"
+                      : t.error
+                        ? "bg-red-500"
+                        : "bg-amber-500"
+                  }`}
+                />
+                <span className="font-mono">
+                  {t.node_name || t.node_id || "(unscheduled)"}
+                </span>
+                {t.slot != null && (
+                  <span className="text-muted-foreground">slot {t.slot}</span>
+                )}
+                <span className="ml-auto text-muted-foreground">{t.state}</span>
+                {t.error && (
+                  <span className="ml-2 truncate text-red-500" title={t.error}>
+                    {t.error}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="border-t pt-4 flex flex-wrap items-center gap-2">
         <Label className="text-sm font-medium mr-2">Server actions</Label>
         <Button
