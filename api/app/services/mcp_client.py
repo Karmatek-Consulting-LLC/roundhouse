@@ -57,7 +57,10 @@ class McpClient:
     ) -> dict:
         envelope = {
             "jsonrpc": "2.0",
-            "id": secrets.randbelow(2**62),
+            # JSON-RPC ids must fit JS's safe-integer range (2**53 - 1): some
+            # upstreams (e.g. Kibana's Agent Builder MCP) validate this and 400
+            # on anything larger. 2**31 is unique enough for our one-shot calls.
+            "id": secrets.randbelow(2**31),
             "method": method,
             "params": params or {},
         }
