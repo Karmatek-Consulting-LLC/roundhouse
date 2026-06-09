@@ -77,6 +77,19 @@ def test_effective_env_preserves_all_secret_kinds(monkeypatch):
     assert env == {"PLAIN": "p", "ENC": "e", "FALLBACK": "raw-secret", "UNSET": ""}
 
 
+def test_diagnose_classify():
+    from app.diagnose_secrets import classify, fingerprint
+
+    assert classify(encrypt("v", KEY), KEY) == "OK"
+    assert classify("plain-value", KEY) == "PLAINTEXT"
+    assert classify("", KEY) == "EMPTY"
+    assert classify(encrypt("v", KEY), OTHER_KEY).startswith("STALE")
+    assert classify(encrypt("v", KEY), "").startswith("STALE")
+    # Fingerprint is non-reversible and stable for a given key.
+    assert fingerprint(KEY) == fingerprint(KEY) != fingerprint(OTHER_KEY)
+    assert KEY not in fingerprint(KEY)
+
+
 def test_effective_env_drops_only_undecryptable(monkeypatch):
     # A secret encrypted under a now-stale key is dropped, but a good plaintext
     # row beside it survives - proving "only certain ones" loss is contained and
