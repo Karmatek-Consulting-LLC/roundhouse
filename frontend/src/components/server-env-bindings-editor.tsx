@@ -20,11 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronDown, Settings, Trash2 } from "lucide-react";
+import { ChevronDown, Lock, Settings, Trash2, Unlock } from "lucide-react";
 
-/** Fixed columns so Global/Local rows share the same alignment (badge, key, =, value, action). */
+/** Fixed columns so Global/Local rows share the same alignment
+ * (source badge, key, =, value, secret toggle, delete). */
 const ENV_ROW_GRID =
-  "grid w-full grid-cols-[5.5rem_14rem_1.5rem_minmax(0,1fr)_2.5rem] items-center gap-x-3 gap-y-1";
+  "grid w-full grid-cols-[5.5rem_14rem_1.5rem_minmax(0,1fr)_2.5rem_2.5rem] items-center gap-x-3 gap-y-1";
 
 export interface ServerEnvBindings {
   env_global_imports: string[];
@@ -157,9 +158,9 @@ export function ServerEnvBindingsEditor({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Import platform-wide variables or add local-only pairs. Local values override the same name from
-        global when the container runs. Click a row's <strong>Local</strong>/<strong>Secret</strong> badge to
-        toggle it: secret values are stored encrypted and never shown again — leave a saved secret blank to keep it.
+        Import platform-wide <strong>Global</strong> variables or add <strong>Local</strong> pairs; local values
+        override the same name from global when the container runs. Use the lock icon to mark a local value{" "}
+        <strong>secret</strong> — secrets are stored encrypted and never shown again, so leave a saved secret blank to keep it.
       </p>
 
       {rowCount === 0 ? (
@@ -205,6 +206,9 @@ export function ServerEnvBindingsEditor({
                 value={gMap.get(name) ?? "(missing in platform settings)"}
                 title="Value comes from platform settings"
               />
+              {/* Globals are platform-managed; secrecy doesn't apply - keep the
+                  column so rows line up with locals. */}
+              <span aria-hidden />
               <Button
                 type="button"
                 variant="ghost"
@@ -225,23 +229,9 @@ export function ServerEnvBindingsEditor({
             const storedSecret = isSecret && !!v.has_value && !v.value;
             return (
               <div key={`l-${idx}`} className={ENV_ROW_GRID}>
-                <button
-                  type="button"
-                  onClick={() => toggleSecret(idx)}
-                  title={
-                    isSecret
-                      ? "Secret: stored encrypted, never shown again. Click to make it plaintext (re-enter the value to convert)."
-                      : "Plaintext: stored and displayed as-is. Click to mark it secret."
-                  }
-                  className="w-full"
-                >
-                  <Badge
-                    variant={isSecret ? "default" : "outline"}
-                    className="flex w-full cursor-pointer justify-center"
-                  >
-                    {isSecret ? "Secret" : "Local"}
-                  </Badge>
-                </button>
+                <Badge variant="outline" className="flex w-full justify-center">
+                  Local
+                </Badge>
                 <Input
                   className="min-w-0 font-mono text-sm"
                   placeholder="VARIABLE_NAME"
@@ -269,6 +259,25 @@ export function ServerEnvBindingsEditor({
                   onFocus={isSecret ? (e) => (e.target.type = "text") : undefined}
                   onBlur={isSecret ? (e) => (e.target.type = "password") : undefined}
                 />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="justify-self-center"
+                  aria-pressed={isSecret}
+                  title={
+                    isSecret
+                      ? "Secret: value is stored encrypted and masked. Click to make it plaintext."
+                      : "Plaintext: value is stored and shown as-is. Click to mark it secret."
+                  }
+                  onClick={() => toggleSecret(idx)}
+                >
+                  {isSecret ? (
+                    <Lock className="h-4 w-4" />
+                  ) : (
+                    <Unlock className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"
