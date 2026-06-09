@@ -163,9 +163,38 @@ class ServerService:
                 verify = verify_for_ca(self.custom_ca_cert(db))
             except ssl.SSLError as e:
                 raise McpError(f"Configured custom CA certificate is not valid PEM: {e}") from e
-        return discovery.discover(
-            get_mcp_client(), spec, remote_headers=headers, verify=verify
-        )
+            ca_certs = len(verify.get_ca_certs()) if verify is not None else 0
+            logger.info(
+                "Discovery for %r: %s",
+                spec.name,
+                f"custom CA active ({ca_certs} cert(s) in trust store)"
+                if verify is not None
+                else "no custom CA configured (system roots only)",
+            )
+        try:
+            return discovery.discover(
+                get_mcp_client(), spec, remote_headers=headers, verify=verify
+            )
+        except McpError as e:
+            # If TLS verification failed, say whether the custom CA was even in
+            # play - that distinguishes "CA not applied" (old build / empty
+            # setting) from "CA applied but the chain still doesn't validate"
+            # (usually a missing intermediate - paste the FULL chain).
+            msg = str(e)
+            tls = any(s in msg.lower() for s in ("certificate", "ssl", "issuer", "tls"))
+            if tls and spec.is_remote_mode():
+                if verify is not None:
+                    raise McpError(
+                        f"{msg} — TLS verification used your configured custom CA "
+                        f"({ca_certs} cert(s) loaded) but the upstream's chain still "
+                        "didn't validate. Paste the FULL chain (root + any intermediate "
+                        "CAs) in Settings → Custom CA, then rediscover."
+                    ) from e
+                raise McpError(
+                    f"{msg} — no custom CA is configured in Settings → Custom CA, so "
+                    "only public CAs are trusted. Add your CA (full chain) there."
+                ) from e
+            raise
 
     def registry_prefix(self, db: Session) -> str | None:
         raw = (get_setting(db, SETTING_DOCKER_REGISTRY, "") or "").strip()
