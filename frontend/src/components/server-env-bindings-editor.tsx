@@ -103,6 +103,15 @@ export function ServerEnvBindingsEditor({
     });
   }
 
+  function toggleSecret(idx: number) {
+    onChange({
+      ...value,
+      env_vars: value.env_vars.map((e, i) =>
+        i === idx ? { ...e, secret: !e.secret } : e,
+      ),
+    });
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -149,7 +158,8 @@ export function ServerEnvBindingsEditor({
 
       <p className="text-xs text-muted-foreground">
         Import platform-wide variables or add local-only pairs. Local values override the same name from
-        global when the container runs.
+        global when the container runs. Click a row's <strong>Local</strong>/<strong>Secret</strong> badge to
+        toggle it: secret values are stored encrypted and never shown again — leave a saved secret blank to keep it.
       </p>
 
       {rowCount === 0 ? (
@@ -207,49 +217,70 @@ export function ServerEnvBindingsEditor({
             </div>
           ))}
 
-          {value.env_vars.map((v, idx) => (
-            <div key={`l-${idx}`} className={ENV_ROW_GRID}>
-              <Badge variant="outline" className="flex w-full justify-center">
-                Local
-              </Badge>
-              <Input
-                className="min-w-0 font-mono text-sm"
-                placeholder="VARIABLE_NAME"
-                value={v.name}
-                onChange={(e) =>
-                  updateLocal(
-                    idx,
-                    "name",
-                    e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""),
-                  )
-                }
-              />
-              <span
-                className="justify-self-center text-center text-sm leading-none text-muted-foreground select-none"
-                aria-hidden
-              >
-                =
-              </span>
-              <Input
-                className="min-w-0 font-mono text-sm"
-                placeholder="value"
-                type="password"
-                value={v.value}
-                onChange={(e) => updateLocal(idx, "value", e.target.value)}
-                onFocus={(e) => (e.target.type = "text")}
-                onBlur={(e) => (e.target.type = "password")}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="justify-self-end"
-                onClick={() => removeLocal(idx)}
-              >
-                <Trash2 className="h-4 w-4 text-muted-foreground" />
-              </Button>
-            </div>
-          ))}
+          {value.env_vars.map((v, idx) => {
+            const isSecret = !!v.secret;
+            // A secret that already holds a value on disk: the API redacts the
+            // value to "", so the field is blank but the secret is stored. Make
+            // that obvious and tell the user blank means "keep what's saved".
+            const storedSecret = isSecret && !!v.has_value && !v.value;
+            return (
+              <div key={`l-${idx}`} className={ENV_ROW_GRID}>
+                <button
+                  type="button"
+                  onClick={() => toggleSecret(idx)}
+                  title={
+                    isSecret
+                      ? "Secret: stored encrypted, never shown again. Click to make it plaintext (re-enter the value to convert)."
+                      : "Plaintext: stored and displayed as-is. Click to mark it secret."
+                  }
+                  className="w-full"
+                >
+                  <Badge
+                    variant={isSecret ? "default" : "outline"}
+                    className="flex w-full cursor-pointer justify-center"
+                  >
+                    {isSecret ? "Secret" : "Local"}
+                  </Badge>
+                </button>
+                <Input
+                  className="min-w-0 font-mono text-sm"
+                  placeholder="VARIABLE_NAME"
+                  value={v.name}
+                  onChange={(e) =>
+                    updateLocal(
+                      idx,
+                      "name",
+                      e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""),
+                    )
+                  }
+                />
+                <span
+                  className="justify-self-center text-center text-sm leading-none text-muted-foreground select-none"
+                  aria-hidden
+                >
+                  =
+                </span>
+                <Input
+                  className="min-w-0 font-mono text-sm"
+                  placeholder={storedSecret ? "•••••• saved — leave blank to keep" : "value"}
+                  type={isSecret ? "password" : "text"}
+                  value={v.value}
+                  onChange={(e) => updateLocal(idx, "value", e.target.value)}
+                  onFocus={isSecret ? (e) => (e.target.type = "text") : undefined}
+                  onBlur={isSecret ? (e) => (e.target.type = "password") : undefined}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="justify-self-end"
+                  onClick={() => removeLocal(idx)}
+                >
+                  <Trash2 className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </div>
+            );
+          })}
           </div>
         </div>
       )}
