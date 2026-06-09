@@ -15,7 +15,7 @@ import { useServers } from "@/hooks/use-servers";
 import { ServerTable } from "@/components/server-table";
 import { Dashboard } from "@/components/dashboard";
 import { ServerEdit } from "@/components/server-edit";
-import { CreateServerDialog } from "@/components/create-server-dialog";
+import { CreateServerPage } from "@/components/create-server-page";
 import { LoginPage } from "@/components/login-page";
 import { UserManagement } from "@/components/user-management";
 import { TeamManagement } from "@/components/team-management";
@@ -122,7 +122,9 @@ function AppShell() {
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            {isServerList && <CreateServerDialog onCreated={serversState.refresh} />}
+            {isServerList && (
+              <Button onClick={() => navigate("/servers/new")}>Create Server</Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm">
@@ -282,6 +284,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardRoute />} />
           <Route path="/servers" element={<ServersPage />} />
+          <Route path="/servers/new" element={<CreateServerPage />} />
           <Route path="/servers/:serverName/*" element={<ServerEditRoute />} />
           <Route
             path="/users"
