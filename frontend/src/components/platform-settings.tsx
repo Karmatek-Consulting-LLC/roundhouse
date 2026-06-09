@@ -45,6 +45,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
   const [passwordClearRequested, setPasswordClearRequested] = useState(false);
   const [registryPasswordConfigured, setRegistryPasswordConfigured] = useState(false);
   const [customCaConfigured, setCustomCaConfigured] = useState(false);
+  const [customCaCount, setCustomCaCount] = useState(0);
   const [customCaInput, setCustomCaInput] = useState("");
   const [savingCustomCa, setSavingCustomCa] = useState(false);
   const [customCaError, setCustomCaError] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       setRegistryPassword("");
       setPasswordClearRequested(false);
       setCustomCaConfigured(data.custom_ca_cert_configured);
+      setCustomCaCount(data.custom_ca_cert_count ?? 0);
       try {
         const envData = await api.getMcpEnvSettings();
         setGlobalEnvVars(envData.env_vars);
@@ -166,6 +168,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
     try {
       const r = await api.updateCustomCa(customCaInput);
       setCustomCaConfigured(r.custom_ca_cert_configured);
+      setCustomCaCount(r.cert_count ?? 0);
       setCustomCaInput("");
     } catch (e) {
       setCustomCaError(e instanceof Error ? e.message : "Failed to save");
@@ -182,6 +185,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
     try {
       const r = await api.deleteCustomCa();
       setCustomCaConfigured(r.custom_ca_cert_configured);
+      setCustomCaCount(0);
     } catch (e) {
       setCustomCaError(e instanceof Error ? e.message : "Failed to delete");
     }
@@ -419,17 +423,23 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
             Custom CA bundle
           </CardTitle>
           <CardDescription>
-            Baked into every spawned MCP server image so apt-get, pip, and the server's
-            own outbound HTTPS calls trust your corporate root or proxy CA. Paste a PEM
-            bundle (one or more <code className="rounded bg-muted px-1">-----BEGIN CERTIFICATE-----</code>{" "}
-            blocks). Takes effect on the next server rebuild.
+            Trusted by the platform itself for outbound calls (e.g. remote-server
+            discovery) and baked into every spawned MCP server image so apt-get, pip, and
+            the server's own HTTPS calls trust your CA(s). Paste a PEM bundle — one or more{" "}
+            <code className="rounded bg-muted px-1">-----BEGIN CERTIFICATE-----</code> blocks.
+            Add a CA <strong>per upstream</strong>, each with its <strong>full chain</strong>{" "}
+            (root + intermediates) — "unable to get local issuer" usually means a missing
+            intermediate. Saving <strong>replaces</strong> the whole bundle, so paste all CAs
+            together. Server-image trust takes effect on the next rebuild.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
             <Badge variant={customCaConfigured ? "default" : "secondary"}>
               <Shield className="mr-1 h-3 w-3" />
-              {customCaConfigured ? "CA installed" : "No custom CA"}
+              {customCaConfigured
+                ? `${customCaCount} certificate${customCaCount === 1 ? "" : "s"} trusted`
+                : "No custom CA"}
             </Badge>
           </div>
 
