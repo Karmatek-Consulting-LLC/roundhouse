@@ -1618,12 +1618,15 @@ function LeftNav({ server, selection, onSelect, onMutated }: LeftNavProps) {
             active={selection.kind === "primitive" && selection.name === p.name}
             onClick={() => onSelect(`primitives/${encodeURIComponent(p.name)}`)}
           >
-            <span className={`mr-2 inline-block h-2 w-2 rounded-full ${kindDotColor[p.kind]}`} />
-            <span className={`font-mono text-xs ${p.archived ? "text-muted-foreground line-through" : ""}`}>
+            <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${kindDotColor[p.kind]}`} />
+            <span
+              title={p.name}
+              className={`min-w-0 flex-1 truncate font-mono text-xs ${p.archived ? "text-muted-foreground line-through" : ""}`}
+            >
               {p.name}
             </span>
             {p.archived && (
-              <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
+              <span className="ml-1 shrink-0 text-[10px] text-muted-foreground">(archived)</span>
             )}
           </NavItem>
         ))}
@@ -1648,7 +1651,7 @@ function LeftNav({ server, selection, onSelect, onMutated }: LeftNavProps) {
         // listed read-only with a Rediscover action. Code-first also keeps a
         // server.py source entry.
         <>
-          {groupsNode}
+          <div className="max-h-[60vh] overflow-y-auto">{groupsNode}</div>
           {(server.primitives ?? []).length === 0 && (
             <div className="mb-3 border-t px-3 pt-3 text-xs text-muted-foreground">
               No primitives discovered yet.{" "}
@@ -1673,7 +1676,7 @@ function LeftNav({ server, selection, onSelect, onMutated }: LeftNavProps) {
         </>
       ) : (
         <>
-          {groupsNode}
+          <div className="max-h-[60vh] overflow-y-auto">{groupsNode}</div>
           <div className="px-3 mb-3">
             <Button
               size="sm"
@@ -1788,7 +1791,7 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+      className={`flex w-full min-w-0 items-center gap-2 px-3 py-1.5 text-left transition-colors ${
         active
           ? "bg-primary/10 text-primary border-l-2 border-primary"
           : "border-l-2 border-transparent hover:bg-muted"
