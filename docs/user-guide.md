@@ -232,12 +232,12 @@ without an extra metrics backend — no Prometheus, no Grafana, no add-on
 agent. Drilling into a server's usage tab is how you find latency
 regressions or the one tool that's getting hammered.
 
-![Editor — usage (Taggart)](screenshots/dark/21-editor-usage.png)
+![Editor — usage (dispatch)](screenshots/dark/21-editor-usage.png)
 
-A busier server (Galt Engine, with several thousand calls across three
-tools) makes the chart variety obvious:
+A busier server (crew-scheduling, which carries the heaviest call volume
+in the demo fleet) makes the chart variety obvious:
 
-![Editor — usage (Galt Engine)](screenshots/dark/21a-editor-usage-busy.png)
+![Editor — usage (crew-scheduling)](screenshots/dark/21a-editor-usage-busy.png)
 
 ### Logs
 
@@ -298,9 +298,9 @@ and revoke access from this page.
 
 Teams group users into shared-access bundles. A team can own one or more
 servers, and any team member inherits access to those servers without
-needing per-server token grants. The seed creates three teams that mirror
-the demo servers' industries — Taggart Operations, Rearden Industries, and
-Galt's Gulch — each with its own member roster.
+needing per-server token grants. The seeded demo creates three railroad
+departments — Operations, Maintenance of Way, and Revenue Service — each
+with its own member roster.
 
 ![Teams](screenshots/dark/52-teams.png)
 

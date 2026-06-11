@@ -430,9 +430,9 @@ docker compose down -v     # wipe everything</code></pre></div>
 <figure><img src="screenshots/dark/20-editor-assets.png" alt="Editor — assets" loading="lazy" decoding="async" /><figcaption>fig. 18 — editor — assets</figcaption></figure>
 <h3 id="usage">Usage<a class="anchor" href="#usage" aria-label="link to section">#</a></h3>
 <p>Per-primitive call counts, p50/p95/p99 latency, error rate, and the busiest client tokens. Sampled in-process by the platform middleware and surfaced without an extra metrics backend — no Prometheus, no Grafana, no add-on agent. Drilling into a server's usage tab is how you find latency regressions or the one tool that's getting hammered.</p>
-<figure><img src="screenshots/dark/21-editor-usage.png" alt="Editor — usage (Taggart)" loading="lazy" decoding="async" /><figcaption>fig. 19 — editor — usage (taggart)</figcaption></figure>
-<p>A busier server (Galt Engine, with several thousand calls across three tools) makes the chart variety obvious:</p>
-<figure><img src="screenshots/dark/21a-editor-usage-busy.png" alt="Editor — usage (Galt Engine)" loading="lazy" decoding="async" /><figcaption>fig. 20 — editor — usage (galt engine)</figcaption></figure>
+<figure><img src="screenshots/dark/21-editor-usage.png" alt="Editor — usage (dispatch)" loading="lazy" decoding="async" /><figcaption>fig. 19 — editor — usage (dispatch)</figcaption></figure>
+<p>A busier server (crew-scheduling, which carries the heaviest call volume in the demo fleet) makes the chart variety obvious:</p>
+<figure><img src="screenshots/dark/21a-editor-usage-busy.png" alt="Editor — usage (crew-scheduling)" loading="lazy" decoding="async" /><figcaption>fig. 20 — editor — usage (crew-scheduling)</figcaption></figure>
 <h3 id="logs">Logs<a class="anchor" href="#logs" aria-label="link to section">#</a></h3>
 <p>Streams stdout/stderr from the server container via Server-Sent Events.</p>
 <p>For spec-based servers, the <strong>Level</strong> dropdown writes the <code>LOG_LEVEL</code> environment variable on the spec; the platform middleware reads it and configures stdlib logging accordingly. At <code>DEBUG</code>, the middleware also emits a start record (with arguments) for every tool/resource/prompt call. Failed calls promote the end-of-call record to <code>WARNING</code>. The dropdown is hidden for code-mode servers, since they own their own logging surface.</p>
@@ -455,7 +455,7 @@ docker compose down -v     # wipe everything</code></pre></div>
 <p>User accounts with role assignment. The seeded demo includes a handful of operators alongside the platform admin; superadmins can reset passwords and revoke access from this page.</p>
 <figure><img src="screenshots/dark/51-users.png" alt="Users" loading="lazy" decoding="async" /><figcaption>fig. 26 — users</figcaption></figure>
 <h3 id="teams">Teams<a class="anchor" href="#teams" aria-label="link to section">#</a></h3>
-<p>Teams group users into shared-access bundles. A team can own one or more servers, and any team member inherits access to those servers without needing per-server token grants. The seed creates three teams that mirror the demo servers' industries — Taggart Operations, Rearden Industries, and Galt's Gulch — each with its own member roster.</p>
+<p>Teams group users into shared-access bundles. A team can own one or more servers, and any team member inherits access to those servers without needing per-server token grants. The seeded demo creates three railroad departments — Operations, Maintenance of Way, and Revenue Service — each with its own member roster.</p>
 <figure><img src="screenshots/dark/52-teams.png" alt="Teams" loading="lazy" decoding="async" /><figcaption>fig. 27 — teams</figcaption></figure>
 <h3 id="audit-log">Audit log<a class="anchor" href="#audit-log" aria-label="link to section">#</a></h3>
 <p>Every state-mutating action — server create/delete, env-var change, token rotation — is recorded with the acting user, target, and a structured detail payload.</p>
