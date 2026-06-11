@@ -56,6 +56,21 @@ def encrypt(plaintext: str, app_key: str) -> str:
     return base64.b64encode(json.dumps(envelope).encode("utf-8")).decode("ascii")
 
 
+def looks_encrypted(token: str) -> bool:
+    """True if `token` has the shape of an `encrypt()` envelope, regardless of key.
+
+    Lets callers tell a genuine ciphertext apart from a plaintext value that was
+    stored under the no-APP_KEY dev fallback (see `_encrypt_env`). A plaintext
+    secret will not base64-decode into the `{iv, value, mac}` JSON envelope, so
+    this returns False and the caller can use the value as-is rather than trying
+    (and failing) to decrypt it."""
+    try:
+        env = json.loads(base64.b64decode(token))
+    except (ValueError, TypeError):
+        return False
+    return isinstance(env, dict) and {"iv", "value", "mac"}.issubset(env)
+
+
 def decrypt(token: str, app_key: str) -> str:
     key = _key_bytes(app_key)
     try:

@@ -781,9 +781,11 @@ export const api = {
     docker_registry_password_configured: boolean;
     /** PEM contents never come back over the wire; this just reflects presence. */
     custom_ca_cert_configured: boolean;
+    /** How many certificate blocks the stored bundle contains. */
+    custom_ca_cert_count: number;
   }>("/settings"),
   updateCustomCa: (cert: string) =>
-    request<{ custom_ca_cert_configured: boolean }>("/settings/custom-ca", {
+    request<{ custom_ca_cert_configured: boolean; cert_count: number }>("/settings/custom-ca", {
       method: "PUT",
       body: JSON.stringify({ cert }),
     }),

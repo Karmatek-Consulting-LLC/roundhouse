@@ -612,7 +612,9 @@ class KubernetesClient:
 
         # Surface pod-level data (health from readiness, restartCount from container statuses).
         # If the lookup fails we still return the shape with stub values rather than crash.
-        health, restart_count = self._pod_aggregate_status(labels.get(LABEL_SERVER_NAME, ""))
+        health, restart_count, placement = self._pod_aggregate_status(
+            labels.get(LABEL_SERVER_NAME, "")
+        )
 
         # Lab's "status" field uses values like 'running' / 'pending' / 'exited'
         # to match the Docker container.State.Status convention; map K8s state in.
@@ -631,33 +633,42 @@ class KubernetesClient:
             "restart_count": restart_count,
             "created_at": (d.get("metadata") or {}).get("creationTimestamp", ""),
             "replicas_running": available,
-            "placement": [],
+            "placement": placement,
         }
 
-    def _pod_aggregate_status(self, server_name: str) -> tuple[str | None, int | None]:
-        """Collapse the pods backing a Deployment into a (health, restart_count)
-        pair. health = 'healthy' if any pod has all containers ready; 'starting'
-        if any are still pending; 'unhealthy' otherwise. restart_count is the
-        max across container statuses (matches Docker's per-server view)."""
+    def _pod_aggregate_status(
+        self, server_name: str
+    ) -> tuple[str | None, int | None, list[dict]]:
+        """Collapse the pods backing a Deployment into (health, restart_count,
+        placement). health = 'healthy' if any pod has all containers ready;
+        'starting' if any are still pending; 'unhealthy' otherwise. restart_count
+        is the max across container statuses (matches Docker's per-server view).
+        placement names the node each pod landed on (spec.nodeName / hostIP),
+        mirroring the Swarm task-placement shape so the UI renders both the same.
+        Built from the same pod list - no extra API call."""
         if not server_name:
-            return None, None
+            return None, None, []
         name = _resource_name(server_name)
         try:
             pods = self._http.get(
                 self._path("api/v1", "pods"), {"labelSelector": f"app={name}"}
             )
         except DockerError:
-            return None, None
+            return None, None, []
         items = pods.get("items") or []
         if not items:
-            return None, None
+            return None, None, []
 
         any_ready = False
         any_pending = False
         max_restarts = 0
+        placement: list[dict] = []
         for pod in items:
-            phase = ((pod.get("status") or {}).get("phase")) or ""
-            statuses = ((pod.get("status") or {}).get("containerStatuses")) or []
+            meta = pod.get("metadata") or {}
+            pod_spec = pod.get("spec") or {}
+            pod_status = pod.get("status") or {}
+            phase = pod_status.get("phase") or ""
+            statuses = pod_status.get("containerStatuses") or []
             ready = bool(statuses) and all(bool(s.get("ready")) for s in statuses)
             if ready:
                 any_ready = True
@@ -667,13 +678,22 @@ class KubernetesClient:
                 rc = s.get("restartCount")
                 if isinstance(rc, int) and rc > max_restarts:
                     max_restarts = rc
+            node_name = pod_spec.get("nodeName") or None
+            placement.append({
+                "task_id": meta.get("name", ""),
+                "node_id": pod_status.get("hostIP") or node_name or "",
+                "node_name": node_name,
+                "state": phase or "unknown",
+                "slot": None,
+                "error": None,
+            })
         if any_ready:
             health = "healthy"
         elif any_pending:
             health = "starting"
         else:
             health = "unhealthy"
-        return health, max_restarts
+        return health, max_restarts, placement
 
     # ---- Path helpers ----
 
