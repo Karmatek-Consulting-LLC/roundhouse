@@ -107,7 +107,8 @@ actions.
 
 ## Creating a server
 
-The **Create** button opens a dialog with four tabs.
+The **Create** button opens a dialog with a tab for each way a server can
+be authored.
 
 ### Structured
 
