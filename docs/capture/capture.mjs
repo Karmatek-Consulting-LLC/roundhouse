@@ -60,7 +60,8 @@ const STEPS = [
   { name: "13-editor-primitive-prompt", url: "/servers/dispatch/primitives/morning_briefing", wait: { selector: 'textarea, .cm-editor', delay: 900 } },
   { name: "14-editor-primitive-new",   url: "/servers/dispatch/primitives:new",          wait: { selector: 'text=/new primitive/i', delay: 500 } },
   { name: "15-editor-imports",   url: "/servers/dispatch/imports",                       wait: { selector: 'text=/imports|globals/i', delay: 500 } },
-  { name: "16-editor-packages",  url: "/servers/dispatch/packages",                      wait: { selector: 'text=/pip|packages/i', delay: 500 } },
+  // track-maintenance carries the pip dependency (numpy) in the seed.
+  { name: "16-editor-packages",  url: "/servers/track-maintenance/packages",             wait: { selector: 'text=/pip|packages/i', delay: 500 } },
   { name: "17-editor-apt",       url: "/servers/dispatch/apt-packages",                  wait: { selector: 'text=/apt|os/i', delay: 500 } },
   { name: "18-editor-env",       url: "/servers/dispatch/env",                           wait: { selector: 'text=/environment|env/i', delay: 500 } },
   { name: "19-editor-auth",      url: "/servers/dispatch/auth",                          wait: { selector: 'text=/tokens|auth/i', delay: 500 } },
