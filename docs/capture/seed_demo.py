@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Seed Atlas Shrugged-themed demo state into a running Roundhouse stack.
+"""Seed Taggart Transcontinental demo state into a running Roundhouse stack.
+
+The demo fleet is one railroad's internal MCP servers — dispatch, maintenance
+of way, crew calling, signals, billing, yard ops, and motive power — so every
+screenshot tells a coherent operational story that matches the Roundhouse
+rail theme.
 
 Sub-commands:
-    seed       Create the seven Atlas servers (idempotent).
-    users      Create Atlas-themed users + teams + memberships (idempotent).
-    traffic    Call every tool/resource/prompt on the deployed Atlas servers
+    seed       Create the seven Taggart servers (idempotent).
+    users      Create Taggart staff users + department teams + memberships
+               (idempotent).
+    traffic    Call every tool/resource/prompt on the deployed Taggart servers
                via /api/servers/{name}/... so dashboard + usage charts
                populate. Mixes in deliberate errors so error rate > 0.
     hide-real  Export the user's real servers (default: audit-test,
@@ -30,44 +36,44 @@ from pathlib import Path
 from typing import Any
 
 
-# Atlas Shrugged industrial empire — these are the names that will appear in
-# every dashboard, table, and editor shot. Each tells a story matched to the
-# Roundhouse feature it showcases.
+# Taggart Transcontinental's internal tooling — these are the names that
+# appear in every dashboard, table, and editor shot. Each tells a story
+# matched to the Roundhouse feature it showcases.
 DEMO_NAMES = [
-    "taggart-transcontinental",
-    "rearden-metal",
-    "danconia-copper",
-    "wyatt-oil",
-    "galt-engine",
-    "mulligan-bank",
-    "stockton-foundry",
+    "dispatch",
+    "track-maintenance",
+    "crew-scheduling",
+    "signal-telemetry",
+    "freight-billing",
+    "yard-inventory",
+    "motive-power",
 ]
 
 # The user's "real" servers — exported + deleted before the docs run so they
 # don't bleed into screenshots. Restored via the `restore` sub-command.
-REAL_SERVERS = ["audit-test", "logic-monitor"]
+REAL_SERVERS = ["audit-test", "logic-monitor", "test-server"]
 
 # Where exported specs land. Kept inside the repo so a partial run is
 # recoverable across reboots; ignored by capture/.gitignore.
 BACKUP_DIR = Path(__file__).resolve().parent / ".backups"
 
-# Atlas Shrugged cast.
+# Taggart Transcontinental staff.
 DEMO_USERS = [
-    # email                            display_name             role
-    ("dagny@taggart.rail",             "Dagny Taggart",         "user"),
-    ("henry@rearden.metal",            "Henry Rearden",         "user"),
-    ("francisco@danconia.copper",      "Francisco d'Anconia",   "user"),
-    ("john@galt.engine",               "John Galt",             "user"),
-    ("hugh@galt.engine",               "Hugh Akston",           "user"),
+    # email                    display_name      role
+    ("dagny@taggart.rail",     "Dagny Taggart",  "user"),
+    ("eddie@taggart.rail",     "Eddie Willers",  "user"),
+    ("james@taggart.rail",     "James Taggart",  "user"),
+    ("owen@taggart.rail",      "Owen Kellogg",   "user"),
+    ("gwen@taggart.rail",      "Gwen Ives",      "user"),
 ]
 DEMO_TEAMS = [
-    # team_name             description                                    members (email, role)
-    ("Taggart Operations",  "Continental rail dispatch and scheduling.",
-        [("dagny@taggart.rail", "admin")]),
-    ("Rearden Industries",  "Foundry telemetry and alloy production.",
-        [("henry@rearden.metal", "admin"), ("francisco@danconia.copper", "member")]),
-    ("Galt's Gulch",        "Research, motor development, and Atlantis logistics.",
-        [("john@galt.engine", "admin"), ("hugh@galt.engine", "member")]),
+    # team_name              description                                              members (email, role)
+    ("Operations",           "Dispatch, crew, and motive power for the continental network.",
+        [("dagny@taggart.rail", "admin"), ("eddie@taggart.rail", "member")]),
+    ("Maintenance of Way",   "Track, signal, and structures inspection and repair.",
+        [("owen@taggart.rail", "admin")]),
+    ("Revenue Service",      "Waybill rating, freight settlement, and yard inventory.",
+        [("james@taggart.rail", "admin"), ("gwen@taggart.rail", "member")]),
 ]
 
 
@@ -100,13 +106,34 @@ def delete_demo_servers(base: str, token: str) -> None:
     """Drop any prior demo servers so the seed is repeatable."""
     servers = http("GET", base, "/api/servers", token) or []
     existing = {s["name"] for s in servers}
-    for name in DEMO_NAMES:
+    for name in DEMO_NAMES + LEGACY_DEMO_NAMES:
         if name in existing:
             print(f"  - deleting prior {name}")
             try:
                 http("DELETE", base, f"/api/servers/{name}", token)
             except Exception:
                 pass
+
+
+# Prior Atlas-empire cast — still deleted on reseed/cleanup so upgrading an
+# existing stack doesn't leave orphans behind.
+LEGACY_DEMO_NAMES = [
+    "taggart-transcontinental",
+    "rearden-metal",
+    "danconia-copper",
+    "wyatt-oil",
+    "galt-engine",
+    "mulligan-bank",
+    "stockton-foundry",
+]
+LEGACY_DEMO_TEAMS = ["Taggart Operations", "Rearden Industries", "Galt's Gulch"]
+LEGACY_DEMO_USERS = [
+    "dagny@taggart.rail",
+    "henry@rearden.metal",
+    "francisco@danconia.copper",
+    "john@galt.engine",
+    "hugh@galt.engine",
+]
 
 
 def create_from_template(base: str, token: str, name: str, description: str) -> None:
@@ -161,12 +188,12 @@ def stop(base: str, token: str, server: str) -> None:
 
 # -------- Server definitions --------
 
-def seed_taggart(base: str, token: str) -> None:
+def seed_dispatch(base: str, token: str) -> None:
     """Flagship structured server, running. Many tools + prompts + env vars."""
-    name = "taggart-transcontinental"
+    name = "dispatch"
     create_from_template(
         base, token, name,
-        "Continental rail operations: scheduling, routing, and dispatch for the John Galt Line.",
+        "Train dispatch for the Taggart continental network — scheduling, routing, and movement authority.",
     )
     add_primitive(base, token, name, {
         "kind": "tool", "name": "schedule_train",
@@ -176,7 +203,7 @@ def seed_taggart(base: str, token: str) -> None:
             {"name": "destination", "type": "string", "required": True},
             {"name": "departure", "type": "string", "required": True, "description": "ISO 8601 timestamp"},
         ],
-        "body": 'return {"train_id": "JGL-' + '4242", "origin": origin, "destination": destination, "departure": departure}',
+        "body": 'return {"train_id": "TT-' + '4208", "origin": origin, "destination": destination, "departure": departure}',
     })
     add_primitive(base, token, name, {
         "kind": "tool", "name": "list_routes",
@@ -211,110 +238,136 @@ def seed_taggart(base: str, token: str) -> None:
                  'return f"Summarize rail ops for {scope} overnight."'),
     })
     set_env(base, token, name, [
-        {"name": "TAGGART_API_KEY", "value": "tg_live_4242", "secret": True},
+        {"name": "DISPATCH_BOARD_KEY", "value": "tt_disp_4208", "secret": True},
         {"name": "DISPATCH_REGION", "value": "continental", "secret": False},
         {"name": "JOHN_GALT_LINE_ENABLED", "value": "true", "secret": False},
         {"name": "LOG_LEVEL", "value": "INFO", "secret": False},
     ])
 
 
-def seed_rearden(base: str, token: str) -> None:
-    """Structured server with pip deps + resources."""
-    name = "rearden-metal"
+def seed_track_maintenance(base: str, token: str) -> None:
+    """Structured server with pip deps + resource template."""
+    name = "track-maintenance"
     create_from_template(
         base, token, name,
-        "Alloy assay and smelter telemetry for Rearden Metal production.",
+        "Maintenance of way — track inspections, rail-wear analytics, and defect reporting.",
     )
     add_primitive(base, token, name, {
-        "kind": "tool", "name": "assay_sample",
-        "description": "Run a chemical assay on a metal sample.",
+        "kind": "tool", "name": "inspect_section",
+        "description": "Latest inspection readings for a track section.",
         "parameters": [
-            {"name": "sample_id", "type": "string", "required": True},
+            {"name": "section_id", "type": "string", "required": True},
         ],
         "body": ('return {\n'
-                 '    "sample_id": sample_id,\n'
-                 '    "alloy": "Rearden Metal",\n'
-                 '    "tensile_strength_mpa": 4250,\n'
-                 '    "density_g_cm3": 6.1,\n'
+                 '    "section_id": section_id,\n'
+                 '    "rail_wear_mm": 3.2,\n'
+                 '    "gauge_mm": 1435,\n'
+                 '    "ballast": "good",\n'
+                 '    "speed_restriction_mph": None,\n'
                  '}'),
     })
     add_primitive(base, token, name, {
-        "kind": "tool", "name": "smelter_status",
-        "description": "Get live telemetry from a smelter.",
+        "kind": "tool", "name": "defect_report",
+        "description": "Open track defects for a division.",
         "parameters": [
-            {"name": "smelter", "type": "string", "required": True},
+            {"name": "division", "type": "string", "required": True},
         ],
-        "body": 'return {"smelter": smelter, "temperature_c": 2680, "throughput_tph": 412}',
+        "body": ('return [\n'
+                 '    {"id": "DEF-2214", "section": "JGL-MP-1388", "kind": "rail wear", "severity": "monitor"},\n'
+                 '    {"id": "DEF-2217", "section": "TAG-N-MP-204", "kind": "ballast fouling", "severity": "repair"},\n'
+                 ']'),
     })
     add_primitive(base, token, name, {
-        "kind": "resource_template", "name": "smelter_log",
-        "uri_template": "rearden://smelters/{id}/log",
-        "description": "Tail log lines for the given smelter id.",
-        "body": 'return f"Smelter {id} log entries..."',
+        "kind": "resource_template", "name": "section_inspections",
+        "uri_template": "track://sections/{id}/inspections",
+        "description": "Inspection history for the given track section id.",
+        "body": 'return f"Inspection history for section {id}..."',
     })
     set_pip(base, token, name, ["numpy"])
     set_env(base, token, name, [
-        {"name": "REARDEN_VAULT_TOKEN", "value": "rdn_vault_91a2", "secret": True},
-        {"name": "FOUNDRY_REGION", "value": "pittsburgh", "secret": False},
+        {"name": "MOW_DB_TOKEN", "value": "mow_db_91a2", "secret": True},
+        {"name": "HOME_DIVISION", "value": "colorado", "secret": False},
     ])
 
 
-def seed_danconia(base: str, token: str) -> None:
-    """Structured, stopped — shows the gray status badge in the table."""
-    name = "danconia-copper"
+def seed_crew_scheduling(base: str, token: str) -> None:
+    """Structured server with LOG_LEVEL=DEBUG — showcases the logs dropdown.
+
+    Carries the heaviest traffic profile in the seed so its usage tab shows
+    the most chart variety. The LOG_LEVEL env var is visible in both the
+    Logs tab dropdown and the Env vars editor.
+    """
+    name = "crew-scheduling"
     create_from_template(
         base, token, name,
-        "Mine telemetry and ore-grade reporting for d'Anconia Copper operations.",
+        "Crew calling and hours-of-service tracking for road and yard crews.",
     )
     add_primitive(base, token, name, {
-        "kind": "tool", "name": "list_mines",
-        "description": "List active d'Anconia copper mines.",
-        "parameters": [],
-        "body": 'return [{"id": "CHX-1", "country": "Chile", "depth_m": 1100},\n            {"id": "MTN-2", "country": "Montana", "depth_m": 820}]',
+        "kind": "tool", "name": "next_assignment",
+        "description": "Next call for a crew on the board.",
+        "parameters": [
+            {"name": "crew_id", "type": "string", "required": True},
+        ],
+        "body": 'return {"crew_id": crew_id, "train_id": "TT-93", "on_duty": "2026-06-12T05:30:00Z", "terminal": "Cheyenne"}',
     })
     add_primitive(base, token, name, {
-        "kind": "tool", "name": "ore_grade",
-        "description": "Latest ore-grade percentage for a mine.",
+        "kind": "tool", "name": "hours_of_service",
+        "description": "Remaining hours of service for a crew.",
         "parameters": [
-            {"name": "mine_id", "type": "string", "required": True},
+            {"name": "crew_id", "type": "string", "required": True},
         ],
-        "body": 'return {"mine_id": mine_id, "grade_pct": 1.84, "trend": "improving"}',
+        "body": 'return {"crew_id": crew_id, "hours_remaining": 4.5, "rest_required": False}',
     })
+    add_primitive(base, token, name, {
+        "kind": "tool", "name": "call_crew",
+        "description": "Call the next rested crew for a train.",
+        "parameters": [
+            {"name": "train_id", "type": "string", "required": True},
+        ],
+        "body": 'return {"train_id": train_id, "engineer": "Pat Logan", "conductor": "Bill Brent", "report_at": "Cheyenne yard office"}',
+    })
+    add_primitive(base, token, name, {
+        "kind": "resource", "name": "crew_roster",
+        "uri": "crew://roster/active",
+        "description": "Active crew roster with rest status.",
+        "body": 'return "engineer Pat Logan: rested · conductor Bill Brent: rested · ..."',
+    })
+    # DEBUG level showcases the platform-wide log level dropdown.
     set_env(base, token, name, [
-        {"name": "DANCONIA_API_TOKEN", "value": "dc_chx_4901", "secret": True},
+        {"name": "LOG_LEVEL", "value": "DEBUG", "secret": False},
+        {"name": "CREW_BOARD_KEY", "value": "tt_crew_0093", "secret": True},
+        {"name": "HOS_LIMIT_HOURS", "value": "12", "secret": False},
     ])
-    # Stop it so the badge reads "stopped".
-    stop(base, token, name)
 
 
-def seed_wyatt(base: str, token: str) -> None:
+def seed_signal_telemetry(base: str, token: str) -> None:
     """Code-mode server, running, custom server.py. Showcases code editor."""
-    source = '''"""Wyatt Oil — shale extraction telemetry MCP."""
+    source = '''"""Signal telemetry — block signals and grade crossings on the Taggart network."""
 from fastmcp import FastMCP
 
-mcp = FastMCP("wyatt-oil")
+mcp = FastMCP("signal-telemetry")
 
 
 @mcp.tool
-def well_pressure(well_id: str) -> dict:
-    """Return real-time pressure (psi) at a Wyatt Oil shale well."""
-    return {"well_id": well_id, "pressure_psi": 3210, "trend": "steady"}
+def signal_status(block_id: str) -> dict:
+    """Current aspect and health of a block signal."""
+    return {"block_id": block_id, "aspect": "clear", "lamp_voltage": 11.8, "battery_pct": 96}
 
 
 @mcp.tool
-def list_wells(field: str = "colorado") -> list[dict]:
-    """List Wyatt Oil wells in the given field."""
+def list_blocks(division: str = "colorado") -> list[dict]:
+    """List signal blocks in the given division."""
     return [
-        {"id": "WYT-1", "field": field, "depth_m": 2400, "status": "producing"},
-        {"id": "WYT-2", "field": field, "depth_m": 2150, "status": "producing"},
-        {"id": "WYT-7", "field": field, "depth_m": 2880, "status": "maintenance"},
+        {"id": "JGL-114", "division": division, "aspect": "clear", "occupied": False},
+        {"id": "JGL-115", "division": division, "aspect": "approach", "occupied": False},
+        {"id": "JGL-116", "division": division, "aspect": "stop", "occupied": True},
     ]
 
 
 @mcp.tool
-def shale_yield(field: str) -> dict:
-    """Daily shale-oil yield (barrels) for a field."""
-    return {"field": field, "daily_barrels": 184_200, "unit": "bbl/day"}
+def crossing_health(crossing_id: str) -> dict:
+    """Gate, lamp, and battery health for a grade crossing."""
+    return {"crossing_id": crossing_id, "gates": "ok", "lamps": "ok", "battery_pct": 94}
 
 
 if __name__ == "__main__":
@@ -327,134 +380,127 @@ if __name__ == "__main__":
     )
 '''
     create_from_code(
-        base, token, "wyatt-oil",
-        "Shale-well pressure, yield, and field telemetry. Custom code-mode server.",
+        base, token, "signal-telemetry",
+        "Block-signal aspects, lamp voltage, and grade-crossing health. Custom code-mode server.",
         source,
     )
-    set_env(base, token, "wyatt-oil", [
-        {"name": "WYATT_WELL_TOKEN", "value": "wo_p4_9301", "secret": True},
-        {"name": "DEFAULT_FIELD", "value": "colorado", "secret": False},
+    set_env(base, token, "signal-telemetry", [
+        {"name": "SIGNAL_NET_TOKEN", "value": "sig_net_9301", "secret": True},
+        {"name": "DEFAULT_DIVISION", "value": "colorado", "secret": False},
     ])
 
 
-def seed_galt(base: str, token: str) -> None:
-    """Code-mode server with LOG_LEVEL=DEBUG set — showcases the new dropdown.
-
-    Created as structured so it lands in 'running' state and the logs/env tabs
-    look meaningful. The LOG_LEVEL env var will be visible in both the Logs
-    tab dropdown and the Env vars editor.
-    """
-    name = "galt-engine"
+def seed_freight_billing(base: str, token: str) -> None:
+    """Structured, stopped — shows the gray status badge in the table."""
+    name = "freight-billing"
     create_from_template(
         base, token, name,
-        "Static-electricity motor research — generator output, atmospheric draw, conversion efficiency.",
+        "Waybill rating and freight revenue settlement for the continental network.",
     )
     add_primitive(base, token, name, {
-        "kind": "tool", "name": "generator_output",
-        "description": "Current output of the Galt motor (kW).",
-        "parameters": [],
-        "body": 'return {"output_kw": 18_420, "efficiency_pct": 99.2, "atmosphere_draw": "nominal"}',
-    })
-    add_primitive(base, token, name, {
-        "kind": "tool", "name": "atmospheric_draw",
-        "description": "Static-charge intake reading at the experimental site.",
+        "kind": "tool", "name": "rate_quote",
+        "description": "Quote a freight rate between two terminals.",
         "parameters": [
-            {"name": "site", "type": "string", "required": False},
+            {"name": "origin", "type": "string", "required": True},
+            {"name": "destination", "type": "string", "required": True},
+            {"name": "tons", "type": "number", "required": True},
         ],
-        "body": 'return {"site": site or "colorado-lab", "charge_kv_m": 142.7, "weather": "clear"}',
+        "body": 'return {"origin": origin, "destination": destination, "tons": tons, "rate_usd": round(tons * 14.25, 2)}',
     })
     add_primitive(base, token, name, {
-        "kind": "resource", "name": "schematic",
-        "uri": "galt://motor/schematic",
-        "description": "Engineering schematic of the motor.",
-        "body": 'return "Schematic redacted — see Mr. Galt for the full drawing."',
+        "kind": "tool", "name": "waybill_lookup",
+        "description": "Look up a waybill by number.",
+        "parameters": [
+            {"name": "waybill_id", "type": "string", "required": True},
+        ],
+        "body": 'return {"waybill_id": waybill_id, "shipper": "Rearden Steel", "commodity": "structural rail", "status": "in_transit"}',
     })
-    # DEBUG level showcases the new platform-wide log level dropdown.
     set_env(base, token, name, [
-        {"name": "LOG_LEVEL", "value": "DEBUG", "secret": False},
-        {"name": "GALT_LAB_SECRET", "value": "g_lab_1957", "secret": True},
-        {"name": "OBSERVATORY_REGION", "value": "colorado", "secret": False},
+        {"name": "BILLING_LEDGER_KEY", "value": "rev_clr_88aa", "secret": True},
     ])
+    # Stop it so the badge reads "stopped".
+    stop(base, token, name)
 
 
-def seed_mulligan(base: str, token: str) -> None:
-    """Structured server with a richer description, stopped to show variety."""
-    name = "mulligan-bank"
+def seed_yard_inventory(base: str, token: str) -> None:
+    """Structured server, stopped, with more env-var variety."""
+    name = "yard-inventory"
     create_from_template(
         base, token, name,
-        "Reserve-currency clearing and account telemetry for Mulligan Bank (denominated in Mulligan dollars).",
+        "Classification-yard car inventory from trackside AEI tag readers.",
     )
     add_primitive(base, token, name, {
-        "kind": "tool", "name": "account_balance",
-        "description": "Look up the balance of a Mulligan Bank account.",
+        "kind": "tool", "name": "car_location",
+        "description": "Locate a freight car by reporting mark.",
         "parameters": [
-            {"name": "account_id", "type": "string", "required": True},
+            {"name": "car_id", "type": "string", "required": True},
         ],
-        "body": 'return {"account_id": account_id, "balance_mb": 142_900, "currency": "MB"}',
+        "body": 'return {"car_id": car_id, "yard": "cheyenne", "track": "C-14", "last_aei_read": "2026-06-11T14:02:00Z"}',
     })
     add_primitive(base, token, name, {
-        "kind": "tool", "name": "clear_transfer",
-        "description": "Clear a wire transfer between Mulligan accounts.",
+        "kind": "tool", "name": "classify_cut",
+        "description": "Record a cut of cars classified to a bowl track.",
         "parameters": [
-            {"name": "from_account", "type": "string", "required": True},
-            {"name": "to_account", "type": "string", "required": True},
-            {"name": "amount_mb", "type": "number", "required": True},
+            {"name": "track", "type": "string", "required": True},
+            {"name": "car_count", "type": "number", "required": True},
         ],
-        "body": 'return {"cleared": True, "from": from_account, "to": to_account, "amount_mb": amount_mb}',
+        "body": 'return {"track": track, "classified": car_count, "remaining_capacity": 31 - car_count}',
     })
     set_env(base, token, name, [
-        {"name": "MULLIGAN_CLEARING_KEY", "value": "mb_clr_88aa", "secret": True},
-        {"name": "RESERVE_LEDGER_URL", "value": "https://ledger.mulligan.bank/v1", "secret": False},
+        {"name": "YARD_OFFICE_KEY", "value": "yard_chy_4411", "secret": True},
+        {"name": "AEI_READER_URL", "value": "https://aei.taggart.rail/v1", "secret": False},
+        {"name": "HOME_YARD", "value": "cheyenne", "secret": False},
     ])
     stop(base, token, name)
 
 
-def seed_stockton(base: str, token: str) -> None:
-    """Simple structured server with a single tool — round-out the dashboard."""
-    name = "stockton-foundry"
+def seed_motive_power(base: str, token: str) -> None:
+    """Simple structured server with two tools — round-out the dashboard."""
+    name = "motive-power"
     create_from_template(
         base, token, name,
-        "Iron foundry batch tracking — pours, billets, and quench yields.",
+        "Locomotive fleet status — assignments, fuel, and shop schedule.",
     )
     add_primitive(base, token, name, {
-        "kind": "tool", "name": "list_pours",
-        "description": "List today's foundry pours.",
+        "kind": "tool", "name": "list_locomotives",
+        "description": "List locomotives and their current assignments.",
         "parameters": [],
         "body": ('return [\n'
-                 '    {"batch": "SF-1842", "tons": 18.4, "alloy": "carbon steel"},\n'
-                 '    {"batch": "SF-1843", "tons": 22.1, "alloy": "rearden metal"},\n'
+                 '    {"unit": "TT-601", "class": "road freight", "status": "on JGL-93"},\n'
+                 '    {"unit": "TT-415", "class": "yard switcher", "status": "cheyenne yard"},\n'
+                 '    {"unit": "TT-228", "class": "road freight", "status": "shop — roundhouse stall 4"},\n'
                  ']'),
     })
     add_primitive(base, token, name, {
-        "kind": "tool", "name": "quench_yield",
-        "description": "Quench yield (%) for a billet batch.",
+        "kind": "tool", "name": "fuel_level",
+        "description": "Fuel remaining for a locomotive.",
         "parameters": [
-            {"name": "batch", "type": "string", "required": True},
+            {"name": "unit", "type": "string", "required": True},
         ],
-        "body": 'return {"batch": batch, "yield_pct": 97.4}',
+        "body": 'return {"unit": unit, "gallons": 3800, "pct": 76}',
     })
     set_env(base, token, name, [
-        {"name": "STOCKTON_OPERATOR", "value": "wisconsin-line", "secret": False},
+        {"name": "SHOP_LOCATION", "value": "cheyenne-roundhouse", "secret": False},
     ])
 
 
 SEEDERS = [
-    seed_taggart,
-    seed_rearden,
-    seed_danconia,
-    seed_wyatt,
-    seed_galt,
-    seed_mulligan,
-    seed_stockton,
+    seed_dispatch,
+    seed_track_maintenance,
+    seed_crew_scheduling,
+    seed_signal_telemetry,
+    seed_freight_billing,
+    seed_yard_inventory,
+    seed_motive_power,
 ]
 
 
-# -------- Sub-command: seed (Atlas servers) --------
+# -------- Sub-command: seed (Taggart servers) --------
 
 def cmd_seed(base: str, token: str) -> None:
     print("Cleaning up any prior demo servers...")
     delete_demo_servers(base, token)
-    print("Seeding Atlas Shrugged demo servers...")
+    print("Seeding Taggart Transcontinental demo servers...")
     for seeder in SEEDERS:
         try:
             seeder(base, token)
@@ -485,6 +531,24 @@ def cmd_users(base: str, token: str) -> None:
     existing_emails = {u["email"]: u for u in (http("GET", base, "/api/users", token) or [])}
     user_ids: dict[str, str] = {}
 
+    # Retire the prior Atlas cast so re-seeded stacks don't show both.
+    for email in LEGACY_DEMO_USERS:
+        if email in existing_emails and email not in {e for e, _, _ in DEMO_USERS}:
+            try:
+                http("DELETE", base, f"/api/users/{existing_emails[email]['id']}", token)
+                print(f"  - retired legacy user: {email}")
+                del existing_emails[email]
+            except Exception:
+                pass
+    legacy_teams = {t["name"]: t for t in (http("GET", base, "/api/teams", token) or [])}
+    for team_name in LEGACY_DEMO_TEAMS:
+        if team_name in legacy_teams:
+            try:
+                http("DELETE", base, f"/api/teams/{legacy_teams[team_name]['id']}", token)
+                print(f"  - retired legacy team: {team_name}")
+            except Exception:
+                pass
+
     for email, display_name, role in DEMO_USERS:
         if email in existing_emails:
             user_ids[email] = existing_emails[email]["id"]
@@ -496,7 +560,7 @@ def cmd_users(base: str, token: str) -> None:
         try:
             user = http("POST", base, "/api/auth/register", token, {
                 "email": email,
-                "password": "atlas-shrugged-1957",
+                "password": "taggart-comet-1957",
                 "display_name": display_name,
                 "role": role,
             })
@@ -543,48 +607,49 @@ def cmd_users(base: str, token: str) -> None:
 # the "top servers by calls" chart has clear leaders + trailers; one
 # deliberate failure per heavy server creates a non-zero error rate.
 TRAFFIC_PLAN = {
-    # name                       (tool_calls_with_args, resource_uris, prompt_calls, fail_args)
-    "taggart-transcontinental": {
+    # crew-scheduling carries the heaviest profile → busiest usage shot.
+    "crew-scheduling": {
+        "tools": [
+            ("next_assignment", {"crew_id": "CHY-ENG-12"}, 21),
+            ("hours_of_service", {"crew_id": "CHY-ENG-12"}, 17),
+            ("hours_of_service", {"crew_id": "DEN-CON-04"}, 9),
+            ("call_crew", {"train_id": "TT-93"}, 11),
+        ],
+        "resources": [("crew://roster/active", 6)],
+        "prompts": [],
+    },
+    "dispatch": {
         "tools": [
             ("list_routes", {}, 14),
-            ("get_train_status", {"train_id": "JGL-4242"}, 22),
-            ("schedule_train", {"origin": "New York", "destination": "Cheyenne", "departure": "2026-06-02T08:00:00Z"}, 9),
+            ("get_train_status", {"train_id": "TT-4208"}, 22),
+            ("schedule_train", {"origin": "New York", "destination": "Cheyenne", "departure": "2026-06-12T08:00:00Z"}, 9),
             # Missing required arg → ToolError → bumps error_rate.
             ("schedule_train", {"origin": "Wyatt Junction"}, 3),
         ],
         "resources": [("taggart://map/continental", 5)],
         "prompts": [("morning_briefing", {"region": "Colorado"}, 4)],
     },
-    "rearden-metal": {
+    "track-maintenance": {
         "tools": [
-            ("assay_sample", {"sample_id": "RM-2025-0042"}, 11),
-            ("smelter_status", {"smelter": "Pittsburgh-3"}, 16),
+            ("inspect_section", {"section_id": "JGL-MP-1388"}, 11),
+            ("defect_report", {"division": "colorado"}, 16),
         ],
-        "resources": [("rearden://smelters/Pittsburgh-3/log", 7)],
+        "resources": [("track://sections/JGL-MP-1388/inspections", 7)],
         "prompts": [],
     },
-    "galt-engine": {
+    "signal-telemetry": {
         "tools": [
-            ("generator_output", {}, 18),
-            ("atmospheric_draw", {"site": "colorado-lab"}, 10),
-            ("atmospheric_draw", {"site": "atlantis"}, 6),
-        ],
-        "resources": [("galt://motor/schematic", 4)],
-        "prompts": [],
-    },
-    "stockton-foundry": {
-        "tools": [
-            ("list_pours", {}, 8),
-            ("quench_yield", {"batch": "SF-1843"}, 12),
+            ("signal_status", {"block_id": "JGL-114"}, 13),
+            ("list_blocks", {"division": "colorado"}, 6),
+            ("crossing_health", {"crossing_id": "XING-204"}, 7),
         ],
         "resources": [],
         "prompts": [],
     },
-    "wyatt-oil": {
+    "motive-power": {
         "tools": [
-            ("well_pressure", {"well_id": "WYT-1"}, 13),
-            ("list_wells", {"field": "colorado"}, 6),
-            ("shale_yield", {"field": "colorado"}, 7),
+            ("list_locomotives", {}, 8),
+            ("fuel_level", {"unit": "TT-601"}, 12),
         ],
         "resources": [],
         "prompts": [],
@@ -593,7 +658,7 @@ TRAFFIC_PLAN = {
 
 
 def cmd_traffic(base: str, token: str) -> None:
-    print("Generating traffic against deployed Atlas servers...")
+    print("Generating traffic against deployed Taggart servers...")
     total_tool, total_res, total_prompt, total_err = 0, 0, 0, 0
     for server, plan in TRAFFIC_PLAN.items():
         # Skip stopped/exited servers — they'd error every call. Check first.
@@ -692,7 +757,7 @@ def cmd_cleanup(base: str, token: str) -> None:
     print("Cleaning up demo servers, teams, and users...")
     delete_demo_servers(base, token)
     teams = {t["name"]: t for t in (http("GET", base, "/api/teams", token) or [])}
-    for team_name, _, _ in DEMO_TEAMS:
+    for team_name in [t[0] for t in DEMO_TEAMS] + LEGACY_DEMO_TEAMS:
         if team_name in teams:
             try:
                 http("DELETE", base, f"/api/teams/{teams[team_name]['id']}", token)
@@ -700,7 +765,7 @@ def cmd_cleanup(base: str, token: str) -> None:
             except Exception as e:  # noqa: BLE001
                 print(f"  ! team {team_name}: {e}", file=sys.stderr)
     users = {u["email"]: u for u in (http("GET", base, "/api/users", token) or [])}
-    for email, _display, _role in DEMO_USERS:
+    for email in [u[0] for u in DEMO_USERS] + LEGACY_DEMO_USERS:
         if email in users:
             try:
                 http("DELETE", base, f"/api/users/{users[email]['id']}", token)
