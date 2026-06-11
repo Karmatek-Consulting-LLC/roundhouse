@@ -1,28 +1,24 @@
-# Roundhouse Lab CI/CD
+# Roundhouse CI/CD
 #
 # Full build -> smoke -> push -> swarm deploy. Works identically on github.com and
 # GitHub Enterprise; only the registry host and runner location differ.
 #
-# Triggers on `main` (the only long-lived branch). "Lab" in the workflow
-# name, GitHub environment, and image tags refers to the lab swarm
-# deployment target, not a branch.
-#
 # Repo/org configuration:
-#   Deploy stack name is fixed: roundhouse (must match docker-stack-lab.yml / traefik.swarm.yml network prefix).
-#   Registry image path is built from the `lab` environment vars:
+#   Deploy stack name is fixed: roundhouse (must match docker-stack.yml / traefik.swarm.yml network prefix).
+#   Registry image path is built from the `production` environment vars:
 #     REGISTRY_HOST       (required) - used for docker login, e.g. registry.example.com
 #     REGISTRY_NAMESPACE  (optional) - project/org segment, e.g. roundhouse.
 #                                      Leave unset for flat registries with no namespace.
 #   The "Compute image repo" step combines them into IMAGE_REPO and exports it via
 #   $GITHUB_ENV. docker stack deploy then interpolates ${IMAGE_REPO} into
-#   docker-stack-lab.yml's platform-api `image:` field.
+#   docker-stack.yml's platform-api `image:` field.
 #
 # Postgres pins to a node via `node.labels.db == true`. Label the target node
 # once: `docker node update --label-add db=true <hostname>`.
 #   Environments:
-#     lab  -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD (only if the
-#             registry requires auth; otherwise leave them unset and the
-#             login step skips cleanly)
+#     production -> Secrets: REGISTRY_USERNAME, REGISTRY_PASSWORD (only if the
+#                   registry requires auth; otherwise leave them unset and the
+#                   login step skips cleanly)
 #
 # Self-hosted runner requirements:
 #   Labels: self-hosted, swarm  (matches the labels the karmatek-services workflows use)
@@ -30,9 +26,9 @@
 #
 # Swarm prerequisites (one-time):
 #   - External secrets: mcp_app_key, mcp_admin_email, mcp_admin_password, mcp_postgres_password
-#   - External overlay traefik_traefik-public (see docker-stack-lab.yml networks.traefik_edge)
+#   - External overlay traefik_traefik-public (see docker-stack.yml networks.traefik_edge)
 
-name: Roundhouse Lab CI
+name: Roundhouse CI
 
 on:
   push:
@@ -42,8 +38,8 @@ on:
       - "frontend/**"
       - "templates/**"
       - "traefik/**"
-      - "docker-stack-lab.yml"
-      - ".github/workflows/roundhouse-lab-ci.yml"
+      - "docker-stack.yml"
+      - ".github/workflows/roundhouse-ci.yml"
   pull_request:
     branches: [main]
     paths:
@@ -51,8 +47,8 @@ on:
       - "frontend/**"
       - "templates/**"
       - "traefik/**"
-      - "docker-stack-lab.yml"
-      - ".github/workflows/roundhouse-lab-ci.yml"
+      - "docker-stack.yml"
+      - ".github/workflows/roundhouse-ci.yml"
   workflow_dispatch: {}
 
 concurrency:
@@ -68,7 +64,7 @@ jobs:
     # Skip untrusted fork PRs (need Docker access).
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, swarm]
-    environment: lab
+    environment: production
     env:
       PLATFORM: linux/amd64
       REGISTRY_HOST: ${{ vars.REGISTRY_HOST }}
@@ -81,7 +77,7 @@ jobs:
       - name: Compute image repo
         run: |
           set -euo pipefail
-          : "${REGISTRY_HOST:?REGISTRY_HOST not set on the lab environment}"
+          : "${REGISTRY_HOST:?REGISTRY_HOST not set on the production environment}"
           # REGISTRY_NAMESPACE is optional - flat registries (no project segment) leave it unset.
           if [[ -n "${REGISTRY_NAMESPACE:-}" ]]; then
             IMAGE_REPO="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/roundhouse"
@@ -94,13 +90,13 @@ jobs:
       - name: Build image
         run: |
           set -euo pipefail
-          LAB_SHA_TAG="lab-${GITHUB_SHA}"
+          SHA_TAG="${GITHUB_SHA}"
           docker buildx build \
             --load \
             --platform "$PLATFORM" \
             -f api/Dockerfile \
-            -t "roundhouse-ci:${LAB_SHA_TAG}" \
-            -t "${IMAGE_REPO}:${LAB_SHA_TAG}" \
+            -t "roundhouse-ci:${SHA_TAG}" \
+            -t "${IMAGE_REPO}:${SHA_TAG}" \
             .
 
       - name: Smoke test (platform + ephemeral Postgres)
@@ -109,7 +105,7 @@ jobs:
           NET="roundhouse-smoke-net-${GITHUB_RUN_ID}"
           DB="roundhouse-smoke-db-${GITHUB_RUN_ID}"
           APP="roundhouse-smoke-app-${GITHUB_RUN_ID}"
-          LAB_SHA_TAG="lab-${GITHUB_SHA}"
+          SHA_TAG="${GITHUB_SHA}"
           docker network create "$NET"
           trap 'docker rm -f "$APP" "$DB" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true' EXIT
 
@@ -149,7 +145,7 @@ jobs:
             -e ADMIN_EMAIL=ci-admin@example.local \
             -e ADMIN_PASSWORD=ci-admin-password \
             -e MCP_BASE_URL=http://localhost \
-            "roundhouse-ci:${LAB_SHA_TAG}" >/dev/null
+            "roundhouse-ci:${SHA_TAG}" >/dev/null
 
           # Health probe via /api/health (uvicorn serves on :8000).
           for i in $(seq 1 120); do
@@ -192,28 +188,28 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
-          LAB_SHA_TAG="lab-${GITHUB_SHA}"
-          docker push "${IMAGE_REPO}:${LAB_SHA_TAG}"
+          SHA_TAG="${GITHUB_SHA}"
+          docker push "${IMAGE_REPO}:${SHA_TAG}"
 
-      - name: Tag and push lab-latest
+      - name: Tag and push latest
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
-          LAB_SHA_TAG="lab-${GITHUB_SHA}"
+          SHA_TAG="${GITHUB_SHA}"
           docker tag \
-            "${IMAGE_REPO}:${LAB_SHA_TAG}" \
-            "${IMAGE_REPO}:lab-latest"
-          docker push "${IMAGE_REPO}:lab-latest"
+            "${IMAGE_REPO}:${SHA_TAG}" \
+            "${IMAGE_REPO}:latest"
+          docker push "${IMAGE_REPO}:latest"
 
       - name: Deploy stack
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           docker info --format '{{.Swarm.LocalNodeState}} {{.Swarm.ControlAvailable}}'
-          # IMAGE_REPO (from $GITHUB_ENV) is interpolated into docker-stack-lab.yml's
+          # IMAGE_REPO (from $GITHUB_ENV) is interpolated into docker-stack.yml's
           # platform-api image: field by docker stack deploy.
           docker stack deploy \
             --with-registry-auth \
             --resolve-image always \
-            -c docker-stack-lab.yml \
+            -c docker-stack.yml \
             roundhouse
