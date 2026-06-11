@@ -8,6 +8,7 @@ export default {
         sans: ["var(--font-sans)"],
         mono: ["var(--font-mono)"],
         serif: ["var(--font-serif)"],
+        display: ["var(--font-display)"],
       },
       borderRadius: {
         lg: "var(--radius)",
