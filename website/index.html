@@ -155,10 +155,6 @@ nav {
   margin: 26px 0 30px;
 }
 .hero h1 .copper { color: var(--copper-hi); }
-.hero h1 .outline {
-  color: transparent;
-  -webkit-text-stroke: 1.5px var(--smoke);
-}
 .hero-sub {
   max-width: 50ch; font-size: 20px; font-weight: 300; color: var(--smoke);
 }
@@ -206,7 +202,7 @@ nav {
   .tt-wrap svg { width: 110%; margin-left: -5%; }
 }
 .tt-caption {
-  position: absolute; bottom: -6px; left: 0; right: 0; text-align: center;
+  margin-top: 26px; text-align: center;
   font-family: var(--mono); font-size: 10px; letter-spacing: .3em;
   color: var(--ash); text-transform: uppercase;
 }
@@ -538,7 +534,7 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
   <div class="wrap hero-grid">
     <div>
       <span class="tag reveal in">Self-hosted MCP platform</span>
-      <h1 class="reveal in d1">Every MCP<br/>server needs<br/>a <span class="copper">home</span><span class="outline">.</span></h1>
+      <h1 class="reveal in d1">Every MCP<br/>server needs<br/>a <span class="copper">home.</span></h1>
       <p class="hero-sub reveal in d2">
         Write a tool in the browser. Hit deploy. A containerized FastMCP server is
         live at a <em>stable URL</em> — ready for Claude Desktop, Claude Code,
@@ -582,7 +578,7 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
         <circle class="hub" cx="300" cy="310" r="24"/>
         <circle class="hub-core" cx="300" cy="310" r="7"/>
       </svg>
-      <div class="tt-caption">fig. 01 — plan view · the pit is round; the house is not</div>
+      <div class="tt-caption">fig. 01 — roundhouse, plan view · one stall per deployed server</div>
     </div>
   </div>
 </header>
