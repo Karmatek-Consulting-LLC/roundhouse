@@ -125,6 +125,26 @@ nav {
 }
 .nav-gh:hover { background: var(--copper-hi); transform: translateY(-1px); }
 @media (max-width: 760px) { .nav-links { display: none; } }
+@media (max-width: 480px) {
+  .nav-inner { gap: 14px; }
+  .brand { gap: 9px; }
+  .brand svg { width: 32px; }
+  .brand b { font-size: 18px; }
+  .nav-gh { padding: 8px 12px; font-size: 11px; }
+}
+
+/* mobile rhythm: tighten the big section gutters */
+@media (max-width: 560px) {
+  .board-sec { padding: 84px 0 78px; }
+  .why { padding: 34px 0 94px; }
+  .bays { padding: 0 0 94px; }
+  .line-sec { padding: 0 0 88px; }
+  .qs { padding: 0 0 94px; }
+  .foot-inner { padding-top: 52px; padding-bottom: 34px; }
+  .ticker-track span { font-size: 16px; }
+  .ed-code { font-size: 12px; padding: 18px 16px; }
+  .term pre { padding: 16px; font-size: 13px; }
+}
 
 /* ============ HERO ============ */
 .hero {
@@ -147,7 +167,7 @@ nav {
 .hero-grid {
   position: relative; z-index: 2;
   display: grid; grid-template-columns: 1fr 1.12fr;
-  gap: 24px; align-items: center; padding: 64px 0 96px;
+  gap: 24px; align-items: center; padding-top: 64px; padding-bottom: 96px;
 }
 .hero h1 {
   font-size: clamp(46px, 8.2vw, 118px);
@@ -272,6 +292,14 @@ nav {
   letter-spacing: .14em; color: var(--ash);
 }
 .board-foot b { color: var(--smoke); font-weight: 500; }
+/* mobile: drop the route column so the board fits without panning */
+@media (max-width: 640px) {
+  .board { padding: 20px 16px 24px; }
+  .board-cols, .board-row { grid-template-columns: 15ch 11ch 1fr; min-width: 0; gap: 12px; }
+  .board-cols span:nth-child(2), .board-row .flapline.is-route { display: none; }
+  .f { font-size: 13.5px; }
+  .flapline { gap: 2px; }
+}
 
 /* ============ WHY ============ */
 .why { padding: 40px 0 130px; }
@@ -447,7 +475,7 @@ nav {
 
 /* ============ FOOTER ============ */
 footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
-.foot-inner { padding: 70px 0 40px; }
+.foot-inner { padding-top: 70px; padding-bottom: 40px; }
 .foot-mark {
   font-family: var(--display); font-weight: 900; text-transform: uppercase;
   font-size: clamp(64px, 12.5vw, 190px); line-height: .85; letter-spacing: .02em;
@@ -685,7 +713,7 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
   <div class="wrap">
     <div class="line-head reveal">
       <span class="tag">The line</span>
-      <h2>From idea to in-service<br/>in four stops</h2>
+      <h2>From idea to <span style="white-space:nowrap">in-service</span><br/>in four stops</h2>
     </div>
 
     <div class="stations" id="stations">
