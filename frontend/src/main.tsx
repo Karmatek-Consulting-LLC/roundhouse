@@ -6,7 +6,7 @@ import { AuthProvider } from "@/lib/auth"
 import App from "./App.tsx"
 
 // Apply theme before first render to avoid flash
-const savedTheme = localStorage.getItem("theme") ?? "system"
+const savedTheme = localStorage.getItem("theme") ?? "dark"
 const isDark = savedTheme === "dark" || (savedTheme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
 document.documentElement.classList.toggle("dark", isDark)
 
