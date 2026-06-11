@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Roundhouse — a self-hosted home for your MCP servers</title>
+<meta name="description" content="Write an MCP tool in the browser, hit deploy, and a containerized FastMCP server is live at a stable URL — ready for Claude Desktop, Claude Code, or any MCP client." />
+<meta property="og:title" content="Roundhouse" />
+<meta property="og:description" content="A self-hosted home for your MCP servers. Write a tool, hit deploy, point Claude at it." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 68' fill='none' stroke-width='6' stroke-linecap='round'%3E%3Cg stroke='%23ece7dd'%3E%3Cpath d='M 20 50 A 40 40 0 0 1 100 50'/%3E%3C/g%3E%3Cg stroke='%23c2693a'%3E%3Cline x1='60' y1='63' x2='60' y2='28'/%3E%3Ccircle cx='60' cy='50' r='6' fill='%23c2693a'/%3E%3C/g%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;600;700;800;900&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================
+   ROUNDHOUSE — industrial railyard modernism
+   forged iron · rust copper · signal amber · split-flap
+   ============================================================ */
+:root {
+  --iron:        #0d0e10;
+  --iron-2:      #131517;
+  --iron-3:      #1a1d20;
+  --iron-4:      #22262a;
+  --line:        #2a2e33;
+  --line-soft:   #1f2226;
+  --cream:       #ece7dd;
+  --smoke:       #9b968c;
+  --ash:         #6b675f;
+  --copper:      #c2693a;
+  --copper-hi:   #e08a55;
+  --copper-dim:  #8a4a28;
+  --amber:       #ffb454;
+  --signal:      #8fbf72;
+  --signal-dim:  #4e6e41;
+  --display: "Big Shoulders Display", sans-serif;
+  --serif: "Newsreader", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; overflow-x: clip; }
+body {
+  background: var(--iron);
+  color: var(--cream);
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.65;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--copper); color: var(--iron); }
+::-webkit-scrollbar { width: 11px; }
+::-webkit-scrollbar-track { background: var(--iron); }
+::-webkit-scrollbar-thumb { background: var(--iron-4); border: 3px solid var(--iron); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--copper-dim); }
+
+a { color: inherit; }
+img, svg { display: block; }
+
+/* film grain over everything */
+.grain {
+  position: fixed; inset: -100px; z-index: 999; pointer-events: none;
+  opacity: .055; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+/* prevent grid/flex track blowout from long unbreakable content */
+.hero-grid > *, .why-grid > *, .qs-grid > *, .ed-panes > * { min-width: 0; }
+@media (max-width: 560px) {
+  .wrap { padding: 0 22px; }
+  body { font-size: 16.5px; }
+}
+
+/* mono technical label */
+.tag {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .28em; text-transform: uppercase; color: var(--copper-hi);
+}
+.tag::before { content: "// "; color: var(--ash); letter-spacing: 0; }
+
+h1, h2, h3 { font-family: var(--display); text-transform: uppercase; }
+
+/* hazard stripe utility */
+.hazard {
+  height: 8px;
+  background: repeating-linear-gradient(-45deg,
+    var(--copper) 0 14px, var(--iron) 14px 28px);
+  opacity: .85;
+}
+
+/* scroll reveal */
+.reveal { opacity: 0; transform: translateY(26px); }
+.reveal.in { opacity: 1; transform: none; transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1); }
+.reveal.d1.in { transition-delay: .08s; } .reveal.d2.in { transition-delay: .16s; }
+.reveal.d3.in { transition-delay: .24s; } .reveal.d4.in { transition-delay: .32s; }
+
+/* ============ NAV ============ */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--iron) 82%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.nav-inner { display: flex; align-items: center; gap: 28px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; margin-right: auto; }
+.brand svg { width: 40px; height: auto; }
+.brand b {
+  font-family: var(--display); font-weight: 800; font-size: 22px;
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.brand b i { font-style: normal; color: var(--copper-hi); }
+.nav-links { display: flex; gap: 26px; }
+.nav-links a {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .16em;
+  text-transform: uppercase; text-decoration: none; color: var(--smoke);
+  transition: color .2s;
+}
+.nav-links a:hover { color: var(--cream); }
+.nav-gh {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .1em;
+  text-decoration: none; color: var(--iron);
+  background: var(--cream); padding: 9px 16px; border-radius: 3px;
+  transition: background .2s, transform .2s;
+}
+.nav-gh:hover { background: var(--copper-hi); transform: translateY(-1px); }
+@media (max-width: 760px) { .nav-links { display: none; } }
+
+/* ============ HERO ============ */
+.hero {
+  position: relative; min-height: 100svh;
+  display: grid; align-items: center;
+  padding-top: 64px;
+  background:
+    radial-gradient(1100px 600px at 78% 42%, rgba(194,105,58,.10), transparent 60%),
+    radial-gradient(800px 500px at 12% 90%, rgba(194,105,58,.05), transparent 60%);
+}
+.hero::after { /* blueprint floor grid */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(900px 700px at 70% 45%, rgba(0,0,0,.5), transparent 75%);
+  -webkit-mask-image: radial-gradient(900px 700px at 70% 45%, rgba(0,0,0,.5), transparent 75%);
+}
+.hero-grid {
+  position: relative; z-index: 2;
+  display: grid; grid-template-columns: 1.05fr .95fr;
+  gap: 24px; align-items: center; padding: 64px 0 96px;
+}
+.hero h1 {
+  font-size: clamp(46px, 8.2vw, 118px);
+  font-weight: 900; line-height: .92; letter-spacing: .01em;
+  margin: 26px 0 30px;
+}
+.hero h1 .copper { color: var(--copper-hi); }
+.hero h1 .outline {
+  color: transparent;
+  -webkit-text-stroke: 1.5px var(--smoke);
+}
+.hero-sub {
+  max-width: 50ch; font-size: 20px; font-weight: 300; color: var(--smoke);
+}
+.hero-sub em { color: var(--cream); font-style: italic; }
+.cta-row { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 40px; align-items: center; }
+.cta-main {
+  display: inline-flex; align-items: center; gap: 12px;
+  font-family: var(--mono); font-size: 14px; font-weight: 500;
+  background: var(--copper); color: var(--iron);
+  border: none; cursor: pointer;
+  padding: 16px 24px; border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--copper-dim), 0 14px 40px -12px rgba(194,105,58,.55);
+  transition: background .2s, transform .2s, box-shadow .2s;
+}
+.cta-main:hover { background: var(--copper-hi); transform: translateY(-2px); box-shadow: 0 0 0 1px var(--copper-dim), 0 20px 48px -12px rgba(224,138,85,.6); }
+.cta-main .dollar { opacity: .6; }
+.cta-ghost {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 13px; letter-spacing: .06em;
+  color: var(--cream); text-decoration: none;
+  padding: 15px 22px; border: 1px solid var(--line); border-radius: 3px;
+  transition: border-color .2s, background .2s;
+}
+.cta-ghost:hover { border-color: var(--copper); background: rgba(194,105,58,.08); }
+.stack-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 44px; }
+.stack-chips span {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  color: var(--ash); border: 1px solid var(--line-soft);
+  padding: 6px 11px; border-radius: 999px;
+}
+.hero-status {
+  display: flex; align-items: center; gap: 10px; margin-top: 22px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .18em; color: var(--ash);
+  text-transform: uppercase;
+}
+.pip { width: 7px; height: 7px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 10px var(--signal); animation: pip 2.2s ease-in-out infinite; }
+@keyframes pip { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* turntable */
+.tt-wrap { position: relative; }
+.tt-wrap svg { width: 100%; height: auto; max-height: 78svh; }
+.tt-caption {
+  position: absolute; bottom: -6px; left: 0; right: 0; text-align: center;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .3em;
+  color: var(--ash); text-transform: uppercase;
+}
+@media (max-width: 980px) {
+  .hero-grid { grid-template-columns: 1fr; padding-top: 40px; }
+  .tt-wrap { max-width: 520px; margin: 0 auto; }
+}
+
+/* ============ TICKER ============ */
+.ticker {
+  border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft);
+  background: var(--iron-2); overflow: hidden; padding: 15px 0;
+  position: relative; z-index: 3;
+}
+.ticker-track {
+  display: flex; gap: 0; width: max-content;
+  animation: marquee 36s linear infinite;
+}
+.ticker:hover .ticker-track { animation-play-state: paused; }
+.ticker-track span {
+  font-family: var(--display); font-weight: 700; font-size: 19px;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--smoke);
+  padding: 0 28px; white-space: nowrap;
+}
+.ticker-track span::after { content: "✕"; color: var(--copper); margin-left: 56px; font-size: 13px; }
+@keyframes marquee { to { transform: translateX(-50%); } }
+
+/* ============ DEPARTURE BOARD ============ */
+.board-sec { padding: 120px 0 110px; }
+.board-head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 36px; }
+.board-head h2 { font-size: clamp(40px, 5vw, 64px); font-weight: 800; letter-spacing: .02em; line-height: 1; }
+.board-clock { font-family: var(--mono); font-size: 12px; letter-spacing: .2em; color: var(--ash); }
+.board {
+  background: linear-gradient(180deg, #101214, #0b0c0e);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 26px 28px 30px;
+  box-shadow: 0 30px 80px -30px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.04);
+  overflow-x: auto;
+}
+.board-cols, .board-row { display: grid; grid-template-columns: 15ch 22ch 11ch 1fr; gap: 28px; align-items: center; min-width: 720px; }
+.board-cols {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .3em; color: var(--copper);
+  text-transform: uppercase; padding: 0 2px 14px; border-bottom: 1px solid var(--line-soft);
+}
+.board-row { padding: 13px 2px; border-bottom: 1px solid var(--line-soft); }
+.board-row:last-child { border-bottom: 0; }
+.flapline { display: flex; gap: 2.5px; }
+.f {
+  width: 1.04ch; text-align: center;
+  font-family: var(--mono); font-size: 15px; font-weight: 500; line-height: 1.55;
+  color: var(--cream);
+  background: linear-gradient(180deg, #23262b 0%, #16181b 48%, #101214 52%, #1b1e22 100%);
+  border-radius: 2.5px;
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.045);
+  position: relative;
+}
+.f::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(0,0,0,.55); }
+.f.spinning { color: var(--smoke); }
+.flapline.is-live .f    { color: var(--signal); }
+.flapline.is-build .f   { color: var(--amber); }
+.flapline.is-route .f   { color: var(--smoke); font-size: 13.5px; }
+.board-row .lamp { justify-self: end; width: 9px; height: 9px; border-radius: 50%; background: var(--signal-dim); transition: background .4s, box-shadow .4s; }
+.board-row .lamp.on { background: var(--signal); box-shadow: 0 0 12px var(--signal); }
+.board-row .lamp.warm { background: var(--amber); box-shadow: 0 0 12px var(--amber); animation: pip 1.4s ease-in-out infinite; }
+.board-foot {
+  margin-top: 18px; font-family: var(--mono); font-size: 11px;
+  letter-spacing: .14em; color: var(--ash);
+}
+.board-foot b { color: var(--smoke); font-weight: 500; }
+
+/* ============ WHY ============ */
+.why { padding: 40px 0 130px; }
+.why-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: start; margin-top: 34px; }
+.why h2 {
+  font-size: clamp(44px, 5.6vw, 76px); font-weight: 800; line-height: .98;
+  margin-top: 22px;
+}
+.why h2 .strike {
+  color: var(--ash);
+  background-image: linear-gradient(var(--copper), var(--copper));
+  background-repeat: no-repeat; background-size: 100% 5px; background-position: 0 56%;
+}
+.why-copy p { color: var(--smoke); font-weight: 300; margin-bottom: 22px; font-size: 19px; }
+.why-copy p strong { color: var(--cream); font-weight: 500; }
+.pull {
+  border-left: 3px solid var(--copper); padding: 6px 0 6px 26px; margin: 36px 0 10px;
+  font-size: 26px; line-height: 1.35; font-style: italic; font-weight: 400; color: var(--cream);
+}
+.pull .copper { color: var(--copper-hi); }
+@media (max-width: 900px) { .why-grid { grid-template-columns: 1fr; gap: 36px; } }
+
+/* ============ BAYS (features) ============ */
+.bays { padding: 0 0 130px; }
+.bays-head { margin-bottom: 48px; }
+.bays-head h2 { font-size: clamp(40px, 5vw, 64px); font-weight: 800; margin-top: 20px; }
+.bay-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.bay {
+  position: relative;
+  background: linear-gradient(180deg, var(--iron-3), var(--iron-2));
+  border: 1px solid var(--line); border-radius: 5px;
+  padding: 30px 26px 28px;
+  transition: transform .35s cubic-bezier(.2,.7,.2,1), border-color .35s, box-shadow .35s;
+  overflow: hidden;
+}
+.bay::before { /* corner rivets */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(2.5px 2.5px at 13px 13px, var(--line) 98%, transparent),
+    radial-gradient(2.5px 2.5px at calc(100% - 13px) 13px, var(--line) 98%, transparent),
+    radial-gradient(2.5px 2.5px at 13px calc(100% - 13px), var(--line) 98%, transparent),
+    radial-gradient(2.5px 2.5px at calc(100% - 13px) calc(100% - 13px), var(--line) 98%, transparent);
+}
+.bay:hover { transform: translateY(-5px); border-color: var(--copper-dim); box-shadow: 0 24px 50px -24px rgba(194,105,58,.35); }
+.bay .num {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .3em; color: var(--copper-hi);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.bay .num::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); margin-left: 16px; }
+.bay h3 { font-size: 27px; font-weight: 800; letter-spacing: .03em; margin: 18px 0 12px; }
+.bay p { font-size: 15.5px; color: var(--smoke); font-weight: 300; line-height: 1.6; }
+.bay p code { font-family: var(--mono); font-size: 12.5px; color: var(--copper-hi); background: rgba(194,105,58,.1); padding: 1px 6px; border-radius: 3px; }
+@media (max-width: 980px) { .bay-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .bay-grid { grid-template-columns: 1fr; } }
+
+/* ============ THE LINE (how it works) ============ */
+.line-sec { padding: 0 0 120px; }
+.line-head h2 { font-size: clamp(40px, 5vw, 64px); font-weight: 800; margin-top: 20px; }
+.stations { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin: 64px 0 80px; }
+.stations::before { /* the track */
+  content: ""; position: absolute; left: 2%; right: 2%; top: 27px; height: 2px;
+  background: repeating-linear-gradient(90deg, var(--line) 0 14px, transparent 14px 24px);
+}
+.stations::after { /* engine dot riding the track */
+  content: ""; position: absolute; top: 22px; left: 2%; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--copper-hi); box-shadow: 0 0 16px var(--copper);
+  opacity: 0;
+}
+.stations.in::after { animation: ride 3.2s cubic-bezier(.5,0,.4,1) .4s forwards; }
+@keyframes ride { 0% { left: 2%; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { left: calc(98% - 12px); opacity: 0; } }
+.station { position: relative; padding-top: 64px; }
+.station .dot {
+  position: absolute; top: 18px; left: 0; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--iron); border: 2px solid var(--copper);
+  box-shadow: 0 0 0 6px var(--iron);
+}
+.station .dot::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--copper-hi); opacity: 0; transition: opacity .5s; }
+.stations.in .station .dot::after { opacity: 1; }
+.stations.in .station:nth-child(1) .dot::after { transition-delay: .6s; }
+.stations.in .station:nth-child(2) .dot::after { transition-delay: 1.4s; }
+.stations.in .station:nth-child(3) .dot::after { transition-delay: 2.2s; }
+.stations.in .station:nth-child(4) .dot::after { transition-delay: 3.1s; }
+.station .s-num { font-family: var(--mono); font-size: 10px; letter-spacing: .3em; color: var(--ash); }
+.station h3 { font-size: 25px; font-weight: 800; letter-spacing: .04em; margin: 8px 0 10px; }
+.station p { font-size: 15px; color: var(--smoke); font-weight: 300; line-height: 1.6; }
+.station p code { font-family: var(--mono); font-size: 12px; color: var(--copper-hi); }
+@media (max-width: 880px) {
+  .stations { grid-template-columns: 1fr 1fr; }
+  .stations::before, .stations::after { display: none; }
+  .station { padding-top: 44px; }
+}
+@media (max-width: 520px) { .stations { grid-template-columns: 1fr; } }
+
+/* editor mock */
+.editor {
+  border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  background: var(--iron-2);
+  box-shadow: 0 50px 120px -40px rgba(0,0,0,.85);
+}
+.ed-titlebar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--line-soft); background: var(--iron-3);
+}
+.ed-titlebar .dots { display: flex; gap: 7px; }
+.ed-titlebar .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--iron-4); }
+.ed-titlebar .dots i:first-child { background: var(--copper-dim); }
+.ed-url {
+  flex: 1; text-align: center; font-family: var(--mono); font-size: 11.5px; color: var(--ash);
+  letter-spacing: .04em;
+}
+.ed-url b { color: var(--smoke); font-weight: 500; }
+.ed-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 18px; font-family: var(--mono); font-size: 12px;
+  background: rgba(194,105,58,.12); border-bottom: 1px solid rgba(194,105,58,.3);
+  color: var(--copper-hi);
+}
+.ed-banner .save {
+  margin-left: auto; font-family: var(--mono); font-size: 11px; cursor: default;
+  background: var(--copper); color: var(--iron); padding: 6px 14px; border-radius: 3px;
+}
+.ed-panes { display: grid; grid-template-columns: 250px 1fr; min-height: 380px; }
+.ed-side { border-right: 1px solid var(--line-soft); padding: 16px 0; font-family: var(--mono); font-size: 12.5px; }
+.ed-side .grp { padding: 6px 18px; color: var(--ash); font-size: 10px; letter-spacing: .24em; text-transform: uppercase; margin-top: 10px; }
+.ed-side .leaf { padding: 7px 18px 7px 30px; color: var(--smoke); cursor: default; display: flex; gap: 9px; align-items: center; }
+.ed-side .leaf::before { content: "ƒ"; color: var(--copper-dim); font-style: italic; }
+.ed-side .leaf.res::before { content: "◈"; }
+.ed-side .leaf.sel { background: rgba(194,105,58,.12); color: var(--cream); box-shadow: inset 2px 0 0 var(--copper); }
+.ed-code { padding: 22px 26px; font-family: var(--mono); font-size: 13.5px; line-height: 1.75; overflow-x: auto; }
+.ed-code .ln { color: #3a3e44; user-select: none; display: inline-block; width: 2.2em; }
+.kw { color: var(--copper-hi); } .fn { color: #e3c186; } .str { color: var(--signal); }
+.com { color: #565b62; font-style: italic; } .dec { color: #c79be0; } .num { color: #8fc7e0; }
+@media (max-width: 760px) { .ed-panes { grid-template-columns: 1fr; } .ed-side { display: none; } }
+
+/* ============ QUICK START ============ */
+.qs { padding: 0 0 130px; }
+.qs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: start; margin-top: 48px; }
+.qs h2 { font-size: clamp(40px, 5vw, 64px); font-weight: 800; margin-top: 20px; }
+.qs-note { color: var(--smoke); font-weight: 300; margin-top: 18px; max-width: 52ch; }
+.qs-note code { font-family: var(--mono); font-size: 14px; color: var(--copper-hi); }
+.term {
+  position: relative; background: #0a0b0c; border: 1px solid var(--line); border-radius: 6px;
+  font-family: var(--mono); font-size: 13.5px; line-height: 1.9;
+  box-shadow: 0 40px 90px -40px rgba(0,0,0,.9);
+}
+.term-bar {
+  display: flex; align-items: center; padding: 10px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 10.5px; letter-spacing: .24em; color: var(--ash); text-transform: uppercase;
+}
+.copy-btn {
+  margin-left: auto; font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  background: none; border: 1px solid var(--line); color: var(--smoke);
+  padding: 5px 12px; border-radius: 3px; cursor: pointer; text-transform: uppercase;
+  transition: border-color .2s, color .2s;
+}
+.copy-btn:hover { border-color: var(--copper); color: var(--copper-hi); }
+.term pre { padding: 20px 22px; overflow-x: auto; }
+.term .ps { color: var(--copper); user-select: none; }
+.term .cm { color: #565b62; }
+.term .ok { color: var(--signal); }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 26px 0 14px; }
+.tab {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase;
+  background: none; border: 1px solid var(--line); color: var(--smoke);
+  padding: 9px 18px; border-radius: 3px; cursor: pointer; transition: all .2s;
+}
+.tab.on { background: var(--copper); border-color: var(--copper); color: var(--iron); }
+.tabpane { display: none; } .tabpane.on { display: block; }
+@media (max-width: 900px) { .qs-grid { grid-template-columns: 1fr; gap: 30px; } }
+
+/* ============ FOOTER ============ */
+footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
+.foot-inner { padding: 70px 0 40px; }
+.foot-mark {
+  font-family: var(--display); font-weight: 900; text-transform: uppercase;
+  font-size: clamp(64px, 12.5vw, 190px); line-height: .85; letter-spacing: .02em;
+  color: transparent; -webkit-text-stroke: 1.5px var(--iron-4);
+  user-select: none; text-align: center;
+  transition: -webkit-text-stroke-color .6s;
+}
+.foot-mark:hover { -webkit-text-stroke-color: var(--copper-dim); }
+.foot-row {
+  display: flex; flex-wrap: wrap; gap: 18px; align-items: center; justify-content: space-between;
+  margin-top: 54px; padding-top: 26px; border-top: 1px solid var(--line-soft);
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; color: var(--ash);
+  text-transform: uppercase;
+}
+.foot-row a { color: var(--smoke); text-decoration: none; transition: color .2s; }
+.foot-row a:hover { color: var(--copper-hi); }
+.foot-links { display: flex; gap: 26px; }
+
+/* ============ TURNTABLE SVG ============ */
+#tt .ring  { stroke: var(--line); fill: none; }
+#tt .ring-dash { stroke: var(--line); fill: none; stroke-dasharray: 3 9; transform-box: view-box; transform-origin: 50% 50%; animation: slow-rot 90s linear infinite; }
+#tt .track { stroke: var(--line); stroke-width: 1.4; stroke-dasharray: 4 5; }
+#tt .stall { fill: var(--iron-3); stroke: var(--line); stroke-width: 1; }
+#tt .stall.hot { fill: rgba(194,105,58,.25); stroke: var(--copper); }
+#tt .bay-lamp { fill: var(--signal-dim); transition: fill .4s; }
+#tt .bay-lamp.hot { fill: var(--amber); }
+#tt .bay-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; fill: var(--ash); text-transform: uppercase; transition: fill .4s; }
+#tt .bay-label.hot { fill: var(--copper-hi); }
+#tt #bridge { transform-box: view-box; transform-origin: 50% 50%; transition: transform 1.3s cubic-bezier(.55,.05,.35,1); }
+#tt .rail { stroke: var(--copper); stroke-width: 2; }
+#tt .ties { stroke: rgba(194,105,58,.28); stroke-width: 26; stroke-dasharray: 2.5 11; }
+#tt .pit { stroke: var(--line); fill: rgba(255,255,255,.012); }
+#tt .hub { fill: var(--iron-2); stroke: var(--copper); stroke-width: 2; }
+#tt .hub-core { fill: var(--copper-hi); animation: pip 2.6s ease-in-out infinite; }
+#tt #cargo { fill: var(--amber); opacity: 0; }
+#tt #cargo.go { animation: dispatch 1s cubic-bezier(.3,0,.6,1) forwards; }
+@keyframes dispatch {
+  0%   { opacity: 0; transform: translateY(0); }
+  12%  { opacity: 1; }
+  85%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-148px); }
+}
+@keyframes slow-rot { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="grain" aria-hidden="true"></div>
+
+<!-- ================= NAV ================= -->
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="Roundhouse home">
+      <svg viewBox="0 0 120 68" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <g stroke="#ece7dd">
+          <path d="M 20 50 A 40 40 0 0 1 100 50"/>
+          <path d="M 38 50 A 22 22 0 0 1 82 50"/>
+          <line x1="20" y1="50" x2="38" y2="50"/><line x1="82" y1="50" x2="100" y2="50"/>
+          <line x1="27.6" y1="26.5" x2="42.2" y2="37.1"/><line x1="47.6" y1="12" x2="53.2" y2="29.1"/>
+          <line x1="72.4" y1="12" x2="66.8" y2="29.1"/><line x1="92.4" y1="26.5" x2="77.8" y2="37.1"/>
+        </g>
+        <g stroke="#c2693a"><line x1="60" y1="63" x2="60" y2="28"/><circle cx="60" cy="50" r="5" fill="#c2693a"/></g>
+      </svg>
+      <b>Round<i>house</i></b>
+    </a>
+    <div class="nav-links">
+      <a href="#board">Departures</a>
+      <a href="#why">Why</a>
+      <a href="#bays">The Bays</a>
+      <a href="#line">The Line</a>
+      <a href="#quickstart">Quick Start</a>
+    </div>
+    <a class="nav-gh" href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</nav>
+
+<!-- ================= HERO ================= -->
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="tag reveal in">Self-hosted MCP platform</span>
+      <h1 class="reveal in d1">Every MCP<br/>server needs<br/>a <span class="copper">home</span><span class="outline">.</span></h1>
+      <p class="hero-sub reveal in d2">
+        Write a tool in the browser. Hit deploy. A containerized FastMCP server is
+        live at a <em>stable URL</em> — ready for Claude Desktop, Claude Code,
+        or any MCP client. <em>No laptop required.</em>
+      </p>
+      <div class="cta-row reveal in d3">
+        <button class="cta-main" id="hero-copy" title="Copy to clipboard">
+          <span class="dollar">$</span> docker compose up -d <span style="opacity:.55">⧉</span>
+        </button>
+        <a class="cta-ghost" href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">★ Star on GitHub</a>
+      </div>
+      <div class="hero-status reveal in d4">
+        <span class="pip"></span> 12 engines in service · turntable nominal
+      </div>
+      <div class="stack-chips reveal in d4">
+        <span>FastAPI</span><span>FastMCP</span><span>React + Vite</span><span>Docker</span><span>Traefik</span><span>Postgres</span>
+      </div>
+    </div>
+
+    <div class="tt-wrap reveal in d2" aria-hidden="true">
+      <svg id="tt" viewBox="0 0 600 600">
+        <!-- outer survey rings -->
+        <circle class="ring" cx="300" cy="300" r="272" stroke-width="1"/>
+        <circle class="ring-dash" cx="300" cy="300" r="258" stroke-width="1"/>
+        <!-- pit -->
+        <circle class="pit" cx="300" cy="300" r="118" stroke-width="1.5"/>
+        <circle class="ring-dash" cx="300" cy="300" r="106" stroke-width="1" style="animation-direction: reverse; animation-duration: 60s;"/>
+        <!-- generated: tracks, stalls, lamps, labels -->
+        <g id="bay-ring"></g>
+        <!-- turntable bridge -->
+        <g id="bridge">
+          <line class="ties" x1="300" y1="192" x2="300" y2="408"/>
+          <line class="rail" x1="291" y1="188" x2="291" y2="412"/>
+          <line class="rail" x1="309" y1="188" x2="309" y2="412"/>
+          <circle id="cargo" cx="300" cy="252" r="6"/>
+        </g>
+        <circle class="hub" cx="300" cy="300" r="26"/>
+        <circle class="hub-core" cx="300" cy="300" r="7"/>
+      </svg>
+      <div class="tt-caption">fig. 01 — turntable, plan view · one stall per server</div>
+    </div>
+  </div>
+</header>
+
+<!-- ================= TICKER ================= -->
+<div class="ticker" aria-hidden="true">
+  <div class="ticker-track" id="ticker-track">
+    <span>Write a tool</span><span>Hit deploy</span><span>Live at a stable URL</span>
+    <span>Scoped tokens day one</span><span>Logs · status · redeploys</span><span>No port juggling</span>
+  </div>
+</div>
+
+<!-- ================= DEPARTURE BOARD ================= -->
+<section class="board-sec" id="board">
+  <div class="wrap">
+    <div class="board-head reveal">
+      <div>
+        <span class="tag">Departures</span>
+        <h2>Now serving</h2>
+      </div>
+      <div class="board-clock" id="board-clock">PLATFORM :3080 — ALL SERVICES NOMINAL</div>
+    </div>
+    <div class="board reveal d1" id="board-el">
+      <div class="board-cols"><span>Engine</span><span>Route</span><span>Status</span><span></span></div>
+      <!-- rows injected by JS -->
+    </div>
+    <p class="board-foot reveal d2">Every deployed server gets a stable route: <b>http://&lt;host&gt;:3080/s/&lt;name&gt;/mcp</b> — shared across your team, secured with scoped bearer tokens.</p>
+  </div>
+</section>
+
+<!-- ================= WHY ================= -->
+<section class="why" id="why">
+  <div class="wrap">
+    <span class="tag reveal">The problem</span>
+    <div class="why-grid">
+      <h2 class="reveal d1">MCP's deploy story is <span class="strike">scripts on a laptop</span><br/>a platform.</h2>
+      <div class="why-copy">
+        <p class="reveal d1">
+          MCP is a great spec. But the moment you write something useful, it lives in a
+          terminal tab on one person's machine — stdio transport, hand-edited config
+          paths, a port that changes every reboot. When the laptop sleeps,
+          <strong>the team's tools sleep with it.</strong>
+        </p>
+        <p class="reveal d2">
+          Roundhouse sits one level up. It's a small, self-hosted platform that gives every
+          server a permanent stall: codegen, an image build, a container behind Traefik,
+          and a URL that never moves. Auth isn't an afterthought — scoped bearer tokens
+          ship on day one, and you can swap in OIDC when you outgrow them.
+        </p>
+        <div class="pull reveal d3">
+          It turns <span class="copper">“I wrote a tool”</span> into
+          <span class="copper">“my team can use it from Claude.”</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BAYS ================= -->
+<section class="bays" id="bays">
+  <div class="wrap">
+    <div class="bays-head reveal">
+      <span class="tag">The bays</span>
+      <h2>Six reasons to come in<br/>off the cold rails</h2>
+    </div>
+    <div class="bay-grid">
+      <div class="bay reveal"><div class="num">Bay 01</div>
+        <h3>Codegen → Deploy</h3>
+        <p>Define primitives in a structured form — or paste raw Python. Roundhouse generates <code>server.py</code> + <code>Dockerfile</code>, builds the image, and runs the container behind Traefik.</p>
+      </div>
+      <div class="bay reveal d1"><div class="num">Bay 02</div>
+        <h3>Centralized URLs</h3>
+        <p>One stable URL per server, shared across your team. No laptop required, no tunnel hacks, no port juggling. Traefik routes clients <em>straight to the container</em> — never proxied on the hot path.</p>
+      </div>
+      <div class="bay reveal d2"><div class="num">Bay 03</div>
+        <h3>Auth on day one</h3>
+        <p>Scoped bearer tokens out of the box, enforced per-tool by middleware. Encrypted at rest. Swap in OIDC when you outgrow them — not before you need to.</p>
+      </div>
+      <div class="bay reveal"><div class="num">Bay 04</div>
+        <h3>Lifecycle, visible</h3>
+        <p>Status, logs, redeploys, scopes, and tokens — all in the same two-pane editor. Batched changes deploy together with one <code>Save &amp; Redeploy</code>.</p>
+      </div>
+      <div class="bay reveal d1"><div class="num">Bay 05</div>
+        <h3>Three server modes</h3>
+        <p><em>Structured</em> (forms → codegen) for quick tools. <em>Code-first</em> when you need full control. <em>Remote proxy</em> to put scoped auth in front of MCP servers you don't host.</p>
+      </div>
+      <div class="bay reveal d2"><div class="num">Bay 06</div>
+        <h3>Single host or Swarm</h3>
+        <p>Run the whole yard on a laptop with <code>docker compose</code>, or on a Swarm cluster with scoped socket proxies and per-server replica caps.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= THE LINE ================= -->
+<section class="line-sec" id="line">
+  <div class="wrap">
+    <div class="line-head reveal">
+      <span class="tag">The line</span>
+      <h2>From idea to in-service<br/>in four stops</h2>
+    </div>
+
+    <div class="stations" id="stations">
+      <div class="station">
+        <span class="dot"></span><span class="s-num">STOP 01</span>
+        <h3>Write</h3>
+        <p>Describe a tool's inputs, outputs, and body in a form — or paste a whole <code>server.py</code>. Your call.</p>
+      </div>
+      <div class="station">
+        <span class="dot"></span><span class="s-num">STOP 02</span>
+        <h3>Generate</h3>
+        <p>Roundhouse writes the FastMCP server and its <code>Dockerfile</code>. You review it in the editor, like any other code.</p>
+      </div>
+      <div class="station">
+        <span class="dot"></span><span class="s-num">STOP 03</span>
+        <h3>Build</h3>
+        <p>The image is built and the container spun up behind Traefik — health-checked, logged, capped.</p>
+      </div>
+      <div class="station">
+        <span class="dot"></span><span class="s-num">STOP 04</span>
+        <h3>Dispatch</h3>
+        <p>Live at <code>/s/your-server/mcp</code>. Mint a scoped token, point Claude at it, done.</p>
+      </div>
+    </div>
+
+    <div class="editor reveal" aria-label="Screenshot-style mock of the Roundhouse editor">
+      <div class="ed-titlebar">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <div class="ed-url">roundhouse · <b>servers / weather</b> · structured mode</div>
+      </div>
+      <div class="ed-banner">⬤ 2 unsaved changes — redeploy required <span class="save">Save &amp; Redeploy</span></div>
+      <div class="ed-panes">
+        <div class="ed-side">
+          <div class="grp">Tools</div>
+          <div class="leaf sel">get_forecast</div>
+          <div class="leaf">get_alerts</div>
+          <div class="grp">Resources</div>
+          <div class="leaf res">stations://list</div>
+          <div class="grp">Server</div>
+          <div class="leaf res">auth · 3 scopes</div>
+        </div>
+        <div class="ed-code"><pre style="margin:0"><code><span class="ln">1</span><span class="com"># generated by roundhouse — structured mode</span>
+<span class="ln">2</span><span class="kw">from</span> fastmcp <span class="kw">import</span> FastMCP
+<span class="ln">3</span>
+<span class="ln">4</span>mcp = <span class="fn">FastMCP</span>(<span class="str">"weather"</span>)
+<span class="ln">5</span>
+<span class="ln">6</span><span class="dec">@mcp.tool</span>
+<span class="ln">7</span><span class="kw">def</span> <span class="fn">get_forecast</span>(city: <span class="kw">str</span>, days: <span class="kw">int</span> = <span class="num">3</span>) -&gt; <span class="kw">dict</span>:
+<span class="ln">8</span>    <span class="str">"""Forecast for a city, up to 7 days out."""</span>
+<span class="ln">9</span>    <span class="kw">return</span> <span class="fn">fetch_forecast</span>(city, <span class="fn">min</span>(days, <span class="num">7</span>))
+<span class="ln">10</span>
+<span class="ln">11</span><span class="kw">if</span> __name__ == <span class="str">"__main__"</span>:
+<span class="ln">12</span>    mcp.<span class="fn">run</span>(transport=<span class="str">"http"</span>, port=<span class="num">8000</span>)</code></pre></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= QUICK START ================= -->
+<section class="qs" id="quickstart">
+  <div class="hazard" style="margin-bottom: 110px;"></div>
+  <div class="wrap">
+    <span class="tag reveal">All aboard</span>
+    <div class="qs-grid">
+      <div>
+        <h2 class="reveal d1">Up and running before your coffee cools</h2>
+        <p class="qs-note reveal d2">
+          Requires Docker and Docker Compose — nothing else. When the API logs print
+          <code>Application startup complete</code>, open
+          <code>http://localhost:3080</code> and sign in with the seed admin.
+        </p>
+        <div class="tabs reveal d3" role="tablist">
+          <button class="tab on" data-pane="desktop" role="tab">Claude Desktop</button>
+          <button class="tab" data-pane="code" role="tab">Claude Code</button>
+        </div>
+        <div class="term reveal d3 tabpane on" data-pane="desktop">
+          <div class="term-bar">claude_desktop_config.json <button class="copy-btn" data-copy="desktop">Copy</button></div>
+          <pre id="copy-desktop">{
+  <span class="str">"mcpServers"</span>: {
+    <span class="str">"my-server"</span>: {
+      <span class="str">"url"</span>: <span class="str">"http://localhost:3080/s/my-server/mcp"</span>,
+      <span class="str">"headers"</span>: { <span class="str">"Authorization"</span>: <span class="str">"Bearer &lt;token&gt;"</span> }
+    }
+  }
+}</pre>
+        </div>
+        <div class="term reveal d3 tabpane" data-pane="code">
+          <div class="term-bar">terminal <button class="copy-btn" data-copy="code">Copy</button></div>
+          <pre id="copy-code"><span class="ps">$</span> claude mcp add my-server \
+    --url    http://localhost:3080/s/my-server/mcp \
+    --header <span class="str">"Authorization: Bearer &lt;token&gt;"</span></pre>
+        </div>
+      </div>
+      <div class="term reveal d2">
+        <div class="term-bar">quick start — four commands <button class="copy-btn" data-copy="qs">Copy</button></div>
+        <pre id="copy-qs"><span class="ps">$</span> git clone https://github.com/Karmatek-Consulting-LLC/roundhouse.git
+<span class="ps">$</span> cd roundhouse
+<span class="ps">$</span> cp .env.example .env
+<span class="ps">$</span> docker compose up -d
+<span class="cm"># …images build, migrations run, Traefik takes the door…</span>
+<span class="ok">✓ platform-api    | Application startup complete</span>
+<span class="cm"># open http://localhost:3080 → admin@mcp.local / admin</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="hazard"></div>
+  <div class="wrap foot-inner">
+    <div class="foot-mark" aria-hidden="true">Roundhouse</div>
+    <div class="foot-row">
+      <span>© 2026 Karmatek · forged with FastMCP</span>
+      <div class="foot-links">
+        <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP Spec</a>
+        <a href="https://github.com/jlowin/fastmcp" target="_blank" rel="noopener">FastMCP</a>
+        <a href="#top">Back to the turntable ↑</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ============================================================
+   1 · TURNTABLE — generated bays + dispatching bridge
+   ============================================================ */
+(function () {
+  const NS = "http://www.w3.org/2000/svg";
+  const C = 300, BAYS = 12;
+  const TRACK_IN = 122, TRACK_OUT = 228, STALL_R = 244, LAMP_R = 212, LABEL_R = 288;
+  const names = ["weather", "jira", "postgres", "github", "search", "k8s",
+                 "slack", "pdf", "geo", "crm", "vault", "mail"];
+  const ring = document.getElementById("bay-ring");
+  const bridge = document.getElementById("bridge");
+  const cargo = document.getElementById("cargo");
+  const lamps = [], stalls = [], texts = [];
+
+  for (let i = 0; i < BAYS; i++) {
+    const deg = i * (360 / BAYS);
+    const rad = (deg - 90) * Math.PI / 180;
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("transform", `rotate(${deg} ${C} ${C})`);
+
+    const track = document.createElementNS(NS, "line");
+    track.setAttribute("x1", C); track.setAttribute("y1", C - TRACK_IN);
+    track.setAttribute("x2", C); track.setAttribute("y2", C - TRACK_OUT);
+    track.setAttribute("class", "track");
+    g.appendChild(track);
+
+    const stall = document.createElementNS(NS, "rect");
+    stall.setAttribute("x", C - 17); stall.setAttribute("y", C - STALL_R - 22);
+    stall.setAttribute("width", 34); stall.setAttribute("height", 24);
+    stall.setAttribute("rx", 3); stall.setAttribute("class", "stall");
+    g.appendChild(stall); stalls.push(stall);
+
+    const lamp = document.createElementNS(NS, "circle");
+    lamp.setAttribute("cx", C); lamp.setAttribute("cy", C - LAMP_R);
+    lamp.setAttribute("r", 3.4); lamp.setAttribute("class", "bay-lamp");
+    g.appendChild(lamp); lamps.push(lamp);
+
+    ring.appendChild(g);
+
+    // horizontal label, placed by angle (kept outside rotated group so text stays upright)
+    const t = document.createElementNS(NS, "text");
+    t.setAttribute("x", C + Math.cos(rad) * LABEL_R);
+    t.setAttribute("y", C + Math.sin(rad) * LABEL_R + 3.5);
+    t.setAttribute("text-anchor", "middle");
+    t.setAttribute("class", "bay-label");
+    t.textContent = names[i];
+    ring.appendChild(t);
+    texts.push(t);
+  }
+
+  let cur = 0, angle = 0;
+  function setHot(i, on) {
+    lamps[i].classList.toggle("hot", on);
+    stalls[i].classList.toggle("hot", on);
+    texts[i].classList.toggle("hot", on);
+  }
+  setHot(0, true);
+
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!reduced) {
+    setInterval(() => {
+      const hop = 3 + Math.floor(Math.random() * 7);     // always rotate forward
+      const next = (cur + hop) % BAYS;
+      angle += hop * (360 / BAYS);
+      setHot(cur, false);
+      bridge.style.transform = `rotate(${angle}deg)`;
+      cur = next;
+      setTimeout(() => {
+        setHot(cur, true);
+        cargo.classList.remove("go");
+        void cargo.offsetWidth;                          // restart animation
+        cargo.classList.add("go");
+      }, 1350);
+    }, 3400);
+  }
+})();
+
+/* ============================================================
+   2 · SPLIT-FLAP DEPARTURE BOARD
+   ============================================================ */
+(function () {
+  const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/-·: ";
+  const W = { name: 14, route: 21, status: 10 };
+  const ROWS = [
+    { name: "WEATHER",     route: "/S/WEATHER/MCP",     status: "LIVE" },
+    { name: "JIRA-TRIAGE", route: "/S/JIRA-TRIAGE/MCP", status: "LIVE" },
+    { name: "POSTGRES-RO", route: "/S/POSTGRES-RO/MCP", status: "BUILDING" },
+    { name: "ELASTIC",     route: "REMOTE · PROXIED",   status: "LIVE" },
+    { name: "K8S-OPS",     route: "/S/K8S-OPS/MCP",     status: "DEPLOYING" },
+    { name: "PDF-TOOLS",   route: "/S/PDF-TOOLS/MCP",   status: "LIVE" },
+  ];
+  const board = document.getElementById("board-el");
+  const pad = (s, w) => (s + " ".repeat(w)).slice(0, w);
+  const statusClass = s => /LIVE/.test(s) ? "is-live" : "is-build";
+
+  const cells = [];   // { span, target, delay }
+  ROWS.forEach((row, r) => {
+    const el = document.createElement("div");
+    el.className = "board-row";
+    const cols = [
+      { key: "name",   cls: "" },
+      { key: "route",  cls: "is-route" },
+      { key: "status", cls: statusClass(row.status) },
+    ];
+    cols.forEach((col, c) => {
+      const line = document.createElement("div");
+      line.className = "flapline " + col.cls;
+      line.dataset.col = col.key;
+      const text = pad(row[col.key], W[col.key]);
+      for (let i = 0; i < text.length; i++) {
+        const f = document.createElement("span");
+        f.className = "f";
+        f.textContent = " ";
+        line.appendChild(f);
+        cells.push({ span: f, target: text[i], delay: r * 130 + c * 240 + i * 26 });
+      }
+      el.appendChild(line);
+    });
+    const lamp = document.createElement("span");
+    lamp.className = "lamp" + (/LIVE/.test(row.status) ? " on" : " warm");
+    el.appendChild(lamp);
+    board.appendChild(el);
+  });
+
+  function spin(cell) {
+    if (cell.target === " ") return;
+    let ticks = 0, total = 5 + Math.floor(Math.random() * 7);
+    cell.span.classList.add("spinning");
+    const id = setInterval(() => {
+      cell.span.textContent = CHARS[Math.floor(Math.random() * CHARS.length)];
+      if (++ticks >= total) {
+        clearInterval(id);
+        cell.span.textContent = cell.target;
+        cell.span.classList.remove("spinning");
+      }
+    }, 52);
+  }
+
+  let played = false;
+  function play() {
+    if (played) return; played = true;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    cells.forEach(c => {
+      if (reduced) { c.span.textContent = c.target; return; }
+      setTimeout(() => spin(c), 350 + c.delay);
+    });
+    if (!reduced) setInterval(cycleStatus, 5200);
+  }
+
+  // keep the board alive: cycle one amber row's status
+  const STATES = ["BUILDING", "DEPLOYING", "LIVE"];
+  let cycleRow = 2, stateIdx = 0;
+  function cycleStatus() {
+    cycleRow = cycleRow === 2 ? 4 : 2;
+    stateIdx = (stateIdx + 1) % STATES.length;
+    const next = pad(STATES[stateIdx], W.status);
+    const rowEl = board.querySelectorAll(".board-row")[cycleRow];
+    const line = rowEl.querySelector('[data-col="status"]');
+    line.className = "flapline " + statusClass(next);
+    const lamp = rowEl.querySelector(".lamp");
+    lamp.className = "lamp" + (/LIVE/.test(next) ? " on" : " warm");
+    [...line.children].forEach((span, i) => {
+      const cell = { span, target: next[i] };
+      setTimeout(() => { span.textContent = ""; spin(cell); if (next[i] === " ") span.textContent = " "; }, i * 30);
+    });
+  }
+
+  new IntersectionObserver((entries, obs) => {
+    entries.forEach(e => { if (e.isIntersecting) { play(); obs.disconnect(); } });
+  }, { threshold: 0.35 }).observe(board);
+})();
+
+/* ============================================================
+   3 · SCROLL REVEALS · TICKER DUP · TABS · COPY · CLOCK
+   ============================================================ */
+(function () {
+  // reveals
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+  }, { threshold: 0.18, rootMargin: "0px 0px -40px 0px" });
+  document.querySelectorAll(".reveal:not(.in), .stations").forEach(el => io.observe(el));
+
+  // ticker: duplicate content for a seamless loop
+  const track = document.getElementById("ticker-track");
+  track.innerHTML += track.innerHTML;
+
+  // tabs
+  document.querySelectorAll(".tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t === tab));
+      document.querySelectorAll(".tabpane").forEach(p =>
+        p.classList.toggle("on", p.dataset.pane === tab.dataset.pane));
+    });
+  });
+
+  // copy buttons
+  function flash(btn, label) {
+    const old = btn.textContent;
+    btn.textContent = label;
+    setTimeout(() => { btn.textContent = old; }, 1400);
+  }
+  document.querySelectorAll(".copy-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const src = document.getElementById("copy-" + btn.dataset.copy);
+      navigator.clipboard.writeText(src.innerText).then(() => flash(btn, "Copied ✓"));
+    });
+  });
+  document.getElementById("hero-copy").addEventListener("click", function () {
+    navigator.clipboard.writeText("docker compose up -d");
+    const el = this;
+    el.style.background = "var(--signal)";
+    setTimeout(() => { el.style.background = ""; }, 500);
+  });
+
+  // departure-board clock
+  const clock = document.getElementById("board-clock");
+  function tick() {
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
+    clock.textContent = `PLATFORM :3080 · ${hh}:${mm}:${ss} · ALL SERVICES NOMINAL`;
+  }
+  tick(); setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
