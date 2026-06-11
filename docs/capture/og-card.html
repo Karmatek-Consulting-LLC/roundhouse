@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<!--
+  og-card.html — source for website/og.png (the social/link-preview image).
+
+  Regenerate with headless Chrome at 2x, then downscale to the OG standard:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless=new --hide-scrollbars --window-size=1200,630 \
+      --force-device-scale-factor=2 --virtual-time-budget=12000 \
+      --screenshot=og-card@2x.png "file://$PWD/og-card.html"
+    magick og-card@2x.png -resize 1200x630 -strip PNG24:../../website/og.png
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --iron: #0d0e10; --iron-2: #131517; --iron-3: #1a1d20; --iron-4: #22262a;
+  --line: #2a2e33; --line-soft: #1f2226;
+  --cream: #ece7dd; --smoke: #9b968c; --ash: #6b675f;
+  --copper: #c2693a; --copper-hi: #e08a55; --copper-dim: #8a4a28;
+  --amber: #ffb454; --signal: #8fbf72;
+  --display: "Big Shoulders Display", sans-serif;
+  --serif: "Newsreader", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 1200px; height: 630px; overflow: hidden; }
+body {
+  background: var(--iron);
+  color: var(--cream);
+  font-family: var(--serif);
+  position: relative;
+}
+
+/* blueprint floor grid, fading upward like the hero */
+.grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,.55), transparent 70%);
+  mask-image: linear-gradient(to top, rgba(0,0,0,.55), transparent 70%);
+}
+
+/* film grain */
+.grain {
+  position: absolute; inset: -100px; z-index: 9; pointer-events: none;
+  opacity: .055; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* hazard stripe along the bottom edge */
+.hazard {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 12px; z-index: 5;
+  background: repeating-linear-gradient(-45deg,
+    var(--copper) 0 18px, var(--iron) 18px 36px);
+  opacity: .9;
+}
+
+/* warm copper glow behind the turntable */
+.glow {
+  position: absolute; right: -180px; top: 40px; width: 760px; height: 760px;
+  background: radial-gradient(circle, rgba(194,105,58,.16), transparent 62%);
+}
+
+/* the turntable fan, big, bleeding off the right edge */
+.fan {
+  position: absolute; right: -130px; top: 50%; transform: translateY(-47%);
+  width: 700px; opacity: .92;
+}
+
+.content {
+  position: absolute; left: 72px; top: 0; bottom: 0; z-index: 6;
+  width: 640px; display: flex; flex-direction: column; justify-content: center;
+}
+
+.brand { display: flex; align-items: center; gap: 16px; margin-bottom: 44px; }
+.brand svg { width: 58px; height: auto; display: block; }
+.brand b {
+  font-family: var(--display); font-weight: 800; font-size: 33px;
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.brand b i { font-style: normal; color: var(--copper-hi); }
+
+.tag {
+  font-family: var(--mono); font-size: 17px; font-weight: 500;
+  letter-spacing: .28em; text-transform: uppercase; color: var(--copper-hi);
+  margin-bottom: 22px;
+}
+.tag::before { content: "// "; color: var(--ash); letter-spacing: 0; }
+
+h1 {
+  font-family: var(--display); text-transform: uppercase;
+  font-weight: 800; font-size: 108px; line-height: .96; letter-spacing: .015em;
+}
+h1 .copper { color: var(--copper-hi); }
+
+.sub {
+  font-family: var(--serif); font-size: 26px; line-height: 1.5;
+  color: var(--smoke); margin-top: 26px; max-width: 560px;
+}
+.sub em { color: var(--cream); }
+
+.foot {
+  position: absolute; left: 72px; bottom: 44px; z-index: 6;
+  display: flex; align-items: center; gap: 18px;
+  font-family: var(--mono); font-size: 17px; letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.foot .domain { color: var(--cream); }
+.foot .pip {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--signal);
+  box-shadow: 0 0 10px rgba(143,191,114,.8); display: inline-block;
+}
+.foot .status { color: var(--ash); font-size: 14px; letter-spacing: .1em; }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+<div class="glow"></div>
+
+<!-- turntable: a fan of stalls, not a circle -->
+<svg class="fan" viewBox="-30 0 660 480" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M 36 342.4 A 266 266 0 1 1 564 342.4 L 504.5 335.1 A 206 206 0 1 0 95.5 335.1 Z"
+        fill="#1a1d20" stroke="#2a2e33" stroke-width="1.5"/>
+  <path d="M 47 332.1 A 254 254 0 1 1 553 332.1" stroke="#2a2e33" stroke-width="1" stroke-dasharray="3 7"/>
+  <!-- radiating stall tracks -->
+  <g stroke="#3a3f45" stroke-width="2.5">
+    <line x1="300" y1="240" x2="300" y2="58"/>
+    <line x1="265.5" y1="245.5" x2="217.8" y2="69.6"/>
+    <line x1="234.4" y1="261.3" x2="144.8" y2="103.1"/>
+    <line x1="209.7" y1="285.6" x2="84.9" y2="158.7"/>
+    <line x1="193.6" y1="316.1" x2="42.5" y2="230.4"/>
+    <line x1="334.5" y1="245.5" x2="382.2" y2="69.6"/>
+    <line x1="365.6" y1="261.3" x2="455.2" y2="103.1"/>
+    <line x1="390.3" y1="285.6" x2="515.1" y2="158.7"/>
+    <line x1="406.4" y1="316.1" x2="557.5" y2="230.4"/>
+  </g>
+  <!-- turntable pit -->
+  <circle cx="300" cy="330" r="92" fill="#131517" stroke="#2a2e33" stroke-width="2"/>
+  <circle cx="300" cy="330" r="78" fill="none" stroke="#22262a" stroke-width="1.5" stroke-dasharray="4 8"/>
+  <!-- bridge aligned to one stall, copper -->
+  <g stroke="#c2693a" stroke-width="7">
+    <line x1="300" y1="418" x2="300" y2="242"/>
+  </g>
+  <circle cx="300" cy="330" r="13" fill="#c2693a"/>
+  <circle cx="300" cy="330" r="5" fill="#0d0e10"/>
+  <!-- approach leads from the yard throat -->
+  <g stroke="#2a2e33" stroke-width="2.5">
+    <line x1="300" y1="430" x2="300" y2="478"/>
+    <line x1="337.1" y1="424.2" x2="353.2" y2="473.6"/>
+    <line x1="262.9" y1="424.2" x2="246.8" y2="473.6"/>
+  </g>
+  <!-- amber signal lamps at stall mouths -->
+  <g fill="#ffb454">
+    <circle cx="300" cy="58" r="4.5"/>
+    <circle cx="144.8" cy="103.1" r="4.5"/>
+    <circle cx="455.2" cy="103.1" r="4.5"/>
+  </g>
+</svg>
+
+<div class="content">
+  <div class="brand">
+    <svg viewBox="0 0 120 68" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <g stroke="#ece7dd">
+        <path d="M 20 50 A 40 40 0 0 1 100 50"/>
+        <path d="M 38 50 A 22 22 0 0 1 82 50"/>
+        <line x1="20" y1="50" x2="38" y2="50"/><line x1="82" y1="50" x2="100" y2="50"/>
+        <line x1="27.6" y1="26.5" x2="42.2" y2="37.1"/><line x1="47.6" y1="12" x2="53.2" y2="29.1"/>
+        <line x1="72.4" y1="12" x2="66.8" y2="29.1"/><line x1="92.4" y1="26.5" x2="77.8" y2="37.1"/>
+      </g>
+      <g stroke="#c2693a"><line x1="60" y1="63" x2="60" y2="28"/><circle cx="60" cy="50" r="5" fill="#c2693a"/></g>
+    </svg>
+    <b>Round<i>house</i></b>
+  </div>
+
+  <div class="tag">Self-hosted MCP platform</div>
+  <h1>Every MCP<br/>server needs<br/>a <span class="copper">home.</span></h1>
+  <p class="sub">Write a tool. Hit deploy. <em>Point Claude at it.</em></p>
+</div>
+
+<div class="foot">
+  <span class="domain">roundhousemcp.com</span>
+  <span class="pip"></span>
+  <span class="status">turntable nominal</span>
+</div>
+
+<div class="hazard"></div>
+<div class="grain"></div>
+</body>
+</html>
