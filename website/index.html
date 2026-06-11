@@ -412,6 +412,8 @@ nav {
 .qs h2 { font-size: clamp(40px, 5vw, 64px); font-weight: 800; margin-top: 20px; }
 .qs-note { color: var(--smoke); font-weight: 300; margin-top: 18px; max-width: 52ch; }
 .qs-note code { font-family: var(--mono); font-size: 14px; color: var(--copper-hi); }
+.qs-note a { color: var(--copper-hi); text-decoration: none; border-bottom: 1px solid var(--copper-dim); }
+.qs-note a:hover { border-bottom-color: var(--copper-hi); }
 .term {
   position: relative; background: #0a0b0c; border: 1px solid var(--line); border-radius: 6px;
   font-family: var(--mono); font-size: 13.5px; line-height: 1.9;
@@ -524,6 +526,7 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
       <a href="#bays">The Bays</a>
       <a href="#line">The Line</a>
       <a href="#quickstart">Quick Start</a>
+      <a href="/docs/">Docs</a>
     </div>
     <a class="nav-gh" href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">GitHub ↗</a>
   </div>
@@ -753,6 +756,8 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
           Requires Docker and Docker Compose — nothing else. When the API logs print
           <code>Application startup complete</code>, open
           <code>http://localhost:3080</code> and sign in with the seed admin.
+          From there, the <a href="/docs/">field manual</a> covers every surface —
+          creating servers, tokens, usage metrics, and platform administration.
         </p>
         <div class="tabs reveal d3" role="tablist">
           <button class="tab on" data-pane="desktop" role="tab">Claude Desktop</button>
@@ -798,6 +803,7 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
     <div class="foot-row">
       <span>© 2026 Karmatek · forged with FastMCP</span>
       <div class="foot-links">
+        <a href="/docs/">Docs</a>
         <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">GitHub</a>
         <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP Spec</a>
         <a href="https://github.com/jlowin/fastmcp" target="_blank" rel="noopener">FastMCP</a>
