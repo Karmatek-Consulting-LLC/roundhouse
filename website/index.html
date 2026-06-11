@@ -132,7 +132,7 @@ nav {
   display: grid; align-items: center;
   padding-top: 64px;
   background:
-    radial-gradient(1100px 600px at 78% 42%, rgba(194,105,58,.10), transparent 60%),
+    radial-gradient(1100px 640px at 74% 46%, rgba(194,105,58,.16), transparent 62%),
     radial-gradient(800px 500px at 12% 90%, rgba(194,105,58,.05), transparent 60%);
 }
 .hero::after { /* blueprint floor grid */
@@ -146,7 +146,7 @@ nav {
 }
 .hero-grid {
   position: relative; z-index: 2;
-  display: grid; grid-template-columns: 1.05fr .95fr;
+  display: grid; grid-template-columns: 1fr 1.12fr;
   gap: 24px; align-items: center; padding: 64px 0 96px;
 }
 .hero h1 {
@@ -199,7 +199,12 @@ nav {
 
 /* turntable */
 .tt-wrap { position: relative; }
-.tt-wrap svg { width: 100%; height: auto; max-height: 78svh; }
+.tt-wrap svg { width: 100%; height: auto; max-height: 84svh; }
+@media (min-width: 981px) {
+  /* let the fan bleed into the right gutter so it keeps its presence */
+  .tt-wrap { margin-right: -56px; }
+  .tt-wrap svg { width: 110%; margin-left: -5%; }
+}
 .tt-caption {
   position: absolute; bottom: -6px; left: 0; right: 0; text-align: center;
   font-family: var(--mono); font-size: 10px; letter-spacing: .3em;
@@ -473,7 +478,7 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
 #tt .stall.hot { fill: rgba(194,105,58,.25); stroke: var(--copper); }
 #tt .bay-lamp { fill: var(--signal-dim); transition: fill .4s; }
 #tt .bay-lamp.hot { fill: var(--amber); }
-#tt .bay-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; fill: var(--ash); text-transform: uppercase; transition: fill .4s; }
+#tt .bay-label { font-family: var(--mono); font-size: 11.5px; letter-spacing: .12em; fill: var(--ash); text-transform: uppercase; transition: fill .4s; }
 #tt .bay-label.hot { fill: var(--copper-hi); }
 #tt #bridge { transform-box: view-box; transform-origin: 300px 310px; transition: transform 1.3s cubic-bezier(.55,.05,.35,1); }
 #tt .rail { stroke: var(--copper); stroke-width: 2; }
@@ -554,7 +559,7 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
     </div>
 
     <div class="tt-wrap reveal in d2" aria-hidden="true">
-      <svg id="tt" viewBox="-45 0 690 480">
+      <svg id="tt" viewBox="-30 0 660 480">
         <!-- the engine shed: a fan of stalls, not a circle -->
         <path class="shed" d="M 36 342.4 A 266 266 0 1 1 564 342.4 L 504.5 335.1 A 206 206 0 1 0 95.5 335.1 Z"/>
         <path class="ring-dash" d="M 47 332.1 A 254 254 0 1 1 553 332.1" stroke-width="1"/>
