@@ -464,28 +464,30 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
 .foot-links { display: flex; gap: 26px; }
 
 /* ============ TURNTABLE SVG ============ */
-#tt .ring  { stroke: var(--line); fill: none; }
-#tt .ring-dash { stroke: var(--line); fill: none; stroke-dasharray: 3 9; transform-box: view-box; transform-origin: 50% 50%; animation: slow-rot 90s linear infinite; }
+#tt .shed { fill: rgba(255,255,255,.018); stroke: var(--line); stroke-width: 1.2; }
+#tt .ring-dash { stroke: var(--line); fill: none; stroke-dasharray: 3 9; }
+#tt .pit-ring { stroke: var(--line); fill: none; stroke-dasharray: 3 9; transform-box: fill-box; transform-origin: 50% 50%; animation: slow-rot 60s linear infinite reverse; }
 #tt .track { stroke: var(--line); stroke-width: 1.4; stroke-dasharray: 4 5; }
+#tt .lead { stroke: var(--copper-dim); stroke-width: 2; stroke-dasharray: 6 5; opacity: .8; }
 #tt .stall { fill: var(--iron-3); stroke: var(--line); stroke-width: 1; }
 #tt .stall.hot { fill: rgba(194,105,58,.25); stroke: var(--copper); }
 #tt .bay-lamp { fill: var(--signal-dim); transition: fill .4s; }
 #tt .bay-lamp.hot { fill: var(--amber); }
 #tt .bay-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; fill: var(--ash); text-transform: uppercase; transition: fill .4s; }
 #tt .bay-label.hot { fill: var(--copper-hi); }
-#tt #bridge { transform-box: view-box; transform-origin: 50% 50%; transition: transform 1.3s cubic-bezier(.55,.05,.35,1); }
+#tt #bridge { transform-box: view-box; transform-origin: 300px 310px; transition: transform 1.3s cubic-bezier(.55,.05,.35,1); }
 #tt .rail { stroke: var(--copper); stroke-width: 2; }
 #tt .ties { stroke: rgba(194,105,58,.28); stroke-width: 26; stroke-dasharray: 2.5 11; }
 #tt .pit { stroke: var(--line); fill: rgba(255,255,255,.012); }
 #tt .hub { fill: var(--iron-2); stroke: var(--copper); stroke-width: 2; }
 #tt .hub-core { fill: var(--copper-hi); animation: pip 2.6s ease-in-out infinite; }
 #tt #cargo { fill: var(--amber); opacity: 0; }
-#tt #cargo.go { animation: dispatch 1s cubic-bezier(.3,0,.6,1) forwards; }
+#tt #cargo.go { animation: dispatch 1.15s cubic-bezier(.3,0,.6,1) forwards; }
 @keyframes dispatch {
-  0%   { opacity: 0; transform: translateY(0); }
-  12%  { opacity: 1; }
+  0%   { opacity: 0; transform: translateY(96px); }
+  15%  { opacity: 1; }
   85%  { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-148px); }
+  100% { opacity: 0; transform: translateY(-168px); }
 }
 @keyframes slow-rot { to { transform: rotate(360deg); } }
 
@@ -544,7 +546,7 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
         <a class="cta-ghost" href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">★ Star on GitHub</a>
       </div>
       <div class="hero-status reveal in d4">
-        <span class="pip"></span> 12 engines in service · turntable nominal
+        <span class="pip"></span> 9 stalls in service · turntable nominal
       </div>
       <div class="stack-chips reveal in d4">
         <span>FastAPI</span><span>FastMCP</span><span>React + Vite</span><span>Docker</span><span>Traefik</span><span>Postgres</span>
@@ -552,26 +554,30 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
     </div>
 
     <div class="tt-wrap reveal in d2" aria-hidden="true">
-      <svg id="tt" viewBox="0 0 600 600">
-        <!-- outer survey rings -->
-        <circle class="ring" cx="300" cy="300" r="272" stroke-width="1"/>
-        <circle class="ring-dash" cx="300" cy="300" r="258" stroke-width="1"/>
-        <!-- pit -->
-        <circle class="pit" cx="300" cy="300" r="118" stroke-width="1.5"/>
-        <circle class="ring-dash" cx="300" cy="300" r="106" stroke-width="1" style="animation-direction: reverse; animation-duration: 60s;"/>
+      <svg id="tt" viewBox="-45 0 690 480">
+        <!-- the engine shed: a fan of stalls, not a circle -->
+        <path class="shed" d="M 36 342.4 A 266 266 0 1 1 564 342.4 L 504.5 335.1 A 206 206 0 1 0 95.5 335.1 Z"/>
+        <path class="ring-dash" d="M 47 332.1 A 254 254 0 1 1 553 332.1" stroke-width="1"/>
+        <!-- approach leads in from the yard throat -->
+        <line class="lead" x1="300" y1="430" x2="300" y2="478"/>
+        <line class="lead" x1="337.1" y1="424.2" x2="353.2" y2="473.6"/>
+        <line class="lead" x1="262.9" y1="424.2" x2="246.8" y2="473.6"/>
+        <!-- pit (the only round part of a roundhouse) -->
+        <circle class="pit" cx="300" cy="310" r="116" stroke-width="1.5"/>
+        <circle class="pit-ring" cx="300" cy="310" r="102" stroke-width="1"/>
         <!-- generated: tracks, stalls, lamps, labels -->
         <g id="bay-ring"></g>
         <!-- turntable bridge -->
         <g id="bridge">
-          <line class="ties" x1="300" y1="192" x2="300" y2="408"/>
-          <line class="rail" x1="291" y1="188" x2="291" y2="412"/>
-          <line class="rail" x1="309" y1="188" x2="309" y2="412"/>
-          <circle id="cargo" cx="300" cy="252" r="6"/>
+          <line class="ties" x1="300" y1="206" x2="300" y2="414"/>
+          <line class="rail" x1="291" y1="202" x2="291" y2="418"/>
+          <line class="rail" x1="309" y1="202" x2="309" y2="418"/>
+          <circle id="cargo" cx="300" cy="310" r="6"/>
         </g>
-        <circle class="hub" cx="300" cy="300" r="26"/>
-        <circle class="hub-core" cx="300" cy="300" r="7"/>
+        <circle class="hub" cx="300" cy="310" r="24"/>
+        <circle class="hub-core" cx="300" cy="310" r="7"/>
       </svg>
-      <div class="tt-caption">fig. 01 — turntable, plan view · one stall per server</div>
+      <div class="tt-caption">fig. 01 — plan view · the pit is round; the house is not</div>
     </div>
   </div>
 </header>
@@ -802,35 +808,36 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
    ============================================================ */
 (function () {
   const NS = "http://www.w3.org/2000/svg";
-  const C = 300, BAYS = 12;
-  const TRACK_IN = 122, TRACK_OUT = 228, STALL_R = 244, LAMP_R = 212, LABEL_R = 288;
-  const names = ["weather", "jira", "postgres", "github", "search", "k8s",
-                 "slack", "pdf", "geo", "crm", "vault", "mail"];
+  const CX = 300, CY = 310, BAYS = 9;
+  const bayAngle = i => -80 + i * 20;                    // 160° fan, open to the yard
+  const TRACK_IN = 120, TRACK_OUT = 218, LAMP_R = 196, LABEL_R = 288;
+  const names = ["weather", "jira", "postgres", "github", "search",
+                 "k8s", "slack", "vault", "geo"];
   const ring = document.getElementById("bay-ring");
   const bridge = document.getElementById("bridge");
   const cargo = document.getElementById("cargo");
   const lamps = [], stalls = [], texts = [];
 
   for (let i = 0; i < BAYS; i++) {
-    const deg = i * (360 / BAYS);
-    const rad = (deg - 90) * Math.PI / 180;
+    const deg = bayAngle(i);
+    const rad = deg * Math.PI / 180;
     const g = document.createElementNS(NS, "g");
-    g.setAttribute("transform", `rotate(${deg} ${C} ${C})`);
+    g.setAttribute("transform", `rotate(${deg} ${CX} ${CY})`);
 
     const track = document.createElementNS(NS, "line");
-    track.setAttribute("x1", C); track.setAttribute("y1", C - TRACK_IN);
-    track.setAttribute("x2", C); track.setAttribute("y2", C - TRACK_OUT);
+    track.setAttribute("x1", CX); track.setAttribute("y1", CY - TRACK_IN);
+    track.setAttribute("x2", CX); track.setAttribute("y2", CY - TRACK_OUT);
     track.setAttribute("class", "track");
     g.appendChild(track);
 
     const stall = document.createElementNS(NS, "rect");
-    stall.setAttribute("x", C - 17); stall.setAttribute("y", C - STALL_R - 22);
+    stall.setAttribute("x", CX - 17); stall.setAttribute("y", CY - 246);
     stall.setAttribute("width", 34); stall.setAttribute("height", 24);
     stall.setAttribute("rx", 3); stall.setAttribute("class", "stall");
     g.appendChild(stall); stalls.push(stall);
 
     const lamp = document.createElementNS(NS, "circle");
-    lamp.setAttribute("cx", C); lamp.setAttribute("cy", C - LAMP_R);
+    lamp.setAttribute("cx", CX); lamp.setAttribute("cy", CY - LAMP_R);
     lamp.setAttribute("r", 3.4); lamp.setAttribute("class", "bay-lamp");
     g.appendChild(lamp); lamps.push(lamp);
 
@@ -838,8 +845,8 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
 
     // horizontal label, placed by angle (kept outside rotated group so text stays upright)
     const t = document.createElementNS(NS, "text");
-    t.setAttribute("x", C + Math.cos(rad) * LABEL_R);
-    t.setAttribute("y", C + Math.sin(rad) * LABEL_R + 3.5);
+    t.setAttribute("x", CX + Math.sin(rad) * LABEL_R);
+    t.setAttribute("y", CY - Math.cos(rad) * LABEL_R + 3.5);
     t.setAttribute("text-anchor", "middle");
     t.setAttribute("class", "bay-label");
     t.textContent = names[i];
@@ -847,30 +854,29 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
     texts.push(t);
   }
 
-  let cur = 0, angle = 0;
+  let cur = 4;                                           // start on the center stall
   function setHot(i, on) {
     lamps[i].classList.toggle("hot", on);
     stalls[i].classList.toggle("hot", on);
     texts[i].classList.toggle("hot", on);
   }
-  setHot(0, true);
+  setHot(cur, true);
 
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (!reduced) {
     setInterval(() => {
-      const hop = 3 + Math.floor(Math.random() * 7);     // always rotate forward
-      const next = (cur + hop) % BAYS;
-      angle += hop * (360 / BAYS);
+      let next;
+      do { next = Math.floor(Math.random() * BAYS); } while (next === cur);
       setHot(cur, false);
-      bridge.style.transform = `rotate(${angle}deg)`;
+      bridge.style.transform = `rotate(${bayAngle(next)}deg)`;   // swing within the fan
       cur = next;
       setTimeout(() => {
         setHot(cur, true);
         cargo.classList.remove("go");
         void cargo.offsetWidth;                          // restart animation
         cargo.classList.add("go");
-      }, 1350);
-    }, 3400);
+      }, 1400);
+    }, 3600);
   }
 })();
 
