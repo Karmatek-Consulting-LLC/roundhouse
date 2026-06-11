@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Roundhouse User Guide — Roundhouse</title>
+<meta name="description" content="Install, operate, and administer Roundhouse — the self-hosted home for your MCP servers." />
+<meta property="og:title" content="Roundhouse Documentation" />
+<meta property="og:description" content="Install, operate, and administer Roundhouse — the self-hosted home for your MCP servers." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 68' fill='none' stroke-width='6' stroke-linecap='round'%3E%3Cg stroke='%23ece7dd'%3E%3Cpath d='M 20 50 A 40 40 0 0 1 100 50'/%3E%3C/g%3E%3Cg stroke='%23c2693a'%3E%3Cline x1='60' y1='63' x2='60' y2='28'/%3E%3Ccircle cx='60' cy='50' r='6' fill='%23c2693a'/%3E%3C/g%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;600;700;800;900&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --iron: #0d0e10; --iron-2: #131517; --iron-3: #1a1d20; --iron-4: #22262a;
+  --line: #2a2e33; --line-soft: #1f2226;
+  --cream: #ece7dd; --smoke: #9b968c; --ash: #6b675f;
+  --copper: #c2693a; --copper-hi: #e08a55; --copper-dim: #8a4a28;
+  --amber: #ffb454; --signal: #8fbf72;
+  --display: "Big Shoulders Display", sans-serif;
+  --serif: "Newsreader", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; overflow-x: clip; scroll-padding-top: 84px; }
+body {
+  background: var(--iron); color: var(--cream);
+  font-family: var(--serif); font-size: 17.5px; line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--copper); color: var(--iron); }
+::-webkit-scrollbar { width: 11px; }
+::-webkit-scrollbar-track { background: var(--iron); }
+::-webkit-scrollbar-thumb { background: var(--iron-4); border: 3px solid var(--iron); border-radius: 8px; }
+a { color: inherit; }
+img, svg { display: block; }
+.grain {
+  position: fixed; inset: -100px; z-index: 999; pointer-events: none;
+  opacity: .055; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+
+/* nav (shared with the marketing page) */
+nav.site {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--iron) 82%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.nav-inner { display: flex; align-items: center; gap: 28px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; margin-right: auto; }
+.brand svg { width: 40px; height: auto; }
+.brand b { font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: .12em; text-transform: uppercase; }
+.brand b i { font-style: normal; color: var(--copper-hi); }
+.nav-links { display: flex; gap: 26px; }
+.nav-links a {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .16em;
+  text-transform: uppercase; text-decoration: none; color: var(--smoke); transition: color .2s;
+}
+.nav-links a:hover { color: var(--cream); }
+.nav-links a.active { color: var(--copper-hi); }
+.nav-gh {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .1em;
+  text-decoration: none; color: var(--iron); background: var(--cream);
+  padding: 9px 16px; border-radius: 3px; transition: background .2s, transform .2s;
+}
+.nav-gh:hover { background: var(--copper-hi); transform: translateY(-1px); }
+@media (max-width: 760px) { .nav-links { display: none; } }
+
+/* page header */
+.doc-head { padding: 132px 0 14px; }
+.tag {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .28em; text-transform: uppercase; color: var(--copper-hi);
+}
+.tag::before { content: "// "; color: var(--ash); letter-spacing: 0; }
+.doc-head h1 {
+  font-family: var(--display); text-transform: uppercase;
+  font-size: clamp(44px, 6vw, 72px); font-weight: 800; line-height: .98;
+  letter-spacing: .015em; margin-top: 14px;
+}
+
+/* layout */
+.doc-grid { display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 56px; align-items: start; padding-bottom: 110px; }
+aside.toc {
+  position: sticky; top: 88px; max-height: calc(100vh - 120px); overflow-y: auto;
+  padding: 8px 16px 24px 0; border-right: 1px solid var(--line-soft);
+  scrollbar-width: thin;
+}
+.toc-label {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .26em;
+  text-transform: uppercase; color: var(--ash); margin: 14px 0 12px;
+}
+aside.toc a {
+  display: block; text-decoration: none; font-family: var(--mono);
+  color: var(--smoke); transition: color .15s, border-color .15s;
+}
+a.toc-h2 { font-size: 12.5px; letter-spacing: .04em; padding: 6px 0 6px 0; margin-top: 6px; }
+a.toc-h2 .toc-n { color: var(--ash); margin-right: 10px; font-size: 10.5px; }
+a.toc-h3 { font-size: 11.5px; padding: 3.5px 0 3.5px 26px; color: var(--ash); border-left: 1px solid var(--line-soft); margin-left: 7px; }
+aside.toc a:hover { color: var(--cream); }
+aside.toc a.on { color: var(--copper-hi); }
+aside.toc a.toc-h3.on { border-left-color: var(--copper); }
+aside.toc a.on .toc-n { color: var(--copper-dim); }
+
+/* mobile TOC */
+details.toc-mobile { display: none; margin: 4px 0 26px; border: 1px solid var(--line); border-radius: 6px; background: var(--iron-2); }
+details.toc-mobile summary {
+  cursor: pointer; padding: 13px 18px; font-family: var(--mono); font-size: 12px;
+  letter-spacing: .2em; text-transform: uppercase; color: var(--smoke); list-style: none;
+}
+details.toc-mobile summary::after { content: " +"; color: var(--copper-hi); }
+details.toc-mobile[open] summary::after { content: " −"; }
+details.toc-mobile .toc-list { padding: 0 18px 14px; }
+details.toc-mobile a { display: block; text-decoration: none; font-family: var(--mono); color: var(--smoke); }
+@media (max-width: 979px) {
+  .doc-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  aside.toc { display: none; }
+  details.toc-mobile { display: block; }
+}
+
+/* article */
+article { max-width: 760px; }
+article h2 {
+  font-family: var(--display); text-transform: uppercase;
+  font-size: clamp(30px, 3.6vw, 40px); font-weight: 800; line-height: 1.02;
+  letter-spacing: .02em; margin: 84px 0 18px; padding-top: 26px;
+  border-top: 1px solid var(--line-soft);
+}
+article h2:first-of-type { margin-top: 26px; border-top: 0; padding-top: 0; }
+article h3 {
+  font-family: var(--display); text-transform: uppercase;
+  font-size: 24px; font-weight: 700; letter-spacing: .035em;
+  color: var(--cream); margin: 46px 0 12px;
+}
+article h4 {
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  letter-spacing: .24em; text-transform: uppercase; color: var(--copper-hi);
+  margin: 36px 0 10px;
+}
+article h4::before { content: "// "; color: var(--ash); letter-spacing: 0; }
+.anchor {
+  margin-left: 10px; text-decoration: none; color: var(--iron-4);
+  font-family: var(--mono); font-weight: 400; opacity: 0; transition: opacity .15s, color .15s;
+}
+h2:hover .anchor, h3:hover .anchor, h4:hover .anchor { opacity: 1; }
+.anchor:hover { color: var(--copper-hi); }
+article p { margin: 0 0 18px; color: color-mix(in srgb, var(--cream) 88%, var(--smoke)); }
+article a { color: var(--copper-hi); text-decoration: none; border-bottom: 1px solid var(--copper-dim); transition: border-color .15s; }
+article a:hover { border-bottom-color: var(--copper-hi); }
+article strong { color: var(--cream); }
+article code {
+  font-family: var(--mono); font-size: .82em; color: var(--amber);
+  background: var(--iron-3); border: 1px solid var(--line-soft);
+  padding: 1.5px 6px; border-radius: 4px; white-space: nowrap;
+}
+article ul { margin: 0 0 18px 22px; }
+article li { margin-bottom: 6px; }
+blockquote {
+  border-left: 3px solid var(--copper); background: var(--iron-2);
+  padding: 14px 20px; margin: 0 0 22px; border-radius: 0 6px 6px 0;
+}
+blockquote p { margin: 0; color: var(--smoke); font-size: 16.5px; }
+.rule { height: 0; margin: 0; }
+
+/* code blocks */
+.codeblock { margin: 0 0 22px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--iron-2); }
+.codebar {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .24em; text-transform: uppercase;
+  color: var(--ash); padding: 8px 16px; border-bottom: 1px solid var(--line-soft);
+  background: var(--iron-3);
+}
+.codeblock pre { padding: 16px 18px; overflow-x: auto; }
+.codeblock pre code {
+  font-family: var(--mono); font-size: 13.5px; line-height: 1.65; color: var(--cream);
+  background: none; border: 0; padding: 0; white-space: pre;
+}
+
+/* figures */
+figure { margin: 6px 0 30px; }
+figure img {
+  width: 100%; height: auto; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--iron-2);
+}
+figcaption {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ash); margin-top: 10px;
+}
+
+/* tables */
+.tablewrap { overflow-x: auto; margin: 0 0 22px; border: 1px solid var(--line); border-radius: 8px; }
+article table { width: 100%; border-collapse: collapse; font-size: 16px; }
+article th {
+  font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--smoke); text-align: left;
+  padding: 12px 16px; background: var(--iron-3); border-bottom: 1px solid var(--line);
+}
+article td { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+article tr:last-child td { border-bottom: 0; }
+article td code { white-space: normal; }
+
+/* footer */
+footer { margin-top: 40px; }
+.hazard { height: 8px; background: repeating-linear-gradient(-45deg, var(--copper) 0 14px, var(--iron) 14px 28px); opacity: .85; }
+.foot-inner { padding: 44px 0 54px; }
+.foot-mark {
+  font-family: var(--display); font-weight: 900; text-transform: uppercase;
+  font-size: clamp(54px, 9vw, 130px); line-height: .9; letter-spacing: .01em;
+  color: var(--iron-3); user-select: none;
+}
+.foot-row {
+  display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 14px;
+  margin-top: 26px; font-family: var(--mono); font-size: 12px; color: var(--ash);
+}
+.foot-links { display: flex; gap: 22px; flex-wrap: wrap; }
+.foot-links a { color: var(--smoke); text-decoration: none; }
+.foot-links a:hover { color: var(--copper-hi); }
+</style>
+</head>
+<body>
+
+<div class="grain" aria-hidden="true"></div>
+
+<nav class="site">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="Roundhouse home">
+      <svg viewBox="0 0 120 68" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <g stroke="#ece7dd">
+          <path d="M 20 50 A 40 40 0 0 1 100 50"/>
+          <path d="M 38 50 A 22 22 0 0 1 82 50"/>
+          <line x1="20" y1="50" x2="38" y2="50"/><line x1="82" y1="50" x2="100" y2="50"/>
+          <line x1="27.6" y1="26.5" x2="42.2" y2="37.1"/><line x1="47.6" y1="12" x2="53.2" y2="29.1"/>
+          <line x1="72.4" y1="12" x2="66.8" y2="29.1"/><line x1="92.4" y1="26.5" x2="77.8" y2="37.1"/>
+        </g>
+        <g stroke="#c2693a"><line x1="60" y1="63" x2="60" y2="28"/><circle cx="60" cy="50" r="5" fill="#c2693a"/></g>
+      </svg>
+      <b>Round<i>house</i></b>
+    </a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a class="active" href="/docs/">Docs</a>
+    </div>
+    <a class="nav-gh" href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</nav>
+
+<header class="doc-head">
+  <div class="wrap">
+    <div class="tag">field manual</div>
+    <h1>Roundhouse User Guide</h1>
+  </div>
+</header>
+
+<div class="wrap doc-grid">
+  <aside class="toc" aria-label="On this page">
+    <div class="toc-label">On this page</div>
+      <a class="toc-h2" href="#getting-started"><span class="toc-n">01</span>Getting started</a>
+      <a class="toc-h3" href="#install">Install</a>
+      <a class="toc-h3" href="#sign-in">Sign in</a>
+      <a class="toc-h2" href="#connecting-clients"><span class="toc-n">02</span>Connecting clients</a>
+      <a class="toc-h3" href="#claude-desktop">Claude Desktop</a>
+      <a class="toc-h3" href="#claude-code">Claude Code</a>
+      <a class="toc-h2" href="#dashboard"><span class="toc-n">03</span>Dashboard</a>
+      <a class="toc-h2" href="#servers-list"><span class="toc-n">04</span>Servers list</a>
+      <a class="toc-h2" href="#creating-a-server"><span class="toc-n">05</span>Creating a server</a>
+      <a class="toc-h3" href="#structured">Structured</a>
+      <a class="toc-h3" href="#code-first">Code-first</a>
+      <a class="toc-h3" href="#from-git">From Git</a>
+      <a class="toc-h3" href="#import">Import</a>
+      <a class="toc-h2" href="#the-server-editor"><span class="toc-n">06</span>The server editor</a>
+      <a class="toc-h3" href="#overview">Overview</a>
+      <a class="toc-h3" href="#primitives">Primitives</a>
+      <a class="toc-h3" href="#imports-and-globals">Imports and globals</a>
+      <a class="toc-h3" href="#pypi-packages">PyPI packages</a>
+      <a class="toc-h3" href="#apt-packages">APT packages</a>
+      <a class="toc-h3" href="#environment-variables">Environment variables</a>
+      <a class="toc-h3" href="#auth-server-tokens">Auth (server tokens)</a>
+      <a class="toc-h3" href="#assets">Assets</a>
+      <a class="toc-h3" href="#usage">Usage</a>
+      <a class="toc-h3" href="#logs">Logs</a>
+      <a class="toc-h3" href="#source-code-mode">Source (code mode)</a>
+      <a class="toc-h3" href="#stopped-server">Stopped server</a>
+      <a class="toc-h2" href="#platform-administration"><span class="toc-n">07</span>Platform administration</a>
+      <a class="toc-h3" href="#platform-settings">Platform settings</a>
+      <a class="toc-h3" href="#users">Users</a>
+      <a class="toc-h3" href="#teams">Teams</a>
+      <a class="toc-h3" href="#audit-log">Audit log</a>
+      <a class="toc-h2" href="#configuration-reference"><span class="toc-n">08</span>Configuration reference</a>
+      <a class="toc-h3" href="#behind-a-corporate-tls-inspecting-proxy">Behind a corporate TLS-inspecting proxy</a>
+      <a class="toc-h2" href="#deployment-modes"><span class="toc-n">09</span>Deployment modes</a>
+  </aside>
+  <article>
+    <details class="toc-mobile">
+      <summary>On this page</summary>
+      <div class="toc-list">
+      <a class="toc-h2" href="#getting-started"><span class="toc-n">01</span>Getting started</a>
+      <a class="toc-h3" href="#install">Install</a>
+      <a class="toc-h3" href="#sign-in">Sign in</a>
+      <a class="toc-h2" href="#connecting-clients"><span class="toc-n">02</span>Connecting clients</a>
+      <a class="toc-h3" href="#claude-desktop">Claude Desktop</a>
+      <a class="toc-h3" href="#claude-code">Claude Code</a>
+      <a class="toc-h2" href="#dashboard"><span class="toc-n">03</span>Dashboard</a>
+      <a class="toc-h2" href="#servers-list"><span class="toc-n">04</span>Servers list</a>
+      <a class="toc-h2" href="#creating-a-server"><span class="toc-n">05</span>Creating a server</a>
+      <a class="toc-h3" href="#structured">Structured</a>
+      <a class="toc-h3" href="#code-first">Code-first</a>
+      <a class="toc-h3" href="#from-git">From Git</a>
+      <a class="toc-h3" href="#import">Import</a>
+      <a class="toc-h2" href="#the-server-editor"><span class="toc-n">06</span>The server editor</a>
+      <a class="toc-h3" href="#overview">Overview</a>
+      <a class="toc-h3" href="#primitives">Primitives</a>
+      <a class="toc-h3" href="#imports-and-globals">Imports and globals</a>
+      <a class="toc-h3" href="#pypi-packages">PyPI packages</a>
+      <a class="toc-h3" href="#apt-packages">APT packages</a>
+      <a class="toc-h3" href="#environment-variables">Environment variables</a>
+      <a class="toc-h3" href="#auth-server-tokens">Auth (server tokens)</a>
+      <a class="toc-h3" href="#assets">Assets</a>
+      <a class="toc-h3" href="#usage">Usage</a>
+      <a class="toc-h3" href="#logs">Logs</a>
+      <a class="toc-h3" href="#source-code-mode">Source (code mode)</a>
+      <a class="toc-h3" href="#stopped-server">Stopped server</a>
+      <a class="toc-h2" href="#platform-administration"><span class="toc-n">07</span>Platform administration</a>
+      <a class="toc-h3" href="#platform-settings">Platform settings</a>
+      <a class="toc-h3" href="#users">Users</a>
+      <a class="toc-h3" href="#teams">Teams</a>
+      <a class="toc-h3" href="#audit-log">Audit log</a>
+      <a class="toc-h2" href="#configuration-reference"><span class="toc-n">08</span>Configuration reference</a>
+      <a class="toc-h3" href="#behind-a-corporate-tls-inspecting-proxy">Behind a corporate TLS-inspecting proxy</a>
+      <a class="toc-h2" href="#deployment-modes"><span class="toc-n">09</span>Deployment modes</a>
+      </div>
+    </details>
+<p>Everything you need to install, operate, and administer Roundhouse — from <code>docker compose up</code> to a fleet of deployed MCP servers.</p>
+<blockquote><p>Screenshots in this guide are shown in <strong>dark theme</strong>. A light-theme set lives under <code>docs/screenshots/light/</code>. See <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docs/capture/README.md" target="_blank" rel="noopener"><code>docs/capture/README.md</code></a> for how to re-capture.</p></blockquote>
+<div class="rule" aria-hidden="true"></div>
+<h2 id="getting-started">Getting started<a class="anchor" href="#getting-started" aria-label="link to section">#</a></h2>
+<p>Roundhouse runs entirely on your own hardware. The only requirements are <strong>Docker</strong> and <strong>Docker Compose</strong> — there is no cloud dependency, no external service to sign up for, and no telemetry.</p>
+<h3 id="install">Install<a class="anchor" href="#install" aria-label="link to section">#</a></h3>
+<div class="codeblock"><div class="codebar">bash</div><pre><code>git clone https://github.com/Karmatek-Consulting-LLC/roundhouse.git
+cd roundhouse
+cp .env.example .env
+docker compose up -d</code></pre></div>
+<p>When the API logs print <code>Application startup complete</code>, the platform is live at <strong>http://localhost:3080</strong>.</p>
+<p>To stop the platform:</p>
+<div class="codeblock"><div class="codebar">bash</div><pre><code>docker compose down        # preserve database + spec files
+docker compose down -v     # wipe everything</code></pre></div>
+<h3 id="sign-in">Sign in<a class="anchor" href="#sign-in" aria-label="link to section">#</a></h3>
+<p>Roundhouse uses email/password sign-in. The first admin is created from the <code>ADMIN_EMAIL</code> and <code>ADMIN_PASSWORD</code> environment variables when the API boots (defaults: <code>admin@mcp.local</code> / <code>admin</code> — change them in <code>.env</code> before first boot, or from the Users page after).</p>
+<figure><img src="screenshots/dark/01-login.png" alt="Login" loading="lazy" decoding="async" /><figcaption>fig. 01 — login</figcaption></figure>
+<div class="rule" aria-hidden="true"></div>
+<h2 id="connecting-clients">Connecting clients<a class="anchor" href="#connecting-clients" aria-label="link to section">#</a></h2>
+<p>Every deployed server gets a stable URL like <code>http://localhost:3080/s/my-server/mcp</code>. Traefik routes MCP clients straight to the spawned container — the platform never proxies MCP traffic on the hot path.</p>
+<p>Callers authenticate with a bearer token minted on the server's <strong>Auth</strong> tab (see <a href="#auth-server-tokens">Auth</a> below).</p>
+<h3 id="claude-desktop">Claude Desktop<a class="anchor" href="#claude-desktop" aria-label="link to section">#</a></h3>
+<p>Add to <code>claude_desktop_config.json</code>:</p>
+<div class="codeblock"><div class="codebar">json</div><pre><code>{
+  "mcpServers": {
+    "my-server": {
+      "url": "http://localhost:3080/s/my-server/mcp",
+      "headers": {
+        "Authorization": "Bearer &lt;token from the server's Auth panel&gt;"
+      }
+    }
+  }
+}</code></pre></div>
+<h3 id="claude-code">Claude Code<a class="anchor" href="#claude-code" aria-label="link to section">#</a></h3>
+<div class="codeblock"><div class="codebar">bash</div><pre><code>claude mcp add my-server \
+  --url    http://localhost:3080/s/my-server/mcp \
+  --header "Authorization: Bearer &lt;token&gt;"</code></pre></div>
+<p>Any other MCP client that speaks streamable HTTP works the same way: point it at the server URL and pass the token in the <code>Authorization</code> header.</p>
+<div class="rule" aria-hidden="true"></div>
+<h2 id="dashboard">Dashboard<a class="anchor" href="#dashboard" aria-label="link to section">#</a></h2>
+<p>The dashboard is the home view after sign-in. It surfaces fleet-wide health (running/stopped/errored counts), recent call volume, the busiest servers, and a rolling activity timeline.</p>
+<figure><img src="screenshots/dark/02-dashboard.png" alt="Dashboard" loading="lazy" decoding="async" /><figcaption>fig. 02 — dashboard</figcaption></figure>
+<div class="rule" aria-hidden="true"></div>
+<h2 id="servers-list">Servers list<a class="anchor" href="#servers-list" aria-label="link to section">#</a></h2>
+<p>The full inventory of MCP servers you can see. Each row shows the server's deploy mode (structured or code), live status, recent call count, and quick actions.</p>
+<figure><img src="screenshots/dark/03-servers-list.png" alt="Servers list" loading="lazy" decoding="async" /><figcaption>fig. 03 — servers list</figcaption></figure>
+<div class="rule" aria-hidden="true"></div>
+<h2 id="creating-a-server">Creating a server<a class="anchor" href="#creating-a-server" aria-label="link to section">#</a></h2>
+<p>The <strong>Create</strong> button opens a dialog with four tabs.</p>
+<h3 id="structured">Structured<a class="anchor" href="#structured" aria-label="link to section">#</a></h3>
+<p>The default: an empty spec-managed server. Primitives, packages, env vars, and middleware are managed through the UI; Roundhouse owns the Dockerfile.</p>
+<figure><img src="screenshots/dark/04-create-structured.png" alt="Create — Structured" loading="lazy" decoding="async" /><figcaption>fig. 04 — create — structured</figcaption></figure>
+<h3 id="code-first">Code-first<a class="anchor" href="#code-first" aria-label="link to section">#</a></h3>
+<p>You supply a complete <code>server.py</code> (FastMCP). Roundhouse still owns the Dockerfile and platform middleware, but the primitive surface is hidden in favour of a full source editor.</p>
+<figure><img src="screenshots/dark/05-create-code.png" alt="Create — Code-first" loading="lazy" decoding="async" /><figcaption>fig. 05 — create — code-first</figcaption></figure>
+<h3 id="from-git">From Git<a class="anchor" href="#from-git" aria-label="link to section">#</a></h3>
+<p>Clone a repo that declares its dependencies in <code>roundhouse.json</code>. The imported server registers as <code>not_deployed</code> — Roundhouse seeds the environment variables declared by the manifest, populates pip and apt packages, and waits for an operator to fill in secrets before the first deploy.</p>
+<figure><img src="screenshots/dark/06-create-from-git.png" alt="Create — From Git" loading="lazy" decoding="async" /><figcaption>fig. 06 — create — from git</figcaption></figure>
+<h3 id="import">Import<a class="anchor" href="#import" aria-label="link to section">#</a></h3>
+<p>Paste an exported spec JSON (from another Roundhouse instance, or from <code>POST /api/servers/{name}/export</code>) to clone a server's configuration verbatim.</p>
+<figure><img src="screenshots/dark/07-create-import.png" alt="Create — Import" loading="lazy" decoding="async" /><figcaption>fig. 07 — create — import</figcaption></figure>
+<div class="rule" aria-hidden="true"></div>
+<h2 id="the-server-editor">The server editor<a class="anchor" href="#the-server-editor" aria-label="link to section">#</a></h2>
+<p>Selecting a server opens the two-pane editor. The left rail is the server's table of contents — primitives, configuration, and operational tabs. The right pane is whichever section you've selected.</p>
+<h3 id="overview">Overview<a class="anchor" href="#overview" aria-label="link to section">#</a></h3>
+<p>The overview is the editor's home base: description, replicas, resource limits, and the lifecycle controls (Start, Stop, Redeploy, Delete, plus <strong>Update from Git</strong> for repos imported via <code>from-git</code>).</p>
+<figure><img src="screenshots/dark/10-editor-overview.png" alt="Editor — overview" loading="lazy" decoding="async" /><figcaption>fig. 08 — editor — overview</figcaption></figure>
+<h3 id="primitives">Primitives<a class="anchor" href="#primitives" aria-label="link to section">#</a></h3>
+<p>Structured servers expose <strong>tools</strong>, <strong>resources</strong>, <strong>resource templates</strong>, and <strong>prompts</strong>. Each primitive is edited in-place: parameters, body, and optional middleware overrides (rate limit, max concurrency).</p>
+<h4 id="tool">Tool<a class="anchor" href="#tool" aria-label="link to section">#</a></h4>
+<figure><img src="screenshots/dark/11-editor-primitive-tool.png" alt="Editor — primitive (tool)" loading="lazy" decoding="async" /><figcaption>fig. 09 — editor — primitive (tool)</figcaption></figure>
+<h4 id="resource">Resource<a class="anchor" href="#resource" aria-label="link to section">#</a></h4>
+<figure><img src="screenshots/dark/12-editor-primitive-resource.png" alt="Editor — primitive (resource)" loading="lazy" decoding="async" /><figcaption>fig. 10 — editor — primitive (resource)</figcaption></figure>
+<h4 id="prompt">Prompt<a class="anchor" href="#prompt" aria-label="link to section">#</a></h4>
+<figure><img src="screenshots/dark/13-editor-primitive-prompt.png" alt="Editor — primitive (prompt)" loading="lazy" decoding="async" /><figcaption>fig. 11 — editor — primitive (prompt)</figcaption></figure>
+<h4 id="adding-a-new-primitive">Adding a new primitive<a class="anchor" href="#adding-a-new-primitive" aria-label="link to section">#</a></h4>
+<figure><img src="screenshots/dark/14-editor-primitive-new.png" alt="Editor — new primitive" loading="lazy" decoding="async" /><figcaption>fig. 12 — editor — new primitive</figcaption></figure>
+<h3 id="imports-and-globals">Imports and globals<a class="anchor" href="#imports-and-globals" aria-label="link to section">#</a></h3>
+<p>Any free-form Python imports or module-level globals that should appear in the generated <code>server.py</code>.</p>
+<figure><img src="screenshots/dark/15-editor-imports.png" alt="Editor — imports" loading="lazy" decoding="async" /><figcaption>fig. 13 — editor — imports</figcaption></figure>
+<h3 id="pypi-packages">PyPI packages<a class="anchor" href="#pypi-packages" aria-label="link to section">#</a></h3>
+<p>Pip dependencies. They are pinned into the generated Dockerfile and installed at build time.</p>
+<figure><img src="screenshots/dark/16-editor-packages.png" alt="Editor — packages (pip)" loading="lazy" decoding="async" /><figcaption>fig. 14 — editor — packages (pip)</figcaption></figure>
+<h3 id="apt-packages">APT packages<a class="anchor" href="#apt-packages" aria-label="link to section">#</a></h3>
+<p>OS-level packages installed via <code>apt-get</code> in the build. Use for native toolchains a Python wheel needs.</p>
+<figure><img src="screenshots/dark/17-editor-apt.png" alt="Editor — apt packages" loading="lazy" decoding="async" /><figcaption>fig. 15 — editor — apt packages</figcaption></figure>
+<h3 id="environment-variables">Environment variables<a class="anchor" href="#environment-variables" aria-label="link to section">#</a></h3>
+<p>Per-server env vars (with optional encrypted-at-rest secrets) and global imports. Changes save instantly; the redeploy banner surfaces because the new value only takes effect on the next container restart.</p>
+<figure><img src="screenshots/dark/18-editor-env.png" alt="Editor — env vars" loading="lazy" decoding="async" /><figcaption>fig. 16 — editor — env vars</figcaption></figure>
+<h3 id="auth-server-tokens">Auth (server tokens)<a class="anchor" href="#auth-server-tokens" aria-label="link to section">#</a></h3>
+<p>Bearer tokens that callers present in the <code>Authorization</code> header. Per-token scopes can lock individual primitives down to specific token holders.</p>
+<figure><img src="screenshots/dark/19-editor-auth.png" alt="Editor — auth" loading="lazy" decoding="async" /><figcaption>fig. 17 — editor — auth</figcaption></figure>
+<h3 id="assets">Assets<a class="anchor" href="#assets" aria-label="link to section">#</a></h3>
+<p>Arbitrary files that get baked into the image under <code>/app/assets/</code>. Useful for prompt templates, large JSON fixtures, or any read-only data your tools reference at runtime.</p>
+<figure><img src="screenshots/dark/20-editor-assets.png" alt="Editor — assets" loading="lazy" decoding="async" /><figcaption>fig. 18 — editor — assets</figcaption></figure>
+<h3 id="usage">Usage<a class="anchor" href="#usage" aria-label="link to section">#</a></h3>
+<p>Per-primitive call counts, p50/p95/p99 latency, error rate, and the busiest client tokens. Sampled in-process by the platform middleware and surfaced without an extra metrics backend — no Prometheus, no Grafana, no add-on agent. Drilling into a server's usage tab is how you find latency regressions or the one tool that's getting hammered.</p>
+<figure><img src="screenshots/dark/21-editor-usage.png" alt="Editor — usage (Taggart)" loading="lazy" decoding="async" /><figcaption>fig. 19 — editor — usage (taggart)</figcaption></figure>
+<p>A busier server (Galt Engine, with several thousand calls across three tools) makes the chart variety obvious:</p>
+<figure><img src="screenshots/dark/21a-editor-usage-busy.png" alt="Editor — usage (Galt Engine)" loading="lazy" decoding="async" /><figcaption>fig. 20 — editor — usage (galt engine)</figcaption></figure>
+<h3 id="logs">Logs<a class="anchor" href="#logs" aria-label="link to section">#</a></h3>
+<p>Streams stdout/stderr from the server container via Server-Sent Events.</p>
+<p>For spec-based servers, the <strong>Level</strong> dropdown writes the <code>LOG_LEVEL</code> environment variable on the spec; the platform middleware reads it and configures stdlib logging accordingly. At <code>DEBUG</code>, the middleware also emits a start record (with arguments) for every tool/resource/prompt call. Failed calls promote the end-of-call record to <code>WARNING</code>. The dropdown is hidden for code-mode servers, since they own their own logging surface.</p>
+<figure><img src="screenshots/dark/22-editor-logs.png" alt="Editor — logs" loading="lazy" decoding="async" /><figcaption>fig. 21 — editor — logs</figcaption></figure>
+<h3 id="source-code-mode">Source (code mode)<a class="anchor" href="#source-code-mode" aria-label="link to section">#</a></h3>
+<p>For servers in <strong>code mode</strong>, the editor replaces the primitive surface with a full <code>server.py</code> editor (CodeMirror, Python syntax highlighting). The platform still controls the Dockerfile.</p>
+<figure><img src="screenshots/dark/30-editor-source.png" alt="Editor — source (code mode)" loading="lazy" decoding="async" /><figcaption>fig. 22 — editor — source (code mode)</figcaption></figure>
+<p>Code-mode servers still expose every operational tab — env vars, logs, usage — so the operator surface is unchanged.</p>
+<figure><img src="screenshots/dark/31-editor-source-env.png" alt="Editor — code-mode env" loading="lazy" decoding="async" /><figcaption>fig. 23 — editor — code-mode env</figcaption></figure>
+<h3 id="stopped-server">Stopped server<a class="anchor" href="#stopped-server" aria-label="link to section">#</a></h3>
+<p>A stopped server keeps its spec on disk; restarting it reuses the cached image without a rebuild.</p>
+<figure><img src="screenshots/dark/40-editor-stopped.png" alt="Editor — stopped" loading="lazy" decoding="async" /><figcaption>fig. 24 — editor — stopped</figcaption></figure>
+<div class="rule" aria-hidden="true"></div>
+<h2 id="platform-administration">Platform administration<a class="anchor" href="#platform-administration" aria-label="link to section">#</a></h2>
+<p>Roundhouse ships with a small set of platform admin views.</p>
+<h3 id="platform-settings">Platform settings<a class="anchor" href="#platform-settings" aria-label="link to section">#</a></h3>
+<p>Host configuration: external hostname, Docker registry credentials, custom CA bundle for outbound TLS, and platform-wide env defaults that get imported into spec-based servers.</p>
+<figure><img src="screenshots/dark/50-settings.png" alt="Platform settings" loading="lazy" decoding="async" /><figcaption>fig. 25 — platform settings</figcaption></figure>
+<h3 id="users">Users<a class="anchor" href="#users" aria-label="link to section">#</a></h3>
+<p>User accounts with role assignment. The seeded demo includes a handful of operators alongside the platform admin; superadmins can reset passwords and revoke access from this page.</p>
+<figure><img src="screenshots/dark/51-users.png" alt="Users" loading="lazy" decoding="async" /><figcaption>fig. 26 — users</figcaption></figure>
+<h3 id="teams">Teams<a class="anchor" href="#teams" aria-label="link to section">#</a></h3>
+<p>Teams group users into shared-access bundles. A team can own one or more servers, and any team member inherits access to those servers without needing per-server token grants. The seed creates three teams that mirror the demo servers' industries — Taggart Operations, Rearden Industries, and Galt's Gulch — each with its own member roster.</p>
+<figure><img src="screenshots/dark/52-teams.png" alt="Teams" loading="lazy" decoding="async" /><figcaption>fig. 27 — teams</figcaption></figure>
+<h3 id="audit-log">Audit log<a class="anchor" href="#audit-log" aria-label="link to section">#</a></h3>
+<p>Every state-mutating action — server create/delete, env-var change, token rotation — is recorded with the acting user, target, and a structured detail payload.</p>
+<figure><img src="screenshots/dark/53-audit.png" alt="Audit log" loading="lazy" decoding="async" /><figcaption>fig. 28 — audit log</figcaption></figure>
+<div class="rule" aria-hidden="true"></div>
+<h2 id="configuration-reference">Configuration reference<a class="anchor" href="#configuration-reference" aria-label="link to section">#</a></h2>
+<p>Everything reads from environment variables — see <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/.env.example" target="_blank" rel="noopener"><code>.env.example</code></a> for the full list. The knobs you'll actually touch:</p>
+<div class="tablewrap"><table><thead><tr><th>Variable</th><th>Purpose</th></tr></thead><tbody><tr><td><code>APP_KEY</code></td><td><code>base64:&lt;32 random bytes&gt;</code> — encrypts runtime tokens at rest. Generate with <code>printf 'base64:%s' "$(openssl rand -base64 32)"</code>.</td></tr><tr><td><code>MCP_BASE_URL</code></td><td>The URL clients see for spawned servers. Set this when deploying past localhost.</td></tr><tr><td><code>MCP_DOCKER_HOST</code></td><td><code>/var/run/docker.sock</code> (default) or <code>tcp://socket-proxy:2375</code> for hardened Swarm setups.</td></tr><tr><td><code>MAX_MCP_SERVER_REPLICAS</code></td><td>Per-server replica cap (Swarm only).</td></tr><tr><td><code>ADMIN_EMAIL</code> / <code>ADMIN_PASSWORD</code></td><td>First-boot seed user. Ignored once a user exists.</td></tr></tbody></table></div>
+<h3 id="behind-a-corporate-tls-inspecting-proxy">Behind a corporate TLS-inspecting proxy<a class="anchor" href="#behind-a-corporate-tls-inspecting-proxy" aria-label="link to section">#</a></h3>
+<p>If your network MITMs outbound TLS during image builds, drop the proxy's CA bundle at <code>api/docker/corp-ca.crt</code> before running <code>docker compose build</code>. The Dockerfiles pick it up automatically; the file is gitignored so it can't be committed by accident. In any other environment, leave it absent and the build skips that step.</p>
+<div class="rule" aria-hidden="true"></div>
+<h2 id="deployment-modes">Deployment modes<a class="anchor" href="#deployment-modes" aria-label="link to section">#</a></h2>
+<div class="tablewrap"><table><thead><tr><th>Mode</th><th>File</th><th>Best for</th></tr></thead><tbody><tr><td><strong>Local / single-host</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-compose.yml" target="_blank" rel="noopener"><code>docker-compose.yml</code></a></td><td>Trying it out, small teams, hosting on one box. Single Docker daemon, Traefik on the same socket.</td></tr><tr><td><strong>Docker Swarm</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack-lab.yml" target="_blank" rel="noopener"><code>docker-stack-lab.yml</code></a></td><td>Multi-node, scoped socket proxies. Designed to sit behind a cluster ingress that terminates TLS.</td></tr></tbody></table></div>
+<p>Both modes are fully self-contained — well suited to air-gapped and restricted networks where outbound connectivity and cloud integrations aren't an option.</p>
+  </article>
+</div>
+
+<footer>
+  <div class="hazard"></div>
+  <div class="wrap foot-inner">
+    <div class="foot-mark" aria-hidden="true">Roundhouse</div>
+    <div class="foot-row">
+      <span>© 2026 Karmatek · forged with FastMCP</span>
+      <div class="foot-links">
+        <a href="/">Home</a>
+        <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP Spec</a>
+        <a href="#">Back to the top ↑</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll("aside.toc a"));
+  if (!links.length) return;
+  var map = {};
+  links.forEach(function (a) { map[a.getAttribute("href").slice(1)] = a; });
+  var heads = Array.prototype.slice.call(document.querySelectorAll("article h2[id], article h3[id]"));
+  var current = null;
+  function setActive(id) {
+    if (current === id) return;
+    current = id;
+    links.forEach(function (a) { a.classList.remove("on"); });
+    var a = map[id];
+    if (a) {
+      a.classList.add("on");
+      var box = a.closest("aside.toc");
+      if (box) {
+        var r = a.getBoundingClientRect(), b = box.getBoundingClientRect();
+        if (r.top < b.top + 40 || r.bottom > b.bottom - 40)
+          box.scrollTop += r.top - (b.top + b.height / 2);
+      }
+    }
+  }
+  function onScroll() {
+    var fromTop = window.scrollY + 110;
+    var active = heads[0] && heads[0].id;
+    for (var k = 0; k < heads.length; k++) {
+      if (heads[k].offsetTop <= fromTop) active = heads[k].id;
+      else break;
+    }
+    if (active) setActive(active);
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+})();
+</script>
+</body>
+</html>

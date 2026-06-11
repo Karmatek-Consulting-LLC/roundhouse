@@ -1,6 +1,7 @@
 # Roundhouse User Guide
 
-A visual tour of every menu, dialog, and editor surface in Roundhouse.
+Everything you need to install, operate, and administer Roundhouse — from
+`docker compose up` to a fleet of deployed MCP servers.
 
 > Screenshots in this guide are shown in **dark theme**. A light-theme set
 > lives under `docs/screenshots/light/`. See
@@ -8,12 +9,79 @@ A visual tour of every menu, dialog, and editor surface in Roundhouse.
 
 ---
 
-## Sign in
+## Getting started
+
+Roundhouse runs entirely on your own hardware. The only requirements are
+**Docker** and **Docker Compose** — there is no cloud dependency, no
+external service to sign up for, and no telemetry.
+
+### Install
+
+```bash
+git clone https://github.com/Karmatek-Consulting-LLC/roundhouse.git
+cd roundhouse
+cp .env.example .env
+docker compose up -d
+```
+
+When the API logs print `Application startup complete`, the platform is
+live at **http://localhost:3080**.
+
+To stop the platform:
+
+```bash
+docker compose down        # preserve database + spec files
+docker compose down -v     # wipe everything
+```
+
+### Sign in
 
 Roundhouse uses email/password sign-in. The first admin is created from the
-`ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables when the API boots.
+`ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables when the API boots
+(defaults: `admin@mcp.local` / `admin` — change them in `.env` before first
+boot, or from the Users page after).
 
 ![Login](screenshots/dark/01-login.png)
+
+---
+
+## Connecting clients
+
+Every deployed server gets a stable URL like
+`http://localhost:3080/s/my-server/mcp`. Traefik routes MCP clients
+straight to the spawned container — the platform never proxies MCP traffic
+on the hot path.
+
+Callers authenticate with a bearer token minted on the server's **Auth**
+tab (see [Auth](#auth-server-tokens) below).
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "url": "http://localhost:3080/s/my-server/mcp",
+      "headers": {
+        "Authorization": "Bearer <token from the server's Auth panel>"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add my-server \
+  --url    http://localhost:3080/s/my-server/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+Any other MCP client that speaks streamable HTTP works the same way: point
+it at the server URL and pass the token in the `Authorization` header.
 
 ---
 
@@ -243,3 +311,40 @@ rotation — is recorded with the acting user, target, and a structured
 detail payload.
 
 ![Audit log](screenshots/dark/53-audit.png)
+
+---
+
+## Configuration reference
+
+Everything reads from environment variables — see
+[`.env.example`](../.env.example) for the full list. The knobs you'll
+actually touch:
+
+| Variable | Purpose |
+|---|---|
+| `APP_KEY` | `base64:<32 random bytes>` — encrypts runtime tokens at rest. Generate with `printf 'base64:%s' "$(openssl rand -base64 32)"`. |
+| `MCP_BASE_URL` | The URL clients see for spawned servers. Set this when deploying past localhost. |
+| `MCP_DOCKER_HOST` | `/var/run/docker.sock` (default) or `tcp://socket-proxy:2375` for hardened Swarm setups. |
+| `MAX_MCP_SERVER_REPLICAS` | Per-server replica cap (Swarm only). |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First-boot seed user. Ignored once a user exists. |
+
+### Behind a corporate TLS-inspecting proxy
+
+If your network MITMs outbound TLS during image builds, drop the proxy's CA
+bundle at `api/docker/corp-ca.crt` before running `docker compose build`.
+The Dockerfiles pick it up automatically; the file is gitignored so it
+can't be committed by accident. In any other environment, leave it absent
+and the build skips that step.
+
+---
+
+## Deployment modes
+
+| Mode | File | Best for |
+|---|---|---|
+| **Local / single-host** | [`docker-compose.yml`](../docker-compose.yml) | Trying it out, small teams, hosting on one box. Single Docker daemon, Traefik on the same socket. |
+| **Docker Swarm** | [`docker-stack-lab.yml`](../docker-stack-lab.yml) | Multi-node, scoped socket proxies. Designed to sit behind a cluster ingress that terminates TLS. |
+
+Both modes are fully self-contained — well suited to air-gapped and
+restricted networks where outbound connectivity and cloud integrations
+aren't an option.

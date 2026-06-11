@@ -9,14 +9,12 @@
 Write a tool in the browser, hit deploy, and a containerized FastMCP server is
 live at a stable URL — ready for Claude Desktop, Claude Code, or any MCP client.
 
+[![Website](https://img.shields.io/badge/website-roundhousemcp.com-c2693a)](https://roundhousemcp.com)
+[![Docs](https://img.shields.io/badge/docs-user%20guide-c2693a)](https://roundhousemcp.com/docs/)
 [![Built with FastAPI](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![React + Vite](https://img.shields.io/badge/frontend-React%20%2B%20Vite-61dafb?logo=react&logoColor=white)](https://vitejs.dev)
 [![Docker](https://img.shields.io/badge/runtime-Docker-2496ed?logo=docker&logoColor=white)](https://www.docker.com)
 [![FastMCP](https://img.shields.io/badge/MCP-FastMCP-7c3aed)](https://github.com/jlowin/fastmcp)
-[![License](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
-
-<a href="docs/demo.gif"><img src="docs/demo.gif" alt="Roundhouse demo" /></a>
-<sub><i>30-second screencap: create → add primitive → deploy → invoke from Claude</i></sub>
 
 </div>
 
@@ -24,33 +22,31 @@ live at a stable URL — ready for Claude Desktop, Claude Code, or any MCP clien
 
 ## Why Roundhouse?
 
-MCP is a great spec, but the deployment story today is mostly *"scripts on a
-developer's laptop."* Roundhouse sits one level up — a small platform that
-turns "I wrote a tool" into "my team can use it from Claude."
+Network engineers and developers have years of scripts and internal code that
+belong behind MCP servers now that AI is running lead — but standing those
+servers up shouldn't require learning MCP *and* DevOps in the same week.
+Roundhouse turns "I wrote a tool" into "my team can use it from Claude":
+define primitives in a form (or paste a `server.py`), and the platform
+generates the code, builds the image, runs the container behind Traefik, and
+hands you a stable, token-protected URL.
 
-|  | Roundhouse |
+It also runs **entirely on your own hardware**. No cloud dependency, no
+external services, no telemetry — which makes it a fit for Federal,
+air-gapped, and restricted networks where hosted MCP platforms aren't an
+option.
+
+| | |
 |---|---|
-| 🛠 &nbsp; **Codegen + deploy** | Define primitives in a structured form (or paste raw Python). Roundhouse generates `server.py` + `Dockerfile`, builds the image, runs the container behind Traefik. |
-| 🌐 &nbsp; **Centralized URLs** | One stable URL per server, shared across your team. No laptop required, no port juggling. |
-| 🔐 &nbsp; **Auth on day one** | Scoped bearer tokens out of the box. Swap for OIDC when you outgrow them. |
-| 🔭 &nbsp; **Lifecycle visible** | Status, logs, redeploys, scopes, tokens — all in the same editor. |
-| 🧩 &nbsp; **Two authoring modes** | *Structured* (forms → codegen) for quick tools. *Code-first* (paste a `server.py`) when you need full control. |
-| 🐳 &nbsp; **Single host or Swarm** | Run it on a laptop with `docker compose`, or on a Swarm cluster with scoped socket proxies. |
+| 🛠 **Codegen + deploy** | Structured forms or raw Python → `server.py` + `Dockerfile` → running container behind Traefik. |
+| 🌐 **Centralized URLs** | One stable URL per server, shared across your team. No laptop required. |
+| 🔐 **Auth on day one** | Scoped bearer tokens out of the box; per-primitive scope locks. |
+| 📈 **Built-in observability** | Per-tool call counts, latency percentiles, live logs — no Prometheus, no Grafana. |
+| 🐳 **Single host or Swarm** | `docker compose` on one box, or Swarm with scoped socket proxies. |
 
----
-
-## Screenshots
-
-<table>
-<tr>
-<td width="50%"><img src="docs/server-editor.png" alt="Server editor" /></td>
-<td width="50%"><img src="docs/primitive-form.png" alt="Primitive form" /></td>
-</tr>
-<tr>
-<td align="center"><sub>IDE-style editor — primitives on the left, code on the right.</sub></td>
-<td align="center"><sub>Define a tool's inputs, outputs, and body. Codegen handles the rest.</sub></td>
-</tr>
-</table>
+<div align="center">
+<img src="docs/screenshots/dark/02-dashboard.png" alt="Roundhouse dashboard" width="49%" />
+<img src="docs/screenshots/dark/30-editor-source.png" alt="Server editor (code mode)" width="49%" />
+</div>
 
 ---
 
@@ -68,46 +64,33 @@ docker compose up -d
 When the API logs print `Application startup complete`, open
 **<http://localhost:3080>** and sign in with `admin@mcp.local` / `admin`.
 
-```bash
-docker compose down        # preserve database + spec files
-docker compose down -v     # wipe everything
-```
-
----
-
 ## Connect Claude
 
 Every deployed server gets a stable URL like
-`http://localhost:3080/s/my-server/mcp`.
-
-<details open>
-<summary><b>Claude Desktop</b></summary>
-
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "url": "http://localhost:3080/s/my-server/mcp",
-      "headers": {
-        "Authorization": "Bearer <token from the server's Auth panel>"
-      }
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><b>Claude Code</b></summary>
+`http://localhost:3080/s/my-server/mcp`. Mint a token on the server's
+**Auth** tab, then:
 
 ```bash
 claude mcp add my-server \
   --url    http://localhost:3080/s/my-server/mcp \
   --header "Authorization: Bearer <token>"
 ```
-</details>
+
+Claude Desktop and other MCP clients work the same way — see
+[Connecting clients](https://roundhousemcp.com/docs/#connecting-clients) in
+the docs.
+
+---
+
+## Documentation
+
+- **[roundhousemcp.com](https://roundhousemcp.com)** — what Roundhouse is and why.
+- **[User guide](https://roundhousemcp.com/docs/)** — install, every editor
+  surface, tokens, usage metrics, platform administration, configuration
+  reference, and deployment modes.
+- **[`docs/user-guide.md`](docs/user-guide.md)** — the same guide in the repo,
+  for offline and air-gapped environments. The website version is generated
+  from it (`node website/build-docs.mjs`).
 
 ---
 
@@ -139,53 +122,20 @@ Traefik routes MCP clients **straight to the spawned container** — the
 platform never proxies MCP traffic on the hot path. The platform-api only
 speaks MCP internally, to power the *Test* buttons in the UI.
 
----
-
-## What's in the box
-
-- **FastAPI** backend (Python 3.12) talking directly to the Docker socket
-- **React + Vite** frontend with an IDE-style editor and deep-link selection
-- **Postgres** for users, teams, scopes, runtime tokens, and audit data
-- **Traefik** front door routing `/api/*` (platform) and `/s/{name}/*` (servers)
-- **Alembic** migrations baked into startup
-- Two server modes: *structured codegen* and *code-first*
-
----
-
-## Configuration
-
-Everything reads from environment variables — see
-[`.env.example`](.env.example) for the full list. The knobs you'll actually
-touch:
-
-| Variable | Purpose |
-|---|---|
-| `APP_KEY` | `base64:<32 random bytes>` — encrypts runtime tokens at rest. Generate with `printf 'base64:%s' "$(openssl rand -base64 32)"`. |
-| `MCP_BASE_URL` | The URL clients see for spawned servers. Set this when deploying past localhost. |
-| `MCP_DOCKER_HOST` | `/var/run/docker.sock` (default) or `tcp://socket-proxy:2375` for hardened Swarm setups. |
-| `MAX_MCP_SERVER_REPLICAS` | Per-server replica cap (Swarm only). |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First-boot seed user. Ignored once a user exists. |
-
----
-
-## Deployment modes
-
-| Mode | File | Best for |
-|---|---|---|
-| **Local / single-host** | [`docker-compose.yml`](docker-compose.yml) | Trying it out, small teams, hosting on one box. Single Docker daemon, Traefik on the same socket. |
-| **Docker Swarm** | [`docker-stack-lab.yml`](docker-stack-lab.yml) | Multi-node, scoped socket proxies. Designed to sit behind a cluster ingress that terminates TLS. |
+**In the box:** FastAPI backend (Python 3.12) on the Docker socket ·
+React + Vite frontend with an IDE-style editor · Postgres · Traefik front
+door · Alembic migrations baked into startup.
 
 ---
 
 ## Development
 
-The backend (`api/`) is FastAPI + SQLAlchemy. The frontend (`frontend/`) is
+The backend (`api/`) is FastAPI + SQLAlchemy; the frontend (`frontend/`) is
 React + Vite. Hot-reload is on by default in `docker-compose.yml`.
 
 ```bash
-# Tail logs
-docker compose logs -f platform-api
-docker compose logs -f frontend
+docker compose logs -f platform-api   # tail the API
+docker compose logs -f frontend       # tail the frontend
 
 # Run the API outside Docker, pointed at the dockerized Postgres
 cd api
@@ -194,27 +144,9 @@ pip install -e .
 DB_HOST=localhost uvicorn app.main:app --reload
 ```
 
-<details>
-<summary><b>Behind a corporate TLS-inspecting proxy</b></summary>
-
-If your network MITMs outbound TLS during image builds, drop the proxy's CA
-bundle at `api/docker/corp-ca.crt` before running `docker compose build`.
-The Dockerfiles pick it up via a `[t]` glob; the file is gitignored so it
-can't be committed by accident. In any other environment, leave it absent
-and the build skips that step.
-</details>
-
----
-
-## Roadmap
-
-- ⏱ &nbsp; Per-server rate limiting & request middleware hooks
-- 📈 &nbsp; Built-in metrics + health page
-- 🔒 &nbsp; Secret-grade environment variables (sealed at rest, never echoed)
-- 🧱 &nbsp; Resource caps per server (CPU / memory / restart policy)
-- 🆔 &nbsp; OIDC / SSO for the admin UI
-
-See [`docs/`](docs/) for design notes as they land.
+Configuration, deployment modes (single-host vs Swarm), and the
+corporate-proxy CA workaround live in the
+[configuration reference](https://roundhousemcp.com/docs/#configuration-reference).
 
 ---
 
