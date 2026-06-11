@@ -344,7 +344,7 @@ and the build skips that step.
 | Mode | File | Best for |
 |---|---|---|
 | **Local / single-host** | [`docker-compose.yml`](../docker-compose.yml) | Trying it out, small teams, hosting on one box. Single Docker daemon, Traefik on the same socket. |
-| **Docker Swarm** | [`docker-stack-lab.yml`](../docker-stack-lab.yml) | Multi-node, scoped socket proxies. Designed to sit behind a cluster ingress that terminates TLS. |
+| **Docker Swarm** | [`docker-stack.yml`](../docker-stack.yml) | Multi-node, scoped socket proxies. Designed to sit behind a cluster ingress that terminates TLS. |
 
 Both modes are fully self-contained — well suited to air-gapped and
 restricted networks where outbound connectivity and cloud integrations
