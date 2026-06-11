@@ -1,5 +1,5 @@
 # Local development stack. Plain HTTP, hot reload, single Docker daemon.
-# For Swarm/lab/customer deploys see docker-stack-lab.yml.
+# For Swarm/customer deploys see docker-stack.yml.
 
 # Compose project name. Pinned so it does NOT track the host folder name —
 # lets you rename or move the checkout without orphaning existing volumes.
