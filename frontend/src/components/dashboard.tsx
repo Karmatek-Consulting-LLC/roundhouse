@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { Link } from "react-router-dom";
+import { TurntableEmpty } from "@/components/turntable-empty";
 import { api, type AuditEvent, type DashboardUsage, type Server } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -225,13 +226,13 @@ export function Dashboard({
 
   if (servers.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
+      <TurntableEmpty title="No engines in the house">
         No MCP servers registered yet.{" "}
         <Link to="/servers" className="text-primary hover:underline">
           Create one
         </Link>{" "}
         to start seeing platform stats.
-      </div>
+      </TurntableEmpty>
     );
   }
 
@@ -243,7 +244,7 @@ export function Dashboard({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Overview</h2>
+        <h2 className="font-display text-3xl font-extrabold uppercase tracking-wide">Overview</h2>
         <p className="text-sm text-muted-foreground">
           Platform health and live usage across your MCP servers.
         </p>
@@ -286,7 +287,7 @@ export function Dashboard({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Servers by status</CardTitle>
+            <CardTitle>Servers by status</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[220px] w-full">
@@ -332,7 +333,7 @@ export function Dashboard({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Top servers by calls</CardTitle>
+            <CardTitle>Top servers by calls</CardTitle>
           </CardHeader>
           <CardContent>
             {topServers.length === 0 ? (
@@ -374,7 +375,7 @@ export function Dashboard({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Servers by owner</CardTitle>
+            <CardTitle>Servers by owner</CardTitle>
           </CardHeader>
           <CardContent>
             <div style={{ height: Math.max(140, ownerData.length * 34) }} className="w-full">
@@ -407,7 +408,7 @@ export function Dashboard({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Calls by primitive kind</CardTitle>
+            <CardTitle>Calls by primitive kind</CardTitle>
           </CardHeader>
           <CardContent>
             {kindData.length === 0 ? (
@@ -442,7 +443,7 @@ export function Dashboard({
       {/* Top servers table */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Usage by server</CardTitle>
+          <CardTitle>Usage by server</CardTitle>
         </CardHeader>
         <CardContent>
           {topServers.length === 0 ? (
@@ -496,7 +497,7 @@ export function Dashboard({
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle className="text-sm">Activity (last 14 days)</CardTitle>
+              <CardTitle>Activity (last 14 days)</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-[200px] w-full">
@@ -524,7 +525,7 @@ export function Dashboard({
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
+              <CardTitle className="flex items-center gap-2">
                 <Activity className="h-4 w-4" /> Recent activity
               </CardTitle>
             </CardHeader>

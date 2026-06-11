@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
+import { TurntableEmpty } from "@/components/turntable-empty";
 
 interface ServerTableProps {
   servers: Server[];
@@ -32,9 +33,9 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
 
   if (servers.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-        No MCP servers registered yet. Create one to get started.
-      </div>
+      <TurntableEmpty title="No engines in the house">
+        Create a server to give your first tool a permanent stall.
+      </TurntableEmpty>
     );
   }
 
@@ -57,7 +58,7 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
             <TableRow key={s.name}>
               <TableCell>
                 <button
-                  className="font-medium text-primary hover:underline"
+                  className="font-mono text-[13px] font-medium text-primary hover:underline"
                   onClick={() => onSelect(s.name)}
                 >
                   {s.name}
