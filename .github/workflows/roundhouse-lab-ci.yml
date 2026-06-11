@@ -3,6 +3,10 @@
 # Full build -> smoke -> push -> swarm deploy. Works identically on github.com and
 # GitHub Enterprise; only the registry host and runner location differ.
 #
+# Triggers on `main` (the only long-lived branch). "Lab" in the workflow
+# name, GitHub environment, and image tags refers to the lab swarm
+# deployment target, not a branch.
+#
 # Repo/org configuration:
 #   Deploy stack name is fixed: roundhouse (must match docker-stack-lab.yml / traefik.swarm.yml network prefix).
 #   Registry image path is built from the `lab` environment vars:
@@ -32,7 +36,7 @@ name: Roundhouse Lab CI
 
 on:
   push:
-    branches: [lab]
+    branches: [main]
     paths:
       - "api/**"
       - "frontend/**"
@@ -41,7 +45,7 @@ on:
       - "docker-stack-lab.yml"
       - ".github/workflows/roundhouse-lab-ci.yml"
   pull_request:
-    branches: [lab]
+    branches: [main]
     paths:
       - "api/**"
       - "frontend/**"
