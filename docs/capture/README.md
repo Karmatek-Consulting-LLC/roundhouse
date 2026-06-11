@@ -8,7 +8,7 @@ The fast path:
 
 ```bash
 # 1) Stash the user's real servers, then seed everything the docs need
-#    (Atlas servers, users, teams, traffic to populate the charts).
+#    (Taggart servers, users, teams, traffic to populate the charts).
 python3 docs/capture/seed_demo.py full
 
 # 2) Drive headless Chromium through every documented route, in dark
@@ -28,9 +28,9 @@ order, and so each is debuggable on its own.
 
 | Command       | Effect |
 |---------------|--------|
-| `seed`        | Create the seven Atlas Shrugged demo servers and redeploy them so their seeded primitives register. Idempotent — prior demo servers are deleted first. |
-| `users`       | Create the Atlas-themed user accounts (Dagny Taggart, Henry Rearden, Francisco d'Anconia, John Galt, Hugh Akston) and three teams (Taggart Operations, Rearden Industries, Galt's Gulch) with members. Idempotent. |
-| `traffic`     | Call every tool/resource/prompt on each running Atlas server via the platform's invoke API so the dashboard, per-server usage tabs, and "Top servers by calls" chart all have real samples. |
+| `seed`        | Create the seven Taggart Transcontinental demo servers and redeploy them so their seeded primitives register. Idempotent — prior demo servers (including the legacy Atlas cast) are deleted first. |
+| `users`       | Create the Taggart staff accounts (Dagny Taggart, Eddie Willers, James Taggart, Owen Kellogg, Gwen Ives) and three department teams (Operations, Maintenance of Way, Revenue Service) with members. Retires the legacy Atlas users/teams. Idempotent. |
+| `traffic`     | Call every tool/resource/prompt on each running Taggart server via the platform's invoke API so the dashboard, per-server usage tabs, and "Top servers by calls" chart all have real samples. |
 | `hide-real`   | Export every server in `REAL_SERVERS` (defaults to `audit-test`, `logic-monitor`) to `docs/capture/.backups/` then delete them from the stack. Run before capture so the docs don't leak real workloads. |
 | `restore`     | Re-import every spec under `docs/capture/.backups/` via `/api/servers/import`. Restored files are renamed to `.json.restored` so a second run doesn't 409. |
 | `cleanup`     | Delete the demo servers, teams, and users. Use after capture if you don't want the demo cast lying around. |
@@ -54,15 +54,18 @@ order, and so each is debuggable on its own.
 
 ## Demo server cast
 
+One railroad — Taggart Transcontinental — and the internal MCP servers its
+departments would actually run. Every server keeps a specific docs role:
+
 | Server | Mode | Role in the docs |
 |--------|------|------------------|
-| `taggart-transcontinental` | structured | Flagship server — covers every editor tab (tools, resources, prompts, env, auth, assets, usage). |
-| `rearden-metal`            | structured | Pip-package and resource-template examples. |
-| `danconia-copper`          | structured | Stopped state — shows the gray badge in dashboard + servers list. |
-| `wyatt-oil`                | code       | Code-mode source editor and code-mode env tab. |
-| `galt-engine`              | structured | `LOG_LEVEL=DEBUG` set, so the Logs-tab level dropdown is exercised. Heaviest traffic profile → busiest usage shot. |
-| `mulligan-bank`            | structured | Stopped, more env-var variety. |
-| `stockton-foundry`         | structured | Round-out the dashboard fleet view. |
+| `dispatch`          | structured | Flagship server — covers every editor tab (tools, resources, prompts, env, auth, assets, usage). |
+| `track-maintenance` | structured | Pip-package and resource-template examples. |
+| `crew-scheduling`   | structured | `LOG_LEVEL=DEBUG` set, so the Logs-tab level dropdown is exercised. Heaviest traffic profile → busiest usage shot. |
+| `signal-telemetry`  | code       | Code-mode source editor and code-mode env tab. |
+| `freight-billing`   | structured | Stopped state — shows the gray badge in dashboard + servers list. |
+| `yard-inventory`    | structured | Stopped, more env-var variety. |
+| `motive-power`      | structured | Round-out the dashboard fleet view. |
 
 ## Re-running after a UI change
 

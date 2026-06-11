@@ -10,8 +10,8 @@
 //   node docs/capture/capture.mjs --theme light
 //   node docs/capture/capture.mjs --theme both    (default)
 //
-// Assumes docs/capture/seed_demo.py has already run, so Atlas Shrugged
-// servers exist in the stack.
+// Assumes docs/capture/seed_demo.py has already run, so the Taggart
+// Transcontinental demo servers exist in the stack.
 
 import { chromium } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -53,34 +53,34 @@ const STEPS = [
   { name: "06-create-from-git",   url: "/servers",                                                      prep: openCreateDialogTab("git"),                        wait: { selector: 'role=dialog', delay: 400 } },
   { name: "07-create-import",     url: "/servers",                                                      prep: openCreateDialogTab("import"),                     wait: { selector: 'role=dialog', delay: 400 } },
 
-  // Server editor — Taggart Transcontinental (flagship structured server)
-  { name: "10-editor-overview",  url: "/servers/taggart-transcontinental",                              wait: { selector: 'text=/overview|server.taggart/i', delay: 700 } },
-  { name: "11-editor-primitive-tool",   url: "/servers/taggart-transcontinental/primitives/schedule_train", wait: { selector: 'textarea, .cm-editor', delay: 900 } },
-  { name: "12-editor-primitive-resource", url: "/servers/taggart-transcontinental/primitives/track_map",   wait: { selector: 'textarea, .cm-editor', delay: 900 } },
-  { name: "13-editor-primitive-prompt", url: "/servers/taggart-transcontinental/primitives/morning_briefing", wait: { selector: 'textarea, .cm-editor', delay: 900 } },
-  { name: "14-editor-primitive-new",   url: "/servers/taggart-transcontinental/primitives:new",          wait: { selector: 'text=/new primitive/i', delay: 500 } },
-  { name: "15-editor-imports",   url: "/servers/taggart-transcontinental/imports",                       wait: { selector: 'text=/imports|globals/i', delay: 500 } },
-  { name: "16-editor-packages",  url: "/servers/taggart-transcontinental/packages",                      wait: { selector: 'text=/pip|packages/i', delay: 500 } },
-  { name: "17-editor-apt",       url: "/servers/taggart-transcontinental/apt-packages",                  wait: { selector: 'text=/apt|os/i', delay: 500 } },
-  { name: "18-editor-env",       url: "/servers/taggart-transcontinental/env",                           wait: { selector: 'text=/environment|env/i', delay: 500 } },
-  { name: "19-editor-auth",      url: "/servers/taggart-transcontinental/auth",                          wait: { selector: 'text=/tokens|auth/i', delay: 500 } },
-  { name: "20-editor-assets",    url: "/servers/taggart-transcontinental/assets",                        wait: { selector: 'text=/assets|upload/i', delay: 500 } },
-  { name: "21-editor-usage",     url: "/servers/taggart-transcontinental/usage",                         wait: { selector: 'text=/metrics|calls|usage/i', delay: 1500 } },
-  // Galt Engine carries the heaviest traffic in the seed, so its usage page
+  // Server editor — dispatch (flagship structured server)
+  { name: "10-editor-overview",  url: "/servers/dispatch",                              wait: { selector: 'text=/overview|dispatch/i', delay: 700 } },
+  { name: "11-editor-primitive-tool",   url: "/servers/dispatch/primitives/schedule_train", wait: { selector: 'textarea, .cm-editor', delay: 900 } },
+  { name: "12-editor-primitive-resource", url: "/servers/dispatch/primitives/track_map",   wait: { selector: 'textarea, .cm-editor', delay: 900 } },
+  { name: "13-editor-primitive-prompt", url: "/servers/dispatch/primitives/morning_briefing", wait: { selector: 'textarea, .cm-editor', delay: 900 } },
+  { name: "14-editor-primitive-new",   url: "/servers/dispatch/primitives:new",          wait: { selector: 'text=/new primitive/i', delay: 500 } },
+  { name: "15-editor-imports",   url: "/servers/dispatch/imports",                       wait: { selector: 'text=/imports|globals/i', delay: 500 } },
+  { name: "16-editor-packages",  url: "/servers/dispatch/packages",                      wait: { selector: 'text=/pip|packages/i', delay: 500 } },
+  { name: "17-editor-apt",       url: "/servers/dispatch/apt-packages",                  wait: { selector: 'text=/apt|os/i', delay: 500 } },
+  { name: "18-editor-env",       url: "/servers/dispatch/env",                           wait: { selector: 'text=/environment|env/i', delay: 500 } },
+  { name: "19-editor-auth",      url: "/servers/dispatch/auth",                          wait: { selector: 'text=/tokens|auth/i', delay: 500 } },
+  { name: "20-editor-assets",    url: "/servers/dispatch/assets",                        wait: { selector: 'text=/assets|upload/i', delay: 500 } },
+  { name: "21-editor-usage",     url: "/servers/dispatch/usage",                         wait: { selector: 'text=/metrics|calls|usage/i', delay: 1500 } },
+  // crew-scheduling carries the heaviest traffic in the seed, so its usage page
   // shows the most chart variety + token attribution.
-  { name: "21a-editor-usage-busy", url: "/servers/galt-engine/usage",                                     wait: { selector: 'text=/metrics|calls|usage/i', delay: 1500 } },
+  { name: "21a-editor-usage-busy", url: "/servers/crew-scheduling/usage",                                     wait: { selector: 'text=/metrics|calls|usage/i', delay: 1500 } },
 
-  // Logs tab — Galt Engine has LOG_LEVEL=DEBUG so the dropdown shows it.
+  // Logs tab — crew-scheduling has LOG_LEVEL=DEBUG so the dropdown shows it.
   // Logs page opens an SSE stream so networkidle would never fire. Tail can
   // be very long; cap at viewport to keep the shot scannable.
-  { name: "22-editor-logs",      url: "/servers/galt-engine/logs",                                       fullPage: false, waitUntil: "domcontentloaded", wait: { selector: 'pre', delay: 2400 } },
+  { name: "22-editor-logs",      url: "/servers/crew-scheduling/logs",                                       fullPage: false, waitUntil: "domcontentloaded", wait: { selector: 'pre', delay: 2400 } },
 
-  // Code-mode editor — Wyatt Oil
-  { name: "30-editor-source",    url: "/servers/wyatt-oil/source",                                       wait: { selector: '.cm-editor', delay: 1500 } },
-  { name: "31-editor-source-env", url: "/servers/wyatt-oil/env",                                         wait: { selector: 'text=/environment/i', delay: 500 } },
+  // Code-mode editor — signal-telemetry
+  { name: "30-editor-source",    url: "/servers/signal-telemetry/source",                                       wait: { selector: '.cm-editor', delay: 1500 } },
+  { name: "31-editor-source-env", url: "/servers/signal-telemetry/env",                                         wait: { selector: 'text=/environment/i', delay: 500 } },
 
   // Stopped server (gray status badge prominent)
-  { name: "40-editor-stopped",   url: "/servers/danconia-copper",                                        wait: { selector: 'text=/stopped|exited|overview/i', delay: 700 } },
+  { name: "40-editor-stopped",   url: "/servers/freight-billing",                                        wait: { selector: 'text=/stopped|exited|overview/i', delay: 700 } },
 
   // Platform admin areas
   { name: "50-settings",         url: "/settings",                                                       wait: { selector: 'text=/settings|hostname/i', delay: 600 } },
