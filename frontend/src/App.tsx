@@ -103,11 +103,11 @@ function AppShell() {
             >
               <Logo className="h-10 w-auto shrink-0" />
               <div>
-                <h1 className="text-xl font-semibold tracking-tight">
-                  Roundhouse
+                <h1 className="font-display text-2xl font-extrabold uppercase tracking-[0.08em]">
+                  Round<span className="text-primary">house</span>
                 </h1>
-                <p className="text-sm text-muted-foreground">
-                  Deploy and manage MCP servers
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Deploy &amp; manage MCP servers
                 </p>
               </div>
             </button>

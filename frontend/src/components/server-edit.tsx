@@ -449,7 +449,7 @@ function RedeployBanner({
   }
 
   return (
-    <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-3 text-sm text-amber-950 dark:text-amber-100">
+    <div className="border-b border-primary/40 bg-primary/10 px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-3 text-sm text-foreground">
       <Rocket className="h-4 w-4 flex-shrink-0" />
       <span className="flex-1">
         <strong>Changes pending.</strong> Spec is saved; redeploy to apply.
