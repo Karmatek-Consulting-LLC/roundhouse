@@ -1329,14 +1329,21 @@ def _merge_env_vars(items: list[EnvVarItem], existing: list[EnvVar]) -> list[Env
         name = (it.name or "").strip()
         if not name:
             continue
+        prev = by_name.get(name)
         if it.secret:
             if it.value:
                 out.append(EnvVar(name=name, value=_encrypt_env(it.value), secret=True))
-            else:
-                prev = by_name.get(name)
-                if prev is not None and prev.secret:
-                    out.append(EnvVar(name=name, value=prev.value, secret=True))
-                # Else: secret toggle flipped on with no value yet -> skip.
+            elif prev is not None and prev.secret:
+                out.append(EnvVar(name=name, value=prev.value, secret=True))
+            # Else: secret toggle flipped on with no value yet -> skip.
+        elif not it.value and prev is not None and prev.secret:
+            # Guardrail: the client sent a previously-secret row back with no
+            # value AND without the secret flag. That happens when a masked
+            # secret field round-trips blank (the API never echoes the value).
+            # Treating it as a plaintext "" would silently WIPE the stored
+            # secret on the next deploy - so preserve what's on disk instead.
+            # A genuine delete removes the row entirely, so it never lands here.
+            out.append(EnvVar(name=name, value=prev.value, secret=True))
         else:
             out.append(EnvVar(name=name, value=it.value or "", secret=False))
     return out

@@ -11,6 +11,7 @@ real tool); they exist so an operator can SEE and SCOPE each primitive.
 """
 from __future__ import annotations
 
+import ssl
 from typing import Any, Callable
 
 from app.services.mcp_client import McpClient, McpError
@@ -177,10 +178,12 @@ def discover(
     spec: ServerSpec,
     *,
     remote_headers: dict[str, str] | None = None,
+    verify: "ssl.SSLContext | None" = None,
 ) -> list[dict]:
     """Introspect the live proxied server and return reconciled overlay
     primitives (caller persists them). `tools/list` failures propagate (wrong
     URL, bad credential, server not up); resources/prompts degrade to empty.
+    `verify` is the TLS context for the remote upstream (custom CA support).
     """
     if spec.is_remote_mode():
         url = (spec.remote_url or "").strip()
@@ -188,12 +191,12 @@ def discover(
             raise McpError("remote_url is not set for this server")
         # Best-effort handshake; stateless upstreams ignore it.
         try:
-            client.initialize_url(url, remote_headers)
+            client.initialize_url(url, remote_headers, verify=verify)
         except McpError:
             pass
-        tools = client.list_tools_url(url, remote_headers)
-        resources = _safe(lambda: client.list_resources_url(url, remote_headers))
-        prompts = _safe(lambda: client.list_prompts_url(url, remote_headers))
+        tools = client.list_tools_url(url, remote_headers, verify=verify)
+        resources = _safe(lambda: client.list_resources_url(url, remote_headers, verify=verify))
+        prompts = _safe(lambda: client.list_prompts_url(url, remote_headers, verify=verify))
     else:
         # Code-first: introspect the internal container (must be deployed/up).
         tools = client.list_tools(spec.name)

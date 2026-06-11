@@ -1,27 +1,24 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
+import type { ServersOutletContext } from "@/App";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
 import { useTheme } from "@/hooks/use-theme";
-
-interface CreateServerDialogProps {
-  onCreated: () => void;
-}
+import {
+  ArrowLeft,
+  Boxes,
+  FileCode,
+  GitBranch,
+  Globe,
+  Plus,
+  Upload,
+  X,
+} from "lucide-react";
 
 type CreateMethod = "structured" | "code" | "remote" | "git" | "import";
 
@@ -29,6 +26,55 @@ interface RemoteHeaderRow {
   header: string;
   value: string;
 }
+
+interface MethodMeta {
+  value: CreateMethod;
+  label: string;
+  icon: typeof Boxes;
+  blurb: string;
+  subtitle: string;
+}
+
+const METHODS: MethodMeta[] = [
+  {
+    value: "structured",
+    label: "Structured",
+    icon: Boxes,
+    blurb: "Build tools, resources, and prompts in the editor.",
+    subtitle: "Create an empty server, then add tools, resources, and prompts.",
+  },
+  {
+    value: "code",
+    label: "Code-first",
+    icon: FileCode,
+    blurb: "Paste a full FastMCP server.py.",
+    subtitle:
+      "Paste a full FastMCP server.py — the platform handles Docker, Traefik, and env.",
+  },
+  {
+    value: "remote",
+    label: "Remote",
+    icon: Globe,
+    blurb: "Proxy an external MCP server with your access control.",
+    subtitle:
+      "Proxy an external MCP server. Roundhouse discovers its tools and layers your access control, metrics, and logging.",
+  },
+  {
+    value: "git",
+    label: "From Git",
+    icon: GitBranch,
+    blurb: "Clone a repo containing server.py.",
+    subtitle:
+      "Clone a git repo containing server.py. It imports unconfigured — set env vars, then deploy.",
+  },
+  {
+    value: "import",
+    label: "Import",
+    icon: Upload,
+    blurb: "Restore from an exported JSON spec.",
+    subtitle: "Restore a server from a previously exported JSON spec.",
+  },
+];
 
 const CODE_MODE_STARTER = `from fastmcp import FastMCP
 
@@ -50,9 +96,9 @@ if __name__ == "__main__":
     )
 `;
 
-export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
+export function CreateServerPage() {
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const { refresh } = useOutletContext<ServersOutletContext>();
   const [method, setMethod] = useState<CreateMethod>("structured");
 
   // Shared
@@ -86,29 +132,14 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
   const { resolvedTheme } = useTheme();
 
   useEffect(() => {
-    if (!open) return;
     void api.getServerReplicaLimits().then(setLimits).catch(() => setLimits(null));
-  }, [open]);
+  }, []);
 
   useEffect(() => {
     if (method !== "code") return;
     if (!name) return;
     setSource((prev) => prev.replace(/FastMCP\("[^"]*"\)/, `FastMCP("${name}")`));
   }, [name, method]);
-
-  function reset() {
-    setMethod("structured");
-    setName("");
-    setDescription("");
-    setReplicas("");
-    setSource(CODE_MODE_STARTER);
-    setRemoteUrl("");
-    setRemoteHeaders([{ header: "Authorization", value: "" }]);
-    setGitUrl("");
-    setGitRef("");
-    setImportJson("");
-    setError(null);
-  }
 
   function effectiveReplicas() {
     return replicas === "" || replicas === limits?.default_mcp_server_replicas
@@ -168,16 +199,16 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
       }
       // A git import lands as not_deployed; a remote server lands deployed with
       // its toolset discovered but every tool locked (default-deny). Either way,
-      // take the operator straight to the editor - to fill env + deploy (git) or
-      // to assign scopes to the discovered tools (remote).
+      // take the operator straight to the editor — to fill env + deploy (git) or
+      // to assign scopes to the discovered tools (remote). Other methods return
+      // to the server list.
       const goToEditor = method === "git" || method === "remote" ? name : null;
-      setOpen(false);
-      reset();
-      onCreated();
-      if (goToEditor) navigate(`/servers/${encodeURIComponent(goToEditor)}`);
+      refresh();
+      navigate(
+        goToEditor ? `/servers/${encodeURIComponent(goToEditor)}` : "/servers",
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create server");
-    } finally {
       setCreating(false);
     }
   }
@@ -190,44 +221,52 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
     (method === "git" && (!name || !gitUrl.trim())) ||
     (method === "import" && !importJson.trim());
 
-  const subtitle = {
-    structured: "Create an empty server, then add tools, resources, and prompts.",
-    code: 'Paste a full FastMCP server.py - the platform handles Docker, Traefik, and env.',
-    remote: "Proxy an external MCP server. Roundhouse discovers its tools and layers your access control, metrics, and logging.",
-    git: "Clone a git repo containing server.py. It imports unconfigured — set env vars, then deploy.",
-    import: "Restore a server from a previously exported JSON spec.",
-  }[method];
-
-  const wide = method === "code" || method === "import";
+  const active = METHODS.find((m) => m.value === method)!;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        setOpen(v);
-        if (!v) reset();
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button>Create Server</Button>
-      </DialogTrigger>
-      <DialogContent className={wide ? "sm:max-w-3xl" : "sm:max-w-md"}>
-        <DialogHeader>
-          <DialogTitle>Create MCP Server</DialogTitle>
-          <DialogDescription>{subtitle}</DialogDescription>
-        </DialogHeader>
+    <div className="flex flex-col -mx-4 sm:-mx-6 lg:-mx-8">
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b px-4 sm:px-6 lg:px-8 py-3">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/servers")}>
+          <ArrowLeft className="mr-1 h-4 w-4" /> Servers
+        </Button>
+        <h2 className="text-lg font-semibold">Create MCP Server</h2>
+      </div>
 
-        <Tabs value={method} onValueChange={(v) => setMethod(v as CreateMethod)}>
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="structured">Structured</TabsTrigger>
-            <TabsTrigger value="code">Code-first</TabsTrigger>
-            <TabsTrigger value="remote">Remote</TabsTrigger>
-            <TabsTrigger value="git">From Git</TabsTrigger>
-            <TabsTrigger value="import">Import</TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 lg:px-8 py-6">
+        {/* Method picker */}
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {METHODS.map((m) => {
+            const Icon = m.icon;
+            const selected = m.value === method;
+            return (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => setMethod(m.value)}
+                aria-pressed={selected}
+                className={`flex flex-col items-start gap-2 rounded-lg border p-3 text-left transition-colors ${
+                  selected
+                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                    : "hover:border-foreground/30 hover:bg-muted/50"
+                }`}
+              >
+                <Icon
+                  className={`h-5 w-5 ${
+                    selected ? "text-primary" : "text-muted-foreground"
+                  }`}
+                />
+                <span className="text-sm font-medium">{m.label}</span>
+                <span className="text-xs text-muted-foreground">{m.blurb}</span>
+              </button>
+            );
+          })}
+        </div>
 
-        <div className="grid gap-4 py-4">
+        <p className="mt-4 text-sm text-muted-foreground">{active.subtitle}</p>
+
+        {/* Form */}
+        <div className="mt-6 grid gap-5">
           {method !== "import" && (
             <div className="grid gap-2">
               <Label htmlFor="server-name">Server Name</Label>
@@ -308,7 +347,7 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
               <div className="rounded-md border">
                 <CodeMirror
                   value={source}
-                  height="340px"
+                  height="420px"
                   theme={resolvedTheme === "dark" ? "dark" : "light"}
                   extensions={[python()]}
                   onChange={(v) => setSource(v)}
@@ -368,13 +407,13 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       disabled={remoteHeaders.length === 1}
                       onClick={() =>
                         setRemoteHeaders((rows) => rows.filter((_, j) => j !== i))
                       }
                     >
-                      ✕
+                      <X className="h-4 w-4" />
                     </Button>
                   </div>
                 ))}
@@ -387,7 +426,7 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
                     setRemoteHeaders((rows) => [...rows, { header: "", value: "" }])
                   }
                 >
-                  + Add header
+                  <Plus className="mr-1 h-4 w-4" /> Add header
                 </Button>
               </div>
             </>
@@ -427,12 +466,12 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
               <Label htmlFor="import-json">Exported spec JSON</Label>
               <p className="text-xs text-muted-foreground">
                 Paste the JSON returned by <code>GET /api/servers/&lt;name&gt;/export</code> or
-                a bare spec object. Runtime tokens are not transferred - mint new ones
+                a bare spec object. Runtime tokens are not transferred — mint new ones
                 after import.
               </p>
               <Textarea
                 id="import-json"
-                className="min-h-[260px] font-mono text-xs"
+                className="min-h-[320px] font-mono text-xs"
                 placeholder='{"version": 1, "spec": { ... }}'
                 value={importJson}
                 onChange={(e) => setImportJson(e.target.value)}
@@ -443,12 +482,16 @@ export function CreateServerDialog({ onCreated }: CreateServerDialogProps) {
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <DialogFooter>
+        {/* Action bar */}
+        <div className="mt-8 flex items-center justify-end gap-2 border-t pt-4">
+          <Button variant="outline" onClick={() => navigate("/servers")} disabled={creating}>
+            Cancel
+          </Button>
           <Button onClick={handleCreate} disabled={submitDisabled}>
             {creating ? "Creating..." : method === "import" ? "Import" : "Create"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+    </div>
   );
 }

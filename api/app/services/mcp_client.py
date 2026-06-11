@@ -7,6 +7,7 @@ Traefik for internal traffic."""
 from __future__ import annotations
 
 import secrets
+import ssl
 
 import httpx
 
@@ -17,17 +18,29 @@ class McpError(RuntimeError):
     pass
 
 
+def verify_for_ca(ca_pem: str | None) -> ssl.SSLContext | None:
+    """Build an httpx TLS `verify` context that trusts the system CAs PLUS an
+    optional custom CA (PEM text). Returns None when no custom CA is given, so
+    callers fall back to default (system-only) verification - public upstreams
+    keep working, and a custom-CA-signed upstream verifies once the platform
+    operator has configured the CA. Raises ssl.SSLError on an unparseable PEM."""
+    if not ca_pem or not ca_pem.strip():
+        return None
+    ctx = ssl.create_default_context()  # loads the system trust store
+    ctx.load_verify_locations(cadata=ca_pem)  # + the operator's custom CA
+    return ctx
+
+
 class McpClient:
     def __init__(self):
-        self._client = httpx.Client(
-            timeout=httpx.Timeout(30.0, connect=3.0),
-            headers={
-                # FastMCP's streamable-http transport rejects requests that don't
-                # advertise both content types in Accept.
-                "Accept": "application/json, text/event-stream",
-                "Content-Type": "application/json",
-            },
-        )
+        self._timeout = httpx.Timeout(30.0, connect=3.0)
+        self._default_headers = {
+            # FastMCP's streamable-http transport rejects requests that don't
+            # advertise both content types in Accept.
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        }
+        self._client = httpx.Client(timeout=self._timeout, headers=self._default_headers)
 
     def call(self, server_name: str, method: str, params: dict | None = None) -> dict:
         return self._rpc(self._server_url(server_name), method, params, what=f"server {server_name!r}")
@@ -39,12 +52,15 @@ class McpClient:
         params: dict | None = None,
         *,
         headers: dict[str, str] | None = None,
+        verify: ssl.SSLContext | None = None,
     ) -> dict:
         """JSON-RPC against an arbitrary MCP endpoint with extra headers - used
         to introspect EXTERNAL (remote-proxy) servers during discovery. Unlike
         our own servers, an upstream may answer streamable-http with an SSE
-        body rather than json_response=True JSON, so _decode handles both."""
-        return self._rpc(url, method, params, extra_headers=headers, what=url)
+        body rather than json_response=True JSON, so _decode handles both.
+        `verify` carries a custom-CA TLS context for upstreams whose cert the
+        system trust store doesn't cover (see verify_for_ca)."""
+        return self._rpc(url, method, params, extra_headers=headers, verify=verify, what=url)
 
     def _rpc(
         self,
@@ -53,20 +69,35 @@ class McpClient:
         params: dict | None = None,
         *,
         extra_headers: dict[str, str] | None = None,
+        verify: ssl.SSLContext | None = None,
         what: str = "",
     ) -> dict:
         envelope = {
             "jsonrpc": "2.0",
-            "id": secrets.randbelow(2**62),
+            # JSON-RPC ids must fit JS's safe-integer range (2**53 - 1): some
+            # upstreams (e.g. Kibana's Agent Builder MCP) validate this and 400
+            # on anything larger. 2**31 is unique enough for our one-shot calls.
+            "id": secrets.randbelow(2**31),
             "method": method,
             "params": params or {},
         }
+        # httpx pins `verify` at client construction, so a request that needs a
+        # custom CA gets a short-lived client; everything else reuses the shared
+        # one (system trust store).
+        client = self._client
+        owned = False
+        if verify is not None:
+            client = httpx.Client(timeout=self._timeout, headers=self._default_headers, verify=verify)
+            owned = True
         try:
-            resp = self._client.post(url, json=envelope, headers=extra_headers or None)
+            resp = client.post(url, json=envelope, headers=extra_headers or None)
         except httpx.ConnectError as e:
             raise McpError(f"Cannot reach MCP {what} ({e})") from e
         except httpx.HTTPError as e:
             raise McpError(f"MCP request failed: {e}") from e
+        finally:
+            if owned:
+                client.close()
 
         if resp.status_code >= 400:
             raise McpError(f"MCP {what} returned HTTP {resp.status_code}: {resp.text[:300]}")
@@ -128,7 +159,13 @@ class McpClient:
 
     # ---- External (remote-proxy) introspection ----
 
-    def initialize_url(self, url: str, headers: dict[str, str] | None = None) -> dict:
+    def initialize_url(
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+        *,
+        verify: ssl.SSLContext | None = None,
+    ) -> dict:
         """Best-effort MCP initialize handshake against an external endpoint.
         Stateless upstreams (Elastic Agent Builder) answer tools/list without it,
         but stricter servers require it first; harmless either way."""
@@ -141,20 +178,27 @@ class McpClient:
                 "clientInfo": {"name": "roundhouse-discovery", "version": "1"},
             },
             headers=headers,
+            verify=verify,
         )
 
-    def list_tools_url(self, url: str, headers: dict[str, str] | None = None) -> list[dict]:
-        return self.call_url(url, "tools/list", headers=headers).get("tools", [])
+    def list_tools_url(
+        self, url: str, headers: dict[str, str] | None = None, *, verify: ssl.SSLContext | None = None
+    ) -> list[dict]:
+        return self.call_url(url, "tools/list", headers=headers, verify=verify).get("tools", [])
 
-    def list_resources_url(self, url: str, headers: dict[str, str] | None = None) -> list[dict]:
-        result = self.call_url(url, "resources/list", headers=headers)
+    def list_resources_url(
+        self, url: str, headers: dict[str, str] | None = None, *, verify: ssl.SSLContext | None = None
+    ) -> list[dict]:
+        result = self.call_url(url, "resources/list", headers=headers, verify=verify)
         out = list(result.get("resources", []))
         for t in result.get("resourceTemplates", []) or []:
             out.append({**t, "isTemplate": True})
         return out
 
-    def list_prompts_url(self, url: str, headers: dict[str, str] | None = None) -> list[dict]:
-        return self.call_url(url, "prompts/list", headers=headers).get("prompts", [])
+    def list_prompts_url(
+        self, url: str, headers: dict[str, str] | None = None, *, verify: ssl.SSLContext | None = None
+    ) -> list[dict]:
+        return self.call_url(url, "prompts/list", headers=headers, verify=verify).get("prompts", [])
 
     @staticmethod
     def _server_url(server_name: str) -> str:

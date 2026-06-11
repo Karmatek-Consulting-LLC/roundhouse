@@ -353,3 +353,35 @@ def test_resource_limits_omitted_when_unset(client, http, build_context, monkeyp
     deployment = next(b for b in captured if b["kind"] == "Deployment")
     container = deployment["spec"]["template"]["spec"]["containers"][0]
     assert "resources" not in container
+
+
+def test_pod_aggregate_status_includes_node_placement(client, http):
+    # Pods carry their scheduled node in spec.nodeName / status.hostIP; surface
+    # that as placement so the UI can show where a server runs on K8s, the same
+    # way it does for Swarm tasks.
+    http.get.return_value = {
+        "items": [
+            {
+                "metadata": {"name": "mcp-demo-7c9-abc"},
+                "spec": {"nodeName": "worker-2"},
+                "status": {
+                    "phase": "Running",
+                    "hostIP": "10.0.1.5",
+                    "containerStatuses": [{"ready": True, "restartCount": 2}],
+                },
+            }
+        ]
+    }
+    health, restarts, placement = client._pod_aggregate_status("demo")  # noqa: SLF001
+    assert health == "healthy"
+    assert restarts == 2
+    assert placement == [
+        {
+            "task_id": "mcp-demo-7c9-abc",
+            "node_id": "10.0.1.5",
+            "node_name": "worker-2",
+            "state": "Running",
+            "slot": None,
+            "error": None,
+        }
+    ]

@@ -25,6 +25,43 @@ from app.services.template_engine import TemplateEngine
 logger = logging.getLogger(__name__)
 
 
+def _resolve_secret_env(name: str, value: str, app_key: str) -> str | None:
+    """Resolve a secret env var's stored value to the plaintext to inject into
+    the container. Returns None when it cannot be resolved (caller drops it).
+
+    Three cases, only the last of which loses data:
+      - `value` is not an encryption envelope: it's a plaintext value stored
+        under the no-APP_KEY dev fallback (`_encrypt_env`). Use it as-is.
+      - `value` is an envelope and APP_KEY decrypts it: return the plaintext.
+      - `value` is an envelope but decrypt fails (APP_KEY changed since the row
+        was saved, or no key is configured): we cannot recover the plaintext.
+        Log loudly and return None so the loss is diagnosable instead of the
+        silent drop that made env vars mysteriously vanish on redeploy.
+    """
+    from app.crypto import DecryptError, decrypt, looks_encrypted
+
+    if not looks_encrypted(value):
+        # Stored plaintext (APP_KEY was unset when this secret was saved).
+        return value
+    if not app_key:
+        logger.warning(
+            "Secret env %r is encrypted but APP_KEY is not configured; it will "
+            "be missing from the container until APP_KEY is set.",
+            name,
+        )
+        return None
+    try:
+        return decrypt(value, app_key)
+    except DecryptError as exc:
+        logger.warning(
+            "Secret env %r failed to decrypt (%s) - APP_KEY likely changed since "
+            "it was saved. Re-enter the value to restore it.",
+            name,
+            exc,
+        )
+        return None
+
+
 class ServerService:
     def __init__(
         self,
@@ -46,23 +83,30 @@ class ServerService:
 
     def effective_env(self, db: Session, spec: ServerSpec) -> dict[str, str]:
         from app.config import get_settings
-        from app.crypto import DecryptError, decrypt
         merged: dict[str, str] = {}
         gdict = global_env.globals_as_dict(db)
         for name in spec.env_global_imports:
             if name in gdict:
                 merged[name] = gdict[name]
+            else:
+                logger.warning(
+                    "Server %r imports global env %r but it is not defined in "
+                    "platform settings; it will be missing from the container.",
+                    spec.name,
+                    name,
+                )
         app_key = get_settings().app_key
         for ev in spec.env_vars:
-            if ev.secret and ev.value and app_key:
-                try:
-                    merged[ev.name] = decrypt(ev.value, app_key)
-                except DecryptError:
-                    # Most likely cause: row encrypted with a different APP_KEY.
-                    # Skipping is safer than leaking ciphertext into env.
-                    continue
-            else:
+            if not ev.secret:
                 merged[ev.name] = ev.value
+                continue
+            if not ev.value:
+                # Secret row declared but no value collected yet.
+                merged[ev.name] = ""
+                continue
+            resolved = _resolve_secret_env(ev.name, ev.value, app_key)
+            if resolved is not None:
+                merged[ev.name] = resolved
         return merged
 
     def custom_ca_cert(self, db: Session) -> str | None:
@@ -88,11 +132,69 @@ class ServerService:
     def discover_primitives(self, db: Session, spec: ServerSpec) -> list[dict]:
         """Introspect a proxied server (code-first or remote) and return its
         primitives reconciled into the existing overlay. Caller persists."""
+        import ssl
+
         from app.services import discovery
-        from app.services.mcp_client import get_mcp_client
+        from app.services.mcp_client import McpError, get_mcp_client, verify_for_ca
 
         headers = self.resolve_remote_headers(db, spec)
-        return discovery.discover(get_mcp_client(), spec, remote_headers=headers)
+        verify = None
+        if spec.is_remote_mode():
+            # A configured outbound header whose secret didn't resolve would go
+            # to the upstream as a missing/empty credential and come back as a
+            # bare 401 - indistinguishable from a wrong key. Fail early with an
+            # actionable message so the operator knows it's the stored secret,
+            # not the upstream, that's the problem.
+            unresolved = [
+                h.get("header")
+                for h in (spec.remote_headers or [])
+                if h.get("header") and h.get("env") and not headers.get(h.get("header"))
+            ]
+            if unresolved:
+                raise McpError(
+                    f"Outbound credential(s) {', '.join(unresolved)} could not be "
+                    "resolved: the backing secret env var(s) are empty or failed to "
+                    "decrypt (most likely APP_KEY changed since they were saved). "
+                    "Re-enter the value under Env vars, then rediscover."
+                )
+            # Trust the operator's custom CA for the upstream's TLS, if configured,
+            # so discovery doesn't fail with "unable to get local issuer".
+            try:
+                verify = verify_for_ca(self.custom_ca_cert(db))
+            except ssl.SSLError as e:
+                raise McpError(f"Configured custom CA certificate is not valid PEM: {e}") from e
+            ca_certs = len(verify.get_ca_certs()) if verify is not None else 0
+            logger.info(
+                "Discovery for %r: %s",
+                spec.name,
+                f"custom CA active ({ca_certs} cert(s) in trust store)"
+                if verify is not None
+                else "no custom CA configured (system roots only)",
+            )
+        try:
+            return discovery.discover(
+                get_mcp_client(), spec, remote_headers=headers, verify=verify
+            )
+        except McpError as e:
+            # If TLS verification failed, say whether the custom CA was even in
+            # play - that distinguishes "CA not applied" (old build / empty
+            # setting) from "CA applied but the chain still doesn't validate"
+            # (usually a missing intermediate - paste the FULL chain).
+            msg = str(e)
+            tls = any(s in msg.lower() for s in ("certificate", "ssl", "issuer", "tls"))
+            if tls and spec.is_remote_mode():
+                if verify is not None:
+                    raise McpError(
+                        f"{msg} — TLS verification used your configured custom CA "
+                        f"({ca_certs} cert(s) loaded) but the upstream's chain still "
+                        "didn't validate. Paste the FULL chain (root + any intermediate "
+                        "CAs) in Settings → Custom CA, then rediscover."
+                    ) from e
+                raise McpError(
+                    f"{msg} — no custom CA is configured in Settings → Custom CA, so "
+                    "only public CAs are trusted. Add your CA (full chain) there."
+                ) from e
+            raise
 
     def registry_prefix(self, db: Session) -> str | None:
         raw = (get_setting(db, SETTING_DOCKER_REGISTRY, "") or "").strip()
@@ -147,11 +249,26 @@ class ServerService:
             spec, self.store.server_dir(spec.name), self.custom_ca_cert(db)
         )
         self.store.save(spec)
+        env = self.effective_env(db, spec)
+        # Leave a deploy-time trail so a missing env var is never a mystery: name
+        # every declared secret and whether it actually made it into the env that
+        # the container will receive. effective_env() already logs *why* a secret
+        # was dropped (decrypt failure); this records the net outcome per deploy.
+        declared_secrets = [ev.name for ev in spec.env_vars if ev.secret]
+        dropped = [n for n in declared_secrets if not env.get(n)]
+        logger.info(
+            "Deploy %r: applying %d env var(s); secrets resolved %d/%d%s",
+            spec.name,
+            len(env),
+            len(declared_secrets) - len(dropped),
+            len(declared_secrets),
+            f"; NOT applied: {dropped}" if dropped else "",
+        )
         result = self.docker.build_and_start(
             server_name=spec.name,
             build_context=build_context,
             template_name="custom",
-            env_vars=self.effective_env(db, spec),
+            env_vars=env,
             replicas=self.effective_replicas(spec),
             registry_prefix=self.registry_prefix(db),
             registry_auth=self.registry_auth(db),

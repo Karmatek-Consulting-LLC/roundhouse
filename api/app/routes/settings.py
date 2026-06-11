@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+import re
+import ssl
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -62,6 +65,7 @@ def index(_: User = Depends(require_superadmin), db: Session = Depends(get_db)):
         "custom_ca_cert_configured": bool(
             (get_setting(db, SETTING_CUSTOM_CA_CERT, "") or "").strip()
         ),
+        "custom_ca_cert_count": _count_certs(get_setting(db, SETTING_CUSTOM_CA_CERT, "") or ""),
     }
 
 
@@ -108,10 +112,33 @@ class CustomCaIn(BaseModel):
     cert: str = Field(min_length=1, max_length=262144)
 
 
+def _count_certs(pem: str) -> int:
+    """Number of PEM certificate blocks. The field is a BUNDLE - paste a CA per
+    upstream (each its full chain) and they're all trusted."""
+    return len(re.findall(r"-----BEGIN CERTIFICATE-----", pem))
+
+
 @router.put("/custom-ca")
 def update_custom_ca(payload: CustomCaIn, db: Session = Depends(get_db)):
+    # The field is a trust bundle: validate it parses and count the certs so the
+    # UI can confirm what was loaded (multiple CAs / full chains are supported).
+    from app.services.mcp_client import verify_for_ca
+
+    try:
+        verify_for_ca(payload.cert)
+    except ssl.SSLError as e:
+        raise HTTPException(
+            status_code=422, detail=f"Not a valid PEM certificate bundle: {e}"
+        ) from e
+    count = _count_certs(payload.cert)
+    if count == 0:
+        raise HTTPException(
+            status_code=422,
+            detail="No certificate found. Paste one or more PEM blocks "
+            "(-----BEGIN CERTIFICATE----- … -----END CERTIFICATE-----).",
+        )
     put_setting(db, SETTING_CUSTOM_CA_CERT, payload.cert)
-    return {"custom_ca_cert_configured": True}
+    return {"custom_ca_cert_configured": True, "cert_count": count}
 
 
 @router.delete("/custom-ca")

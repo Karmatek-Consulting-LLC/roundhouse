@@ -690,6 +690,45 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
         </div>
       </div>
 
+      {(server.placement ?? []).length > 0 && (
+        <div className="grid gap-2">
+          <Label>Placement</Label>
+          <p className="text-xs text-muted-foreground">
+            Where this server's task(s) are currently scheduled.
+          </p>
+          <div className="max-w-md overflow-hidden rounded-md border">
+            {(server.placement ?? []).map((t, i) => (
+              <div
+                key={t.task_id || `${t.node_name}-${i}`}
+                className="flex items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0"
+              >
+                <span
+                  className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                    t.state === "running" || t.state === "Running"
+                      ? "bg-emerald-500"
+                      : t.error
+                        ? "bg-red-500"
+                        : "bg-amber-500"
+                  }`}
+                />
+                <span className="font-mono">
+                  {t.node_name || t.node_id || "(unscheduled)"}
+                </span>
+                {t.slot != null && (
+                  <span className="text-muted-foreground">slot {t.slot}</span>
+                )}
+                <span className="ml-auto text-muted-foreground">{t.state}</span>
+                {t.error && (
+                  <span className="ml-2 truncate text-red-500" title={t.error}>
+                    {t.error}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="border-t pt-4 flex flex-wrap items-center gap-2">
         <Label className="text-sm font-medium mr-2">Server actions</Label>
         <Button
@@ -1618,12 +1657,15 @@ function LeftNav({ server, selection, onSelect, onMutated }: LeftNavProps) {
             active={selection.kind === "primitive" && selection.name === p.name}
             onClick={() => onSelect(`primitives/${encodeURIComponent(p.name)}`)}
           >
-            <span className={`mr-2 inline-block h-2 w-2 rounded-full ${kindDotColor[p.kind]}`} />
-            <span className={`font-mono text-xs ${p.archived ? "text-muted-foreground line-through" : ""}`}>
+            <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${kindDotColor[p.kind]}`} />
+            <span
+              title={p.name}
+              className={`min-w-0 flex-1 truncate font-mono text-xs ${p.archived ? "text-muted-foreground line-through" : ""}`}
+            >
               {p.name}
             </span>
             {p.archived && (
-              <span className="ml-1 text-[10px] text-muted-foreground">(archived)</span>
+              <span className="ml-1 shrink-0 text-[10px] text-muted-foreground">(archived)</span>
             )}
           </NavItem>
         ))}
@@ -1648,7 +1690,7 @@ function LeftNav({ server, selection, onSelect, onMutated }: LeftNavProps) {
         // listed read-only with a Rediscover action. Code-first also keeps a
         // server.py source entry.
         <>
-          {groupsNode}
+          <div className="max-h-[60vh] overflow-y-auto">{groupsNode}</div>
           {(server.primitives ?? []).length === 0 && (
             <div className="mb-3 border-t px-3 pt-3 text-xs text-muted-foreground">
               No primitives discovered yet.{" "}
@@ -1673,7 +1715,7 @@ function LeftNav({ server, selection, onSelect, onMutated }: LeftNavProps) {
         </>
       ) : (
         <>
-          {groupsNode}
+          <div className="max-h-[60vh] overflow-y-auto">{groupsNode}</div>
           <div className="px-3 mb-3">
             <Button
               size="sm"
@@ -1788,7 +1830,7 @@ function NavItem({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+      className={`flex w-full min-w-0 items-center gap-2 px-3 py-1.5 text-left transition-colors ${
         active
           ? "bg-primary/10 text-primary border-l-2 border-primary"
           : "border-l-2 border-transparent hover:bg-muted"

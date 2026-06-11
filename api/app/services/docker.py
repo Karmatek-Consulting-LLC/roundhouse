@@ -139,6 +139,7 @@ class DockerClient:
         self._http = http or DockerHttp(cfg.docker_host)
         self._network = cfg.mcp_docker_network
         self._swarm_cache: bool | None = None
+        self._host_name_cache: str | None = None
 
         forced = (cfg.mcp_docker_mode or "auto").strip().lower()
         if forced == "swarm":
@@ -165,6 +166,17 @@ class DockerClient:
 
     def mode(self) -> str:
         return "docker-swarm" if self.swarm_mode() else "docker"
+
+    def _host_name(self) -> str:
+        """The standalone Docker host's name (from /info). Cached per client so
+        we can show 'where a server lives' even on a single host, mirroring the
+        node placement Swarm/K8s expose."""
+        if self._host_name_cache is None:
+            try:
+                self._host_name_cache = (self._http.get("info").get("Name") or "")
+            except DockerError:
+                self._host_name_cache = ""
+        return self._host_name_cache
 
     def supports_scaling(self) -> bool:
         return self.swarm_mode()
@@ -256,7 +268,22 @@ class DockerClient:
         return self._list_services() if self.swarm_mode() else self._list_containers()
 
     def get_server(self, server_name: str) -> dict | None:
-        return self._get_service(server_name) if self.swarm_mode() else self._get_container(server_name)
+        if self.swarm_mode():
+            return self._get_service(server_name)
+        snap = self._get_container(server_name)
+        # Standalone has a single host, but operators still want to see WHERE a
+        # server runs. Synthesize one placement entry naming the Docker host so
+        # the UI renders standalone/swarm/k8s the same way.
+        if snap and snap.get("replicas_running"):
+            snap["placement"] = [{
+                "task_id": "",
+                "node_id": "",
+                "node_name": self._host_name() or "this host",
+                "state": snap.get("status") or "running",
+                "slot": None,
+                "error": None,
+            }]
+        return snap
 
     def start_server(self, server_name: str, replicas: int = 1) -> dict | None:
         if self.swarm_mode():
