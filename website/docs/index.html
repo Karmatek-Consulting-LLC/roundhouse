@@ -423,83 +423,83 @@ docker compose down -v     # wipe everything</code></pre></div>
 <div class="rule" aria-hidden="true"></div>
 <h2 id="dashboard">Dashboard<a class="anchor" href="#dashboard" aria-label="link to section">#</a></h2>
 <p>The dashboard is the home view after sign-in. It surfaces fleet-wide health (running/stopped/errored counts), recent call volume, the busiest servers, and a rolling activity timeline.</p>
-<figure><img src="screenshots/dark/02-dashboard.png?v=4c2d46a9" alt="Dashboard" loading="lazy" decoding="async" /><figcaption>fig. 02 — dashboard</figcaption></figure>
+<figure><img src="screenshots/dark/02-dashboard.png?v=dd69f142" alt="Dashboard" loading="lazy" decoding="async" /><figcaption>fig. 02 — dashboard</figcaption></figure>
 <div class="rule" aria-hidden="true"></div>
 <h2 id="servers-list">Servers list<a class="anchor" href="#servers-list" aria-label="link to section">#</a></h2>
 <p>The full inventory of MCP servers you can see. Each row shows the server's deploy mode (structured or code), live status, recent call count, and quick actions.</p>
-<figure><img src="screenshots/dark/03-servers-list.png?v=342cb4e6" alt="Servers list" loading="lazy" decoding="async" /><figcaption>fig. 03 — servers list</figcaption></figure>
+<figure><img src="screenshots/dark/03-servers-list.png?v=974b3c54" alt="Servers list" loading="lazy" decoding="async" /><figcaption>fig. 03 — servers list</figcaption></figure>
 <div class="rule" aria-hidden="true"></div>
 <h2 id="creating-a-server">Creating a server<a class="anchor" href="#creating-a-server" aria-label="link to section">#</a></h2>
 <p>The <strong>Create</strong> button opens a dialog with a tab for each way a server can be authored.</p>
 <h3 id="structured">Structured<a class="anchor" href="#structured" aria-label="link to section">#</a></h3>
 <p>The default: an empty spec-managed server. Primitives, packages, env vars, and middleware are managed through the UI; Roundhouse owns the Dockerfile.</p>
-<figure><img src="screenshots/dark/04-create-structured.png?v=431ea2ee" alt="Create — Structured" loading="lazy" decoding="async" /><figcaption>fig. 04 — create — structured</figcaption></figure>
+<figure><img src="screenshots/dark/04-create-structured.png?v=02821ee2" alt="Create — Structured" loading="lazy" decoding="async" /><figcaption>fig. 04 — create — structured</figcaption></figure>
 <h3 id="code-first">Code-first<a class="anchor" href="#code-first" aria-label="link to section">#</a></h3>
 <p>You supply a complete <code>server.py</code> (FastMCP). Roundhouse still owns the Dockerfile and platform middleware, but the primitive surface is hidden in favour of a full source editor.</p>
-<figure><img src="screenshots/dark/05-create-code.png?v=4f9e1c2d" alt="Create — Code-first" loading="lazy" decoding="async" /><figcaption>fig. 05 — create — code-first</figcaption></figure>
+<figure><img src="screenshots/dark/05-create-code.png?v=1611ef89" alt="Create — Code-first" loading="lazy" decoding="async" /><figcaption>fig. 05 — create — code-first</figcaption></figure>
 <h3 id="from-git">From Git<a class="anchor" href="#from-git" aria-label="link to section">#</a></h3>
 <p>Clone a repo that declares its dependencies in <code>roundhouse.json</code>. The imported server registers as <code>not_deployed</code> — Roundhouse seeds the environment variables declared by the manifest, populates pip and apt packages, and waits for an operator to fill in secrets before the first deploy.</p>
-<figure><img src="screenshots/dark/06-create-from-git.png?v=058d64d2" alt="Create — From Git" loading="lazy" decoding="async" /><figcaption>fig. 06 — create — from git</figcaption></figure>
+<figure><img src="screenshots/dark/06-create-from-git.png?v=023e3242" alt="Create — From Git" loading="lazy" decoding="async" /><figcaption>fig. 06 — create — from git</figcaption></figure>
 <h3 id="import">Import<a class="anchor" href="#import" aria-label="link to section">#</a></h3>
 <p>Paste an exported spec JSON (from another Roundhouse instance, or from <code>POST /api/servers/{name}/export</code>) to clone a server's configuration verbatim.</p>
-<figure><img src="screenshots/dark/07-create-import.png?v=831e391f" alt="Create — Import" loading="lazy" decoding="async" /><figcaption>fig. 07 — create — import</figcaption></figure>
+<figure><img src="screenshots/dark/07-create-import.png?v=51d99b42" alt="Create — Import" loading="lazy" decoding="async" /><figcaption>fig. 07 — create — import</figcaption></figure>
 <div class="rule" aria-hidden="true"></div>
 <h2 id="the-server-editor">The server editor<a class="anchor" href="#the-server-editor" aria-label="link to section">#</a></h2>
 <p>Selecting a server opens the two-pane editor. The left rail is the server's table of contents — primitives, configuration, and operational tabs. The right pane is whichever section you've selected.</p>
 <h3 id="overview">Overview<a class="anchor" href="#overview" aria-label="link to section">#</a></h3>
 <p>The overview is the editor's home base: description, replicas, resource limits, and the lifecycle controls (Start, Stop, Redeploy, Delete, plus <strong>Update from Git</strong> for repos imported via <code>from-git</code>).</p>
-<figure><img src="screenshots/dark/10-editor-overview.png?v=9300df16" alt="Editor — overview" loading="lazy" decoding="async" /><figcaption>fig. 08 — editor — overview</figcaption></figure>
+<figure><img src="screenshots/dark/10-editor-overview.png?v=bd5ae08e" alt="Editor — overview" loading="lazy" decoding="async" /><figcaption>fig. 08 — editor — overview</figcaption></figure>
 <h3 id="primitives">Primitives<a class="anchor" href="#primitives" aria-label="link to section">#</a></h3>
 <p>Structured servers expose <strong>tools</strong>, <strong>resources</strong>, <strong>resource templates</strong>, and <strong>prompts</strong>. Each primitive is edited in-place: parameters, body, and optional middleware overrides (rate limit, max concurrency).</p>
 <h4 id="tool">Tool<a class="anchor" href="#tool" aria-label="link to section">#</a></h4>
-<figure><img src="screenshots/dark/11-editor-primitive-tool.png?v=3b8a9ebb" alt="Editor — primitive (tool)" loading="lazy" decoding="async" /><figcaption>fig. 09 — editor — primitive (tool)</figcaption></figure>
+<figure><img src="screenshots/dark/11-editor-primitive-tool.png?v=7777af13" alt="Editor — primitive (tool)" loading="lazy" decoding="async" /><figcaption>fig. 09 — editor — primitive (tool)</figcaption></figure>
 <h4 id="resource">Resource<a class="anchor" href="#resource" aria-label="link to section">#</a></h4>
-<figure><img src="screenshots/dark/12-editor-primitive-resource.png?v=00cee9ad" alt="Editor — primitive (resource)" loading="lazy" decoding="async" /><figcaption>fig. 10 — editor — primitive (resource)</figcaption></figure>
+<figure><img src="screenshots/dark/12-editor-primitive-resource.png?v=9dee33a1" alt="Editor — primitive (resource)" loading="lazy" decoding="async" /><figcaption>fig. 10 — editor — primitive (resource)</figcaption></figure>
 <h4 id="prompt">Prompt<a class="anchor" href="#prompt" aria-label="link to section">#</a></h4>
-<figure><img src="screenshots/dark/13-editor-primitive-prompt.png?v=82555ee3" alt="Editor — primitive (prompt)" loading="lazy" decoding="async" /><figcaption>fig. 11 — editor — primitive (prompt)</figcaption></figure>
+<figure><img src="screenshots/dark/13-editor-primitive-prompt.png?v=2a3c3af8" alt="Editor — primitive (prompt)" loading="lazy" decoding="async" /><figcaption>fig. 11 — editor — primitive (prompt)</figcaption></figure>
 <h4 id="adding-a-new-primitive">Adding a new primitive<a class="anchor" href="#adding-a-new-primitive" aria-label="link to section">#</a></h4>
-<figure><img src="screenshots/dark/14-editor-primitive-new.png?v=2c3c47f1" alt="Editor — new primitive" loading="lazy" decoding="async" /><figcaption>fig. 12 — editor — new primitive</figcaption></figure>
+<figure><img src="screenshots/dark/14-editor-primitive-new.png?v=abcda813" alt="Editor — new primitive" loading="lazy" decoding="async" /><figcaption>fig. 12 — editor — new primitive</figcaption></figure>
 <h3 id="imports-and-globals">Imports and globals<a class="anchor" href="#imports-and-globals" aria-label="link to section">#</a></h3>
 <p>Any free-form Python imports or module-level globals that should appear in the generated <code>server.py</code>.</p>
-<figure><img src="screenshots/dark/15-editor-imports.png?v=a5c13398" alt="Editor — imports" loading="lazy" decoding="async" /><figcaption>fig. 13 — editor — imports</figcaption></figure>
+<figure><img src="screenshots/dark/15-editor-imports.png?v=6a76f556" alt="Editor — imports" loading="lazy" decoding="async" /><figcaption>fig. 13 — editor — imports</figcaption></figure>
 <h3 id="pypi-packages">PyPI packages<a class="anchor" href="#pypi-packages" aria-label="link to section">#</a></h3>
 <p>Pip dependencies. They are pinned into the generated Dockerfile and installed at build time.</p>
-<figure><img src="screenshots/dark/16-editor-packages.png?v=69b1b217" alt="Editor — packages (pip)" loading="lazy" decoding="async" /><figcaption>fig. 14 — editor — packages (pip)</figcaption></figure>
+<figure><img src="screenshots/dark/16-editor-packages.png?v=b5cc35e0" alt="Editor — packages (pip)" loading="lazy" decoding="async" /><figcaption>fig. 14 — editor — packages (pip)</figcaption></figure>
 <h3 id="apt-packages">APT packages<a class="anchor" href="#apt-packages" aria-label="link to section">#</a></h3>
 <p>OS-level packages installed via <code>apt-get</code> in the build. Use for native toolchains a Python wheel needs.</p>
-<figure><img src="screenshots/dark/17-editor-apt.png?v=527da61c" alt="Editor — apt packages" loading="lazy" decoding="async" /><figcaption>fig. 15 — editor — apt packages</figcaption></figure>
+<figure><img src="screenshots/dark/17-editor-apt.png?v=efc18253" alt="Editor — apt packages" loading="lazy" decoding="async" /><figcaption>fig. 15 — editor — apt packages</figcaption></figure>
 <h3 id="environment-variables">Environment variables<a class="anchor" href="#environment-variables" aria-label="link to section">#</a></h3>
 <p>Per-server env vars (with optional encrypted-at-rest secrets) and global imports. Changes save instantly; the redeploy banner surfaces because the new value only takes effect on the next container restart.</p>
-<figure><img src="screenshots/dark/18-editor-env.png?v=c64fb849" alt="Editor — env vars" loading="lazy" decoding="async" /><figcaption>fig. 16 — editor — env vars</figcaption></figure>
+<figure><img src="screenshots/dark/18-editor-env.png?v=3f0436d3" alt="Editor — env vars" loading="lazy" decoding="async" /><figcaption>fig. 16 — editor — env vars</figcaption></figure>
 <h3 id="auth-server-tokens">Auth (server tokens)<a class="anchor" href="#auth-server-tokens" aria-label="link to section">#</a></h3>
 <p>Bearer tokens that callers present in the <code>Authorization</code> header. Per-token scopes can lock individual primitives down to specific token holders.</p>
-<figure><img src="screenshots/dark/19-editor-auth.png?v=e6aa30bf" alt="Editor — auth" loading="lazy" decoding="async" /><figcaption>fig. 17 — editor — auth</figcaption></figure>
+<figure><img src="screenshots/dark/19-editor-auth.png?v=a32973dd" alt="Editor — auth" loading="lazy" decoding="async" /><figcaption>fig. 17 — editor — auth</figcaption></figure>
 <h3 id="assets">Assets<a class="anchor" href="#assets" aria-label="link to section">#</a></h3>
 <p>Arbitrary files that get baked into the image under <code>/app/assets/</code>. Useful for prompt templates, large JSON fixtures, or any read-only data your tools reference at runtime.</p>
-<figure><img src="screenshots/dark/20-editor-assets.png?v=bcc4beac" alt="Editor — assets" loading="lazy" decoding="async" /><figcaption>fig. 18 — editor — assets</figcaption></figure>
+<figure><img src="screenshots/dark/20-editor-assets.png?v=ada78a51" alt="Editor — assets" loading="lazy" decoding="async" /><figcaption>fig. 18 — editor — assets</figcaption></figure>
 <h3 id="usage">Usage<a class="anchor" href="#usage" aria-label="link to section">#</a></h3>
 <p>Per-primitive call counts, p50/p95/p99 latency, error rate, and the busiest client tokens. Sampled in-process by the platform middleware and surfaced without an extra metrics backend — no Prometheus, no Grafana, no add-on agent. Drilling into a server's usage tab is how you find latency regressions or the one tool that's getting hammered.</p>
-<figure><img src="screenshots/dark/21-editor-usage.png?v=24146a27" alt="Editor — usage (dispatch)" loading="lazy" decoding="async" /><figcaption>fig. 19 — editor — usage (dispatch)</figcaption></figure>
+<figure><img src="screenshots/dark/21-editor-usage.png?v=cd96da96" alt="Editor — usage (dispatch)" loading="lazy" decoding="async" /><figcaption>fig. 19 — editor — usage (dispatch)</figcaption></figure>
 <p>A busier server (crew-scheduling, which carries the heaviest call volume in the demo fleet) makes the chart variety obvious:</p>
-<figure><img src="screenshots/dark/21a-editor-usage-busy.png?v=d591e25a" alt="Editor — usage (crew-scheduling)" loading="lazy" decoding="async" /><figcaption>fig. 20 — editor — usage (crew-scheduling)</figcaption></figure>
+<figure><img src="screenshots/dark/21a-editor-usage-busy.png?v=a8b68250" alt="Editor — usage (crew-scheduling)" loading="lazy" decoding="async" /><figcaption>fig. 20 — editor — usage (crew-scheduling)</figcaption></figure>
 <h3 id="logs">Logs<a class="anchor" href="#logs" aria-label="link to section">#</a></h3>
 <p>Streams stdout/stderr from the server container via Server-Sent Events.</p>
 <p>For spec-based servers, the <strong>Level</strong> dropdown writes the <code>LOG_LEVEL</code> environment variable on the spec; the platform middleware reads it and configures stdlib logging accordingly. At <code>DEBUG</code>, the middleware also emits a start record (with arguments) for every tool/resource/prompt call. Failed calls promote the end-of-call record to <code>WARNING</code>. The dropdown is hidden for code-mode servers, since they own their own logging surface.</p>
-<figure><img src="screenshots/dark/22-editor-logs.png?v=26f85b2f" alt="Editor — logs" loading="lazy" decoding="async" /><figcaption>fig. 21 — editor — logs</figcaption></figure>
+<figure><img src="screenshots/dark/22-editor-logs.png?v=a8b25eb7" alt="Editor — logs" loading="lazy" decoding="async" /><figcaption>fig. 21 — editor — logs</figcaption></figure>
 <h3 id="source-code-mode">Source (code mode)<a class="anchor" href="#source-code-mode" aria-label="link to section">#</a></h3>
 <p>For servers in <strong>code mode</strong>, the editor replaces the primitive surface with a full <code>server.py</code> editor (CodeMirror, Python syntax highlighting). The platform still controls the Dockerfile.</p>
-<figure><img src="screenshots/dark/30-editor-source.png?v=c9fa7d64" alt="Editor — source (code mode)" loading="lazy" decoding="async" /><figcaption>fig. 22 — editor — source (code mode)</figcaption></figure>
+<figure><img src="screenshots/dark/30-editor-source.png?v=9ceee59c" alt="Editor — source (code mode)" loading="lazy" decoding="async" /><figcaption>fig. 22 — editor — source (code mode)</figcaption></figure>
 <p>Code-mode servers still expose every operational tab — env vars, logs, usage — so the operator surface is unchanged.</p>
-<figure><img src="screenshots/dark/31-editor-source-env.png?v=26dac55f" alt="Editor — code-mode env" loading="lazy" decoding="async" /><figcaption>fig. 23 — editor — code-mode env</figcaption></figure>
+<figure><img src="screenshots/dark/31-editor-source-env.png?v=823527bb" alt="Editor — code-mode env" loading="lazy" decoding="async" /><figcaption>fig. 23 — editor — code-mode env</figcaption></figure>
 <h3 id="stopped-server">Stopped server<a class="anchor" href="#stopped-server" aria-label="link to section">#</a></h3>
 <p>A stopped server keeps its spec on disk; restarting it reuses the cached image without a rebuild.</p>
-<figure><img src="screenshots/dark/40-editor-stopped.png?v=0f1d834a" alt="Editor — stopped" loading="lazy" decoding="async" /><figcaption>fig. 24 — editor — stopped</figcaption></figure>
+<figure><img src="screenshots/dark/40-editor-stopped.png?v=cf31bc22" alt="Editor — stopped" loading="lazy" decoding="async" /><figcaption>fig. 24 — editor — stopped</figcaption></figure>
 <div class="rule" aria-hidden="true"></div>
 <h2 id="platform-administration">Platform administration<a class="anchor" href="#platform-administration" aria-label="link to section">#</a></h2>
 <p>Roundhouse ships with a small set of platform admin views.</p>
 <h3 id="platform-settings">Platform settings<a class="anchor" href="#platform-settings" aria-label="link to section">#</a></h3>
 <p>Host configuration: external hostname, Docker registry credentials, custom CA bundle for outbound TLS, and platform-wide env defaults that get imported into spec-based servers.</p>
-<figure><img src="screenshots/dark/50-settings.png?v=3a9ecd1b" alt="Platform settings" loading="lazy" decoding="async" /><figcaption>fig. 25 — platform settings</figcaption></figure>
+<figure><img src="screenshots/dark/50-settings.png?v=14182d5e" alt="Platform settings" loading="lazy" decoding="async" /><figcaption>fig. 25 — platform settings</figcaption></figure>
 <h3 id="users">Users<a class="anchor" href="#users" aria-label="link to section">#</a></h3>
 <p>User accounts with role assignment. The seeded demo includes a handful of operators alongside the platform admin; superadmins can reset passwords and revoke access from this page.</p>
 <figure><img src="screenshots/dark/51-users.png?v=93299e0c" alt="Users" loading="lazy" decoding="async" /><figcaption>fig. 26 — users</figcaption></figure>
@@ -508,7 +508,7 @@ docker compose down -v     # wipe everything</code></pre></div>
 <figure><img src="screenshots/dark/52-teams.png?v=1e4eeb59" alt="Teams" loading="lazy" decoding="async" /><figcaption>fig. 27 — teams</figcaption></figure>
 <h3 id="audit-log">Audit log<a class="anchor" href="#audit-log" aria-label="link to section">#</a></h3>
 <p>Every state-mutating action — server create/delete, env-var change, token rotation — is recorded with the acting user, target, and a structured detail payload.</p>
-<figure><img src="screenshots/dark/53-audit.png?v=075d6b27" alt="Audit log" loading="lazy" decoding="async" /><figcaption>fig. 28 — audit log</figcaption></figure>
+<figure><img src="screenshots/dark/53-audit.png?v=993a84a8" alt="Audit log" loading="lazy" decoding="async" /><figcaption>fig. 28 — audit log</figcaption></figure>
 <div class="rule" aria-hidden="true"></div>
 <h2 id="configuration-reference">Configuration reference<a class="anchor" href="#configuration-reference" aria-label="link to section">#</a></h2>
 <p>Everything reads from environment variables — see <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/.env.example" target="_blank" rel="noopener"><code>.env.example</code></a> for the full list. The knobs you'll actually touch:</p>

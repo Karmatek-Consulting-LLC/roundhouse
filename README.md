@@ -38,7 +38,7 @@ option.
 | | |
 |---|---|
 | 🛠 **Codegen + deploy** | Structured forms or raw Python → `server.py` + `Dockerfile` → running container behind Traefik. |
-| 🌐 **Centralized URLs** | One stable URL per server, shared across your team. No laptop required. |
+| 🌐 **Centralized URLs** | One stable URL per server, shared across your team. No tunnel hacks, no port juggling. |
 | 🔐 **Auth on day one** | Scoped bearer tokens out of the box; per-primitive scope locks. |
 | 📈 **Built-in observability** | Per-tool call counts, latency percentiles, live logs — no Prometheus, no Grafana. |
 | 🐳 **Single host or Swarm** | `docker compose` on one box, or Swarm with scoped socket proxies. |
