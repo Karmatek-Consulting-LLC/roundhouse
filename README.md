@@ -106,7 +106,7 @@ flowchart LR
 
     Browser <-->|HTTP| Traefik
     Traefik -->|/api/*| API
-    Traefik -->|/s/{server}/mcp| MCP
+    Traefik -->|"/s/{server}/mcp"| MCP
     API --> DB
     API -.->|docker.sock<br/>build + deploy| MCP
 
