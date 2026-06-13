@@ -103,24 +103,41 @@ flowchart LR
     API["platform-api<br/><sub>FastAPI · Python 3.12</sub><br/>• Codegen<br/>• Docker client<br/>• MCP JSON-RPC"]
     MCP["spawned MCP servers<br/><sub>mcp-{name}:8000</sub><br/><sub>FastMCP containers</sub>"]
     DB[("Postgres")]
+    ProxyT["docker-socket-proxy-traefik<br/><sub>read-only Docker API</sub><br/><sub>GET only · service discovery</sub>"]
+    ProxyA["docker-socket-proxy-api<br/><sub>scoped Docker API</sub><br/><sub>+ POST + BUILD</sub>"]
 
     Browser <-->|HTTP| Traefik
     Traefik -->|/api/*| API
     Traefik -->|"/s/{server}/mcp"| MCP
     API --> DB
-    API -.->|docker.sock<br/>build + deploy| MCP
+    Traefik -.->|discover routes| ProxyT
+    ProxyT -.->|"docker.sock (ro)"| MCP
+    API -.->|"build + deploy"| ProxyA
+    ProxyA -.->|"docker.sock"| MCP
 
     classDef platform fill:#fef3ec,stroke:#c2693a,color:#1a1a1a
     classDef spawned  fill:#f3eafe,stroke:#7c3aed,color:#1a1a1a
     classDef infra    fill:#eef4ff,stroke:#4f6bed,color:#1a1a1a
+    classDef proxy    fill:#f0f0f0,stroke:#666,color:#1a1a1a
     class API,Traefik,DB platform
     class MCP spawned
     class Browser infra
+    class ProxyT,ProxyA proxy
 ```
 
 Traefik routes MCP clients **straight to the spawned container** — the
 platform never proxies MCP traffic on the hot path. The platform-api only
 speaks MCP internally, to power the *Test* buttons in the UI.
+
+Neither Traefik nor platform-api touches the raw Docker socket in
+production. Both go through scoped [`tecnativa/docker-socket-proxy`][dsp]
+sidecars: **`docker-socket-proxy-traefik`** is read-only (GET-only — service
+discovery, no `POST`/`BUILD`), while **`docker-socket-proxy-api`** additionally
+allows `POST` + `BUILD` so the API can build images and create/manage
+containers. This is the `docker-stack.yml` (Swarm) topology shown above; local
+`docker-compose.yml` mounts `/var/run/docker.sock` directly for convenience.
+
+[dsp]: https://github.com/Tecnativa/docker-socket-proxy
 
 **In the box:** FastAPI backend (Python 3.12) on the Docker socket ·
 React + Vite frontend with an IDE-style editor · Postgres · Traefik front
