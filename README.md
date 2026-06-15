@@ -169,8 +169,7 @@ corporate-proxy CA workaround live in the
 
 ## License
 
-<!-- TODO(marty): decide AGPL-3.0 (defensive, open-core friendly) vs Apache-2.0 (permissive) -->
-TBD — coming soon.
+Roundhouse is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
