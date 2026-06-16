@@ -38,20 +38,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{ include "roundhouse.fullname" . }}-api
 {{- end -}}
 
-{{- define "roundhouse.frontend.fullname" -}}
-{{ include "roundhouse.fullname" . }}-frontend
-{{- end -}}
-
 {{- define "roundhouse.postgres.fullname" -}}
 {{ include "roundhouse.fullname" . }}-postgres
 {{- end -}}
 
 {{- define "roundhouse.api.image" -}}
 {{ .Values.image.api.repository }}:{{ .Values.image.api.tag | default .Chart.AppVersion }}
-{{- end -}}
-
-{{- define "roundhouse.frontend.image" -}}
-{{ .Values.image.frontend.repository }}:{{ .Values.image.frontend.tag | default .Chart.AppVersion }}
 {{- end -}}
 
 {{/* DB env block — sourced from bundled Postgres or external. */}}

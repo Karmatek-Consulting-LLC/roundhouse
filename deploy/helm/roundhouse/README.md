@@ -57,7 +57,7 @@ helm install mcp deploy/helm/roundhouse \
 
 The chart creates two namespaces' worth of resources:
 
-- `roundhouse` (release namespace): api Deployment + Service + PVC, frontend Deployment + Service, ConfigMap, Secret, optional Postgres StatefulSet, ServiceAccount, IngressRoute.
+- `roundhouse` (release namespace): api Deployment + Service + PVC, ConfigMap, Secret, optional Postgres StatefulSet, ServiceAccount, IngressRoute. The api image bundles the built React SPA and FastAPI serves it, so a single pod serves both the API and the UI (no separate frontend pod — same as the Swarm stack).
 - `mcp-servers` (configurable via `workloadsNamespace.name`): empty at install time — the platform writes a Deployment + Service + IngressRoute + Middleware here for every MCP server users create through the UI. A `Role` + `RoleBinding` granting the api `ServiceAccount` permission to manage those resources is also created here.
 
 ## Required values
@@ -103,6 +103,6 @@ If you change the workloads namespace after install, re-run `helm upgrade` so th
 
 ## Caveats
 
-- **Frontend pod runs the Vite dev server image.** Lab's FastAPI backend doesn't mount static files, and there's no static-serve frontend image yet, so the chart deploys `frontend/Dockerfile` as-is (port 5173, vite dev). Functional but heavier than a static build. Two follow-ups would let us collapse to a single api pod: (a) add a `StaticFiles` mount in `app/main.py` against the `public/frontend` dir the api Dockerfile already populates, or (b) publish a static-serve frontend image and point `image.frontend` at it.
+- **Single image serves API + UI.** The api image (`api/Dockerfile`) builds the React SPA and bundles it at `/app/public/frontend`; FastAPI's `SPAStaticFiles` mount serves it at `/` while `/api/*` falls to the routers. The IngressRoute sends all traffic to the api Service — no separate frontend pod, matching the Swarm stack.
 - **Build context delivery uses node-affinity.** The api PVC is RWO; the Kaniko Job is pinned to the api pod's node via `NODE_NAME` (Downward API). If you use an RWX storage class you can drop the pin in a follow-up.
 - Helm chart version is `0.1.0` — interface is subject to change while the k8s backend matures.
