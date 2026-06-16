@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
+import tarfile
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -281,16 +281,18 @@ class KubernetesClient:
             registry_secret=registry_secret,
         )
         logger.info("Launching kaniko Job %s -> %s", job_name, tag)
+        self._http.post(self._job_path(builder_ns), manifest)
         try:
-            self._http.post(self._job_path(builder_ns), manifest)
+            # The tar must stay on the PVC until the kaniko pod has actually
+            # scheduled, pulled, and read it via --context=tar://. Creating the
+            # Job object only enqueues that work, so cleanup waits for the Job to
+            # finish (success or failure) rather than racing the consumer.
+            self._wait_for_kaniko_job(builder_ns, job_name)
         finally:
-            # Remove the tar from the PVC once the Job has been handed off.
             try:
                 tar_path.unlink()
             except FileNotFoundError:
                 pass
-
-        self._wait_for_kaniko_job(builder_ns, job_name)
         return tag
 
     def _wait_for_kaniko_job(self, namespace: str, job_name: str) -> None:
@@ -718,23 +720,24 @@ def _kaniko_job_name(server_name: str) -> str:
 
 def _write_context_tar(build_context: Path, tar_path: Path) -> None:
     """Mirror DockerClient._tar_bytes — but write to a known path instead of a
-    bytes buffer, since kaniko reads from disk via --context=tar:///."""
+    bytes buffer, since kaniko reads from disk via --context=tar:///.
+
+    kaniko's tar:// context handler always gunzips the stream, so the tarball
+    must be gzip-compressed; a plain tar fails with 'gzip: invalid header'. We
+    build it with the stdlib tarfile module rather than shelling out, so the api
+    image needs neither the tar nor the gzip binary (the slim base ships neither
+    reliably).
+    """
     if not build_context.is_dir():
         raise DockerError(f"Build context not a directory: {build_context}")
-    result = subprocess.run(
-        [
-            "tar",
-            f"--exclude={tar_path.name}",
-            "-cf",
-            str(tar_path),
-            "-C",
-            str(build_context),
-            ".",
-        ],
-        check=False,
-    )
-    if result.returncode != 0:
-        raise DockerError(f"tar failed (exit {result.returncode}) for context {build_context}")
+    try:
+        with tarfile.open(tar_path, "w:gz") as tar:
+            for entry in sorted(build_context.iterdir()):
+                if entry.name == tar_path.name:
+                    continue
+                tar.add(entry, arcname=entry.name)
+    except OSError as e:
+        raise DockerError(f"failed to build context tar for {build_context}: {e}") from e
 
 
 class _PodLogStream:

@@ -1,7 +1,10 @@
 {{- if .Values.traefik.enabled -}}
 {{- /*
-  /api/* lands on the FastAPI Service, everything else falls through to the
-  frontend Service. Frontend rule uses lower priority so /api/* wins.
+  All traffic lands on the platform-api Service. The api image is multi-stage:
+  FastAPI serves /api/* via its routers and the React SPA (static assets, with
+  index.html fallback) for everything else from /app/public/frontend. This is
+  the same single-image topology the Swarm stack (docker-stack.yml) uses — no
+  separate frontend Service.
 */ -}}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -17,24 +20,19 @@ spec:
   routes:
     - kind: Rule
       match: {{ if .Values.traefik.hostname -}}
-        Host(`{{ .Values.traefik.hostname }}`) && PathPrefix(`/api`)
-      {{- else -}}
-        PathPrefix(`/api`)
-      {{- end }}
-      priority: 100
-      services:
-        - name: {{ include "roundhouse.api.fullname" . }}
-          port: 8000
-    - kind: Rule
-      match: {{ if .Values.traefik.hostname -}}
         Host(`{{ .Values.traefik.hostname }}`)
       {{- else -}}
         PathPrefix(`/`)
       {{- end }}
+      # Lowest priority: this is the catch-all for the platform itself. Every
+      # spawned MCP server's IngressRoute uses a default (rule-length) priority
+      # well above 1, so PathPrefix(`/s/<name>`) always wins over this route —
+      # without this explicit priority a long Host() rule would outrank them and
+      # swallow MCP traffic.
       priority: 1
       services:
-        - name: {{ include "roundhouse.frontend.fullname" . }}
-          port: 5173
+        - name: {{ include "roundhouse.api.fullname" . }}
+          port: 8000
   {{- if .Values.traefik.tls.enabled }}
   tls:
     secretName: {{ .Values.traefik.tls.secretName | quote }}

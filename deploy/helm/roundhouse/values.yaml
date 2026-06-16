@@ -17,20 +17,17 @@ workloadsNamespace:
   name: mcp-servers
   create: true
 
-## Image references for the platform itself. Lab's FastAPI image is
-## API-only (no static-file mount), so the chart deploys a separate
-## frontend pod running the Vite-based image. Swap image.frontend for a
-## static-serve build whenever one ships.
+## Image reference for the platform. The api image (api/Dockerfile) is
+## multi-stage: it builds the React SPA and bundles it at /app/public/frontend,
+## which FastAPI serves at / (with index.html fallback). A single image serves
+## both the API and the UI — the same topology as the Swarm stack — so there is
+## no separate frontend image or pod.
 image:
   api:
     repository: roundhouse/api
     tag: ""              ## empty -> uses .Chart.AppVersion
     pullPolicy: IfNotPresent
-  frontend:
-    repository: roundhouse/frontend
-    tag: ""
-    pullPolicy: IfNotPresent
-  pullSecrets: []        ## list of {name: ...} secrets referenced by api + frontend pods
+  pullSecrets: []        ## list of {name: ...} secrets referenced by the api pod
 
 ## How the platform builds MCP server images. Defaults to "kaniko" — a one-shot
 ## Kubernetes Job runs gcr.io/kaniko-project/executor against a build context
@@ -76,17 +73,6 @@ api:
       accessMode: ReadWriteOnce
   podSecurityContext: {}
   securityContext: {}
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
-
-## ---------------------------------------------------------------------------
-## frontend (Vite dev server image as shipped by lab — swap for a static-serve
-## image whenever one is published)
-## ---------------------------------------------------------------------------
-frontend:
-  replicas: 1
-  resources: {}
   nodeSelector: {}
   tolerations: []
   affinity: {}
