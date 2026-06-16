@@ -96,6 +96,8 @@ the docs.
 
 ## Architecture
 
+### Docker — single host & Swarm
+
 ```mermaid
 flowchart LR
     Browser["Browser<br/><sub>React SPA</sub>"]
@@ -138,6 +140,51 @@ containers. This is the `docker-stack.yml` (Swarm) topology shown above; local
 `docker-compose.yml` mounts `/var/run/docker.sock` directly for convenience.
 
 [dsp]: https://github.com/Tecnativa/docker-socket-proxy
+
+### Kubernetes
+
+```mermaid
+flowchart LR
+    Browser["Browser<br/><sub>React SPA</sub>"]
+    Traefik["Traefik<br/><sub>IngressRoute CRDs</sub>"]
+    API["platform-api Pod<br/><sub>FastAPI · serves API + SPA</sub><br/>• Codegen<br/>• Kubernetes client<br/>• MCP JSON-RPC"]
+    MCP["spawned MCP servers<br/><sub>mcp-{name}:8000</sub><br/><sub>FastMCP pods</sub>"]
+    DB[("Postgres")]
+    KubeAPI["Kubernetes API<br/><sub>RBAC ServiceAccount</sub><br/><sub>Deployments · Services<br/>IngressRoutes · Middlewares · Jobs</sub>"]
+    Kaniko["Kaniko Job<br/><sub>one-shot · rootless build</sub>"]
+    Registry[("image registry")]
+
+    Browser <-->|HTTP| Traefik
+    Traefik -->|"/api/* + SPA"| API
+    Traefik -->|"/s/{server}/mcp"| MCP
+    API --> DB
+    API -.->|"create workloads<br/>(SA token · scoped RBAC)"| KubeAPI
+    KubeAPI -.->|reconcile| MCP
+    API -.->|launch build| Kaniko
+    Kaniko -->|push image| Registry
+    Registry -->|pull image| MCP
+
+    classDef platform fill:#fef3ec,stroke:#c2693a,color:#1a1a1a
+    classDef spawned  fill:#f3eafe,stroke:#7c3aed,color:#1a1a1a
+    classDef infra    fill:#eef4ff,stroke:#4f6bed,color:#1a1a1a
+    classDef proxy    fill:#f0f0f0,stroke:#666,color:#1a1a1a
+    class API,Traefik,DB platform
+    class MCP spawned
+    class Browser infra
+    class KubeAPI,Kaniko,Registry proxy
+```
+
+On Kubernetes there are **no socket-proxy sidecars** — the whole `docker.sock`
+problem disappears. The platform-api talks to the cluster API with its own
+`ServiceAccount` token, and a `Role`/`RoleBinding` scoped to the workloads
+namespace bounds exactly what it may do (manage Deployments, Services,
+`IngressRoute`/`Middleware`, and build Jobs). Images build in **unprivileged,
+one-shot Kaniko Jobs** — no Docker daemon, no privileged container — then push
+to your registry; spawned pods pull from it. Routing is native: the platform
+writes a Traefik `IngressRoute` per server, so MCP clients still hit the spawned
+pod directly. A single api image serves both `/api/*` and the React SPA (it
+bundles the build), so there's no separate frontend workload. Deploy it with the
+[Helm chart](deploy/helm/roundhouse).
 
 **In the box:** FastAPI backend (Python 3.12) on the Docker socket ·
 React + Vite frontend with an IDE-style editor · Postgres · Traefik front
