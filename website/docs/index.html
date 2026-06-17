@@ -341,6 +341,10 @@ footer { margin-top: 40px; }
       <a class="toc-h2" href="#configuration-reference"><span class="toc-n">08</span>Configuration reference</a>
       <a class="toc-h3" href="#behind-a-corporate-tls-inspecting-proxy">Behind a corporate TLS-inspecting proxy</a>
       <a class="toc-h2" href="#deployment-modes"><span class="toc-n">09</span>Deployment modes</a>
+      <a class="toc-h2" href="#extending-the-swarm-stack"><span class="toc-n">10</span>Extending the Swarm stack</a>
+      <a class="toc-h3" href="#how-the-merge-behaves">How the merge behaves</a>
+      <a class="toc-h3" href="#front-reverse-proxy-network">Front reverse-proxy network</a>
+      <a class="toc-h3" href="#pinning-a-service-to-a-node">Pinning a service to a node</a>
   </aside>
   <article>
     <details class="toc-mobile">
@@ -380,6 +384,10 @@ footer { margin-top: 40px; }
       <a class="toc-h2" href="#configuration-reference"><span class="toc-n">08</span>Configuration reference</a>
       <a class="toc-h3" href="#behind-a-corporate-tls-inspecting-proxy">Behind a corporate TLS-inspecting proxy</a>
       <a class="toc-h2" href="#deployment-modes"><span class="toc-n">09</span>Deployment modes</a>
+      <a class="toc-h2" href="#extending-the-swarm-stack"><span class="toc-n">10</span>Extending the Swarm stack</a>
+      <a class="toc-h3" href="#how-the-merge-behaves">How the merge behaves</a>
+      <a class="toc-h3" href="#front-reverse-proxy-network">Front reverse-proxy network</a>
+      <a class="toc-h3" href="#pinning-a-service-to-a-node">Pinning a service to a node</a>
       </div>
     </details>
 <p>Everything you need to install, operate, and administer Roundhouse — from <code>docker compose up</code> to a fleet of deployed MCP servers.</p>
@@ -519,6 +527,43 @@ docker compose down -v     # wipe everything</code></pre></div>
 <h2 id="deployment-modes">Deployment modes<a class="anchor" href="#deployment-modes" aria-label="link to section">#</a></h2>
 <div class="tablewrap"><table><thead><tr><th>Mode</th><th>File</th><th>Best for</th></tr></thead><tbody><tr><td><strong>Local / single-host</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-compose.yml" target="_blank" rel="noopener"><code>docker-compose.yml</code></a></td><td>Trying it out, small teams, hosting on one box. Single Docker daemon, Traefik on the same socket.</td></tr><tr><td><strong>Docker Swarm</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.yml" target="_blank" rel="noopener"><code>docker-stack.yml</code></a></td><td>Multi-node, scoped socket proxies. Designed to sit behind a cluster ingress that terminates TLS.</td></tr></tbody></table></div>
 <p>Both modes are fully self-contained — well suited to air-gapped and restricted networks where outbound connectivity and cloud integrations aren't an option.</p>
+<h2 id="extending-the-swarm-stack">Extending the Swarm stack<a class="anchor" href="#extending-the-swarm-stack" aria-label="link to section">#</a></h2>
+<p>The shipped <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.yml" target="_blank" rel="noopener"><code>docker-stack.yml</code></a> carries only what every deployment needs. Anything specific to <strong>your</strong> environment — a front reverse-proxy network, node placement, extra labels — belongs in a separate overlay file you own, layered on at deploy time rather than edited into the base. Keeping site-specific changes out of the base file is what lets you pull new releases without merge conflicts.</p>
+<p>Docker Swarm merges multiple stack files left to right, so you point <code>docker stack deploy</code> at both:</p>
+<div class="codeblock"><div class="codebar">bash</div><pre><code>docker stack deploy \
+  -c docker-stack.yml \
+  -c docker-stack.override.yml \
+  roundhouse</code></pre></div>
+<p>A ready-to-copy starting point lives at <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.override.example.yml" target="_blank" rel="noopener"><code>docker-stack.override.example.yml</code></a>. Copy it to <code>docker-stack.override.yml</code>, keep the blocks you need, and edit.</p>
+<h3 id="how-the-merge-behaves">How the merge behaves<a class="anchor" href="#how-the-merge-behaves" aria-label="link to section">#</a></h3>
+<p>Two rules cover almost everything you'll want to add:</p>
+<ul><li><strong>Service <code>networks</code> are unioned.</strong> Listing a network under a service in the</li></ul>
+<p>overlay <em>adds</em> it — the service keeps the networks the base gave it. This is   how you attach the embedded Traefik to your front proxy network without   touching the base file.</p>
+<ul><li><strong>Placement <code>constraints</code> append, and Swarm ANDs them.</strong> Overlay constraints</li></ul>
+<p>are added to whatever the base declared. Because they AND together, an overlay   can only make scheduling <strong>more</strong> restrictive — it cannot remove a constraint   the base set. So the base carries only universally-true constraints; anything   topology-specific goes in your overlay.</p>
+<p>Render the merged result before deploying — this resolves both files and prints the final stack without deploying anything:</p>
+<div class="codeblock"><div class="codebar">bash</div><pre><code>docker stack config -c docker-stack.yml -c docker-stack.override.yml</code></pre></div>
+<h3 id="front-reverse-proxy-network">Front reverse-proxy network<a class="anchor" href="#front-reverse-proxy-network" aria-label="link to section">#</a></h3>
+<p>When an upstream proxy terminates HTTPS and forwards HTTP into this stack, the embedded Traefik needs to share a network with it. Attach it in the overlay:</p>
+<div class="codeblock"><div class="codebar">yaml</div><pre><code>services:
+  traefik:
+    networks:
+      - public
+
+networks:
+  public:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik_traefik-public}</code></pre></div>
+<p><code>external: true</code> means Docker will <strong>not</strong> create the network — it must already exist before you deploy, owned by whatever runs your ingress. Create it once with <code>docker network create --driver overlay --attachable &lt;name&gt;</code> (or let your front Traefik stack create it), and set <code>TRAEFIK_NETWORK</code> if the real name differs from the default.</p>
+<h3 id="pinning-a-service-to-a-node">Pinning a service to a node<a class="anchor" href="#pinning-a-service-to-a-node" aria-label="link to section">#</a></h3>
+<p>To keep a stateful service on a particular node — say Postgres on the box with fast persistent storage — label the node and constrain the service:</p>
+<div class="codeblock"><div class="codebar">yaml</div><pre><code>services:
+  postgres:
+    deploy:
+      placement:
+        constraints:
+          - node.labels.db == true</code></pre></div>
+<p>Label the target node once with <code>docker node update --label-add db=true &lt;node&gt;</code>. The base pins nothing, so this is the effective constraint; if you add several, Swarm ANDs them together. The <strong>same pattern works for any service</strong> — repeat the <code>deploy.placement.constraints</code> block under <code>platform-api</code>, <code>traefik</code>, or any other service that needs to be pinned or co-located. A complete, copy-ready overlay combining this with the reverse-proxy attachment is in <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.override.example.yml" target="_blank" rel="noopener"><code>docker-stack.override.example.yml</code></a>.</p>
   </article>
 </div>
 
