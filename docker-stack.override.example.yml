@@ -1,0 +1,59 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Example Swarm overlay for site-specific deployment tweaks.
+#
+# The base docker-stack.yml is intentionally generic and self-contained: it
+# makes no assumptions about your cluster's ingress or node topology. Anything
+# specific to YOUR environment goes here, in an overlay you own, and is layered
+# on at deploy time:
+#
+#   docker stack deploy \
+#     -c docker-stack.yml \
+#     -c docker-stack.override.yml \
+#     roundhouse
+#
+# Copy this file to docker-stack.override.yml, keep only the blocks you need,
+# and edit to taste. Compose MERGES the two files rather than replacing:
+#   • service `networks` lists are UNIONed   -> Traefik joins both networks
+#   • placement `constraints` lists APPEND   -> base + your constraints, AND-ed
+#
+# Because constraints AND together, an overlay can only ADD restrictions, never
+# remove a constraint the base declares. Keep universally-true constraints in
+# the base; put environment-specific ones here.
+#
+# Verify the merged result before deploying (renders, does not deploy):
+#   docker stack config -c docker-stack.yml -c docker-stack.override.yml
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # 1) Attach the embedded Traefik to your front reverse-proxy network, so an
+  #    upstream proxy can terminate HTTPS and forward HTTP into this stack.
+  #    The base Traefik only listens on :80; TLS is terminated by your ingress.
+  traefik:
+    networks:
+      - public
+
+  # 2) Pin a service to a node. The base pins nothing, so your constraints here
+  #    are the effective ones (and multiple constraints AND together — you can
+  #    narrow placement, never loosen the base). Here Postgres is pinned to the
+  #    node labelled `db == true`, co-locating it with its node-local volume:
+  #      docker node update --label-add db=true <node>
+  #    The SAME pattern works for ANY service — repeat the block under
+  #    platform-api, traefik, etc. if they need to be pinned or co-located
+  #    (e.g. platform-api alongside its node-local server-data volume).
+  postgres:
+    deploy:
+      placement:
+        constraints:
+          - node.labels.db == true
+
+networks:
+  # Your reverse-proxy network. `external: true` means Docker will NOT create
+  # it — it must already exist before `docker stack deploy`, owned by whatever
+  # runs your ingress (e.g. a front Traefik stack, or a one-time
+  # `docker network create --driver overlay --attachable traefik_traefik-public`).
+  # Override the real network name via the TRAEFIK_NETWORK env var if it differs.
+  public:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik_traefik-public}
