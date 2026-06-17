@@ -1,0 +1,65 @@
+name: Build & publish image
+
+# Builds the Roundhouse platform-api image from api/Dockerfile and publishes it
+# to GitHub Container Registry (GHCR). This is the OFFICIAL image referenced by
+# docker-stack.yml — deployers pull it directly and never clone or build this repo.
+#
+# Tags:
+#   :latest         on every push to main
+#   :vX.Y.Z         on a vX.Y.Z git tag (cut a release to pin a version)
+#   :sha-<full-sha> always (immutable, for exact rollbacks)
+#
+# The job is guarded to this repository (`if: github.repository == ...`), so
+# forks/clones that push do NOT run it: it shows as skipped — no failed runs,
+# no wasted Actions minutes, nothing pushed to their namespace.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    if: github.repository == 'Karmatek-Consulting-LLC/roundhouse'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/karmatek-consulting-llc/roundhouse
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern=v{{version}}
+            type=sha,format=long
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: api/Dockerfile
+          # amd64 matches the current build target. To ship multi-arch, add:
+          #   platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

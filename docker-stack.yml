@@ -1,7 +1,8 @@
 version: "3.8"
 
-# Docker Swarm stack for the lab. Consumed by the lab CI workflow after it
-# builds and pushes the image from api/Dockerfile.
+# Docker Swarm stack for Roundhouse. The platform-api image is published to GHCR
+# by .github/workflows/build-image.yml, so a deployment needs only this file plus
+# a small site overlay for your ingress/topology — no repo clone, no local build.
 #
 # Required external secrets (one-time create on the Swarm):
 #   docker secret create mcp_app_key <file>           # APP_KEY, "base64:<32-byte-key>"
@@ -19,7 +20,7 @@ version: "3.8"
 # ingress terminates TLS (websecure) and forwards HTTP to this stack's
 # traefik:80 (e.g. mcp-traefik-svc -> http://roundhouse_traefik:80) over a
 # shared external network the overlay attaches. Backends stay on roundhouse-network.
-#   Stack name is fixed at `roundhouse` (see workflow + traefik.swarm.yml network name).
+#   Stack name is fixed at `roundhouse` (traefik's --providers.swarm.network flag pins roundhouse_roundhouse-network).
 #   Set PUBLIC_HOSTNAME in the deploy env to the host clients reach the SPA at
 #   - must match the ingress Host() rule that fronts this stack.
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
@@ -76,11 +77,23 @@ services:
 
   traefik:
     image: traefik:v3.6
+    # Static config as CLI flags (equivalent to a traefik.yml) so this stack stays
+    # a single self-contained file — no config object, no external file to ship.
+    command:
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --entryPoints.web.address=:80
+      # Discovery via docker-socket-proxy-traefik over roundhouse-network, not the
+      # raw socket. exposedByDefault=false -> only services with traefik.enable=true.
+      - --providers.swarm.endpoint=tcp://docker-socket-proxy-traefik:2375
+      - --providers.swarm.exposedByDefault=false
+      # Must match `docker network ls`: {stack}_roundhouse-network.
+      - --providers.swarm.network=roundhouse_roundhouse-network
+      # Dynamic config (routers/services written at runtime) watched from this dir.
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
     volumes:
       - traefik-dynamic:/etc/traefik/dynamic:ro
-    configs:
-      - source: traefik-config
-        target: /etc/traefik/traefik.yml
     networks:
       - roundhouse-network
     depends_on:
@@ -111,7 +124,7 @@ services:
         condition: on-failure
 
   platform-api:
-    image: ${IMAGE_REPO}:latest
+    image: ghcr.io/karmatek-consulting-llc/roundhouse:latest
     secrets:
       - mcp_app_key
       - mcp_admin_email
@@ -172,13 +185,6 @@ secrets:
     external: true
   mcp_postgres_password:
     external: true
-
-configs:
-  traefik-config:
-    # Swarm configs cannot be updated in place; change the name (e.g. v4) when
-    # editing traefik/traefik.swarm.yml, then `docker config rm` the old one if unused.
-    name: roundhouse_traefik-static-v4
-    file: ./traefik/traefik.swarm.yml
 
 networks:
   roundhouse-network:

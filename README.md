@@ -52,12 +52,11 @@ option.
 
 ## Quick start
 
-> Requires **Docker** and **Docker Compose**.
+> Requires **Docker** and **Docker Compose**. Runs from the published image —
+> no clone, no build.
 
 ```bash
-git clone https://github.com/Karmatek-Consulting-LLC/roundhouse.git
-cd roundhouse
-cp .env.example .env
+curl -O https://raw.githubusercontent.com/Karmatek-Consulting-LLC/roundhouse/main/docker-compose.yml
 docker compose up -d
 ```
 
@@ -195,11 +194,13 @@ door · Alembic migrations baked into startup.
 ## Development
 
 The backend (`api/`) is FastAPI + SQLAlchemy; the frontend (`frontend/`) is
-React + Vite. Hot-reload is on by default in `docker-compose.yml`.
+React + Vite. Clone the repo and use `docker-compose.dev.yml`, which builds
+from source with hot-reload on `api/` and `frontend/`:
 
 ```bash
-docker compose logs -f platform-api   # tail the API
-docker compose logs -f frontend       # tail the frontend
+docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml logs -f platform-api   # tail the API
+docker compose -f docker-compose.dev.yml logs -f frontend       # tail the frontend
 
 # Run the API outside Docker, pointed at the dockerized Postgres
 cd api

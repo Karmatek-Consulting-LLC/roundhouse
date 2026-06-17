@@ -1,5 +1,6 @@
-# Local dev Traefik config. Plain HTTP only; for the prod/swarm config see
-# traefik.swarm.yml (different provider, different entrypoint set).
+# Local dev Traefik config (used by docker-compose.dev.yml). Plain HTTP only; the
+# published/Swarm Traefik is configured via CLI flags in docker-stack.yml and
+# docker-compose.yml (different provider, different entrypoint set).
 api:
   dashboard: true
   insecure: true

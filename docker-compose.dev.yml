@@ -1,39 +1,23 @@
-# Run Roundhouse on a single host. Pulls the published image — no clone, no
-# build. Download just this file and `docker compose up -d`.
+# Contributor development stack: builds from source, hot-reloads api/ and
+# frontend/, runs Vite separately. Requires a clone of this repo.
 #
-#   curl -O https://raw.githubusercontent.com/Karmatek-Consulting-LLC/roundhouse/main/docker-compose.yml
-#   docker compose up -d
-#   # open http://localhost:3080  (admin@mcp.local / admin)
-#
-# Multi-node? See docker-stack.yml (Swarm). Hacking on Roundhouse itself? See
-# docker-compose.dev.yml (builds from source, hot reload).
+# Just want to RUN Roundhouse on one box? Use docker-compose.yml instead — it
+# pulls the published image and needs no clone or build. This file is only for
+# hacking on Roundhouse itself. For Swarm/customer deploys see docker-stack.yml.
 
-# Pinned project + volume names so existing installs keep their data across a
-# folder rename or an upgrade from the old build-based compose file.
+# Compose project name. Pinned so it does NOT track the host folder name —
+# lets you rename or move the checkout without orphaning existing volumes.
 name: roundhouse
 
 services:
   traefik:
     image: traefik:v3.6
-    # Static config as CLI flags (equivalent to a traefik.yml) so this file is
-    # self-contained — nothing to mount from a repo.
-    command:
-      - --api.dashboard=true
-      - --api.insecure=true
-      - --entryPoints.web.address=:80
-      # Local single-host: read the Docker socket directly (full trust). The
-      # Swarm stack fronts this with scoped docker-socket-proxy sidecars instead.
-      - --providers.docker.endpoint=unix:///var/run/docker.sock
-      - --providers.docker.exposedByDefault=false
-      - --providers.docker.network=roundhouse-network
-      # Per-server /s/{name} routes the platform writes when it deploys a server.
-      - --providers.file.directory=/etc/traefik/dynamic
-      - --providers.file.watch=true
     ports:
       - "${HTTP_PORT:-3080}:80"
       - "${DASHBOARD_PORT:-3081}:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
     networks:
       - roundhouse-network
@@ -55,22 +39,24 @@ services:
       retries: 5
 
   platform-api:
-    image: ghcr.io/karmatek-consulting-llc/roundhouse:latest
+    build:
+      context: .
+      dockerfile: api/Dockerfile.dev
     depends_on:
       postgres:
         condition: service_healthy
-    # Give the SIGTERM trap time to clean up every spawned MCP server before SIGKILL.
+    # Give the SIGTERM trap time to cleanup every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     volumes:
-      # platform-api spawns and tears down MCP server containers on this daemon.
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./api:/app
+      - ./templates:/app/templates:ro
       - server-data:/var/lib/roundhouse/servers
       - traefik-dynamic:/var/lib/roundhouse/traefik-dynamic
     environment:
       - PYTHONUNBUFFERED=1
       # APP_KEY (base64:<32-byte-key>) keys the at-rest encryption for
-      # server_tokens rows. Leave blank for a quick start (tokens stored plaintext);
-      # set it for anything real.
+      # server_tokens rows. Leave blank for dev (tokens stored plaintext).
       - APP_KEY=${APP_KEY:-}
 
       - DB_CONNECTION=pgsql
@@ -82,12 +68,11 @@ services:
 
       - AUTH_TOKEN_EXPIRATION_MINUTES=1440
 
-      # First-boot admin. Change these before first start, or from the Users page after.
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@mcp.local}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
 
       - MCP_BASE_URL=${MCP_BASE_URL:-http://localhost:3080}
-      - MCP_DOCKER_NETWORK=roundhouse-network
+      - MCP_DOCKER_NETWORK=${DOCKER_NETWORK:-roundhouse-network}
       - MCP_DOCKER_SOCKET=/var/run/docker.sock
       - MCP_DOCKER_MODE=${MCP_DOCKER_MODE:-auto}
       - MCP_SERVERS_DATA_DIR=/var/lib/roundhouse/servers
@@ -98,13 +83,29 @@ services:
     networks:
       - roundhouse-network
     labels:
-      # platform-api serves both the API and the bundled SPA on :8000. Catch-all
-      # at low priority; the per-server /s/{name} routes are more specific and win.
       - "traefik.enable=true"
       - "traefik.http.routers.platform-api.entrypoints=web"
-      - "traefik.http.routers.platform-api.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.platform-api.priority=1"
+      - "traefik.http.routers.platform-api.rule=PathPrefix(`/api`)"
       - "traefik.http.services.platform-api.loadbalancer.server.port=8000"
+
+  frontend:
+    build: ./frontend
+    environment:
+      - CI=true
+      - API_PROXY_TARGET=http://platform-api:8000
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_pnpm_store:/var/cache/pnpm-store
+    networks:
+      - roundhouse-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      # Lower priority than the /api router so /api/* lands on platform-api.
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=5173"
 
 networks:
   roundhouse-network:
@@ -112,10 +113,13 @@ networks:
     driver: bridge
 
 volumes:
-  # Pinned to the legacy `mcp-platform_*` names so an upgrade from the old
-  # build-based compose file keeps existing database + spec data.
+  # Pinned to the legacy `mcp-platform_*` names so a folder/project rename
+  # does NOT cause Compose to create empty replacements. Drop the explicit
+  # `name:` once any host predating the roundhouse rebrand has migrated.
   pgdata:
     name: mcp-platform_pgdata
   server-data:
     name: mcp-platform_server-data
   traefik-dynamic:
+  frontend_node_modules:
+  frontend_pnpm_store:
