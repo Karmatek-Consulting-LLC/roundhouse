@@ -3,10 +3,6 @@
 Everything you need to install, operate, and administer Roundhouse — from
 `docker compose up` to a fleet of deployed MCP servers.
 
-> Screenshots in this guide are shown in **dark theme**. A light-theme set
-> lives under `docs/screenshots/light/`. See
-> [`docs/capture/README.md`](capture/README.md) for how to re-capture.
-
 ---
 
 ## Getting started
