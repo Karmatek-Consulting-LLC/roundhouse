@@ -26,6 +26,13 @@ node_modules/
 frontend/dist/
 frontend/package-lock.json
 
+# Generated docs screenshots — reproducible from a running stack via
+# docs/capture/ (seed_demo.py + capture.mjs). See docs/capture/README.md.
+# Kept out of git so clones don't pull ~22MB of binary build artifacts.
+/docs/screenshots/
+# Copied out of docs/screenshots/ by website/build-docs.mjs at build time.
+/website/docs/screenshots/
+
 # Docker
 *.log
 

@@ -4,6 +4,12 @@ The screenshots in [`docs/user-guide.md`](../user-guide.md) are produced by
 the two scripts in this directory, driven against a running Roundhouse
 stack.
 
+> **Screenshots are not committed.** `docs/screenshots/` is gitignored — it's
+> a reproducible build artifact, kept out of the repo so clones don't pull
+> ~22 MB of binaries. Regenerate it with the fast path below before building
+> the docs site. `website/build-docs.mjs` will refuse to run (with a pointer
+> back here) if the screenshots it references are missing.
+
 The fast path:
 
 ```bash
