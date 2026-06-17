@@ -408,14 +408,14 @@ services:
 networks:
   public:
     external: true
-    name: ${TRAEFIK_NETWORK:-traefik_traefik-public}
+    name: ${PUBLIC_INGRESS_NETWORK:-public-ingress}
 ```
 
 `external: true` means Docker will **not** create the network — it must already
 exist before you deploy, owned by whatever runs your ingress. Create it once
 with `docker network create --driver overlay --attachable <name>` (or let your
-front Traefik stack create it), and set `TRAEFIK_NETWORK` if the real name
-differs from the default.
+front proxy — Caddy, nginx, Traefik, … — create it), and set
+`PUBLIC_INGRESS_NETWORK` if the real name differs from the default.
 
 ### Pinning a service to a node
 

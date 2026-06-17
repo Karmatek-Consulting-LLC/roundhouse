@@ -51,9 +51,9 @@ services:
 networks:
   # Your reverse-proxy network. `external: true` means Docker will NOT create
   # it — it must already exist before `docker stack deploy`, owned by whatever
-  # runs your ingress (e.g. a front Traefik stack, or a one-time
-  # `docker network create --driver overlay --attachable traefik_traefik-public`).
-  # Override the real network name via the TRAEFIK_NETWORK env var if it differs.
+  # runs your ingress (e.g. a front Caddy / nginx / Traefik stack, or a one-time
+  # `docker network create --driver overlay --attachable public-ingress`).
+  # Override the real network name via the PUBLIC_INGRESS_NETWORK env var if it differs.
   public:
     external: true
-    name: ${TRAEFIK_NETWORK:-traefik_traefik-public}
+    name: ${PUBLIC_INGRESS_NETWORK:-public-ingress}

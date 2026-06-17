@@ -553,8 +553,8 @@ docker compose down -v     # wipe everything</code></pre></div>
 networks:
   public:
     external: true
-    name: ${TRAEFIK_NETWORK:-traefik_traefik-public}</code></pre></div>
-<p><code>external: true</code> means Docker will <strong>not</strong> create the network — it must already exist before you deploy, owned by whatever runs your ingress. Create it once with <code>docker network create --driver overlay --attachable &lt;name&gt;</code> (or let your front Traefik stack create it), and set <code>TRAEFIK_NETWORK</code> if the real name differs from the default.</p>
+    name: ${PUBLIC_INGRESS_NETWORK:-public-ingress}</code></pre></div>
+<p><code>external: true</code> means Docker will <strong>not</strong> create the network — it must already exist before you deploy, owned by whatever runs your ingress. Create it once with <code>docker network create --driver overlay --attachable &lt;name&gt;</code> (or let your front proxy — Caddy, nginx, Traefik, … — create it), and set <code>PUBLIC_INGRESS_NETWORK</code> if the real name differs from the default.</p>
 <h3 id="pinning-a-service-to-a-node">Pinning a service to a node<a class="anchor" href="#pinning-a-service-to-a-node" aria-label="link to section">#</a></h3>
 <p>To keep a stateful service on a particular node — say Postgres on the box with fast persistent storage — label the node and constrain the service:</p>
 <div class="codeblock"><div class="codebar">yaml</div><pre><code>services:
