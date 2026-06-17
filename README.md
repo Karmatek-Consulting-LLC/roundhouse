@@ -44,8 +44,7 @@ option.
 | 🐳 **Single host or Swarm** | `docker compose` on one box, or Swarm with scoped socket proxies. |
 
 <div align="center">
-<img src="docs/screenshots/dark/02-dashboard.png" alt="Roundhouse dashboard" width="49%" />
-<img src="docs/screenshots/dark/30-editor-source.png" alt="Server editor (code mode)" width="49%" />
+<a href="https://roundhousemcp.com/docs/"><strong>📸 See the user guide for screenshots &amp; a full walkthrough →</strong></a>
 </div>
 
 ---
