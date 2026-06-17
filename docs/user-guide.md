@@ -349,3 +349,93 @@ and the build skips that step.
 Both modes are fully self-contained — well suited to air-gapped and
 restricted networks where outbound connectivity and cloud integrations
 aren't an option.
+
+## Extending the Swarm stack
+
+The shipped [`docker-stack.yml`](../docker-stack.yml) carries only what every
+deployment needs. Anything specific to **your** environment — a front
+reverse-proxy network, node placement, extra labels — belongs in a separate
+overlay file you own, layered on at deploy time rather than edited into the
+base. Keeping site-specific changes out of the base file is what lets you pull
+new releases without merge conflicts.
+
+Docker Swarm merges multiple stack files left to right, so you point
+`docker stack deploy` at both:
+
+```bash
+docker stack deploy \
+  -c docker-stack.yml \
+  -c docker-stack.override.yml \
+  roundhouse
+```
+
+A ready-to-copy starting point lives at
+[`docker-stack.override.example.yml`](../docker-stack.override.example.yml).
+Copy it to `docker-stack.override.yml`, keep the blocks you need, and edit.
+
+### How the merge behaves
+
+Two rules cover almost everything you'll want to add:
+
+- **Service `networks` are unioned.** Listing a network under a service in the
+  overlay *adds* it — the service keeps the networks the base gave it. This is
+  how you attach the embedded Traefik to your front proxy network without
+  touching the base file.
+- **Placement `constraints` append, and Swarm ANDs them.** Overlay constraints
+  are added to whatever the base declared. Because they AND together, an overlay
+  can only make scheduling **more** restrictive — it cannot remove a constraint
+  the base set. So the base carries only universally-true constraints; anything
+  topology-specific goes in your overlay.
+
+Render the merged result before deploying — this resolves both files and prints
+the final stack without deploying anything:
+
+```bash
+docker stack config -c docker-stack.yml -c docker-stack.override.yml
+```
+
+### Front reverse-proxy network
+
+When an upstream proxy terminates HTTPS and forwards HTTP into this stack, the
+embedded Traefik needs to share a network with it. Attach it in the overlay:
+
+```yaml
+services:
+  traefik:
+    networks:
+      - public
+
+networks:
+  public:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik_traefik-public}
+```
+
+`external: true` means Docker will **not** create the network — it must already
+exist before you deploy, owned by whatever runs your ingress. Create it once
+with `docker network create --driver overlay --attachable <name>` (or let your
+front Traefik stack create it), and set `TRAEFIK_NETWORK` if the real name
+differs from the default.
+
+### Pinning a service to a node
+
+To keep a stateful service on a particular node — say Postgres on the box with
+fast persistent storage — label the node and constrain the service:
+
+```yaml
+services:
+  postgres:
+    deploy:
+      placement:
+        constraints:
+          - node.labels.db == true
+```
+
+Label the target node once with
+`docker node update --label-add db=true <node>`. The base pins nothing, so this
+is the effective constraint; if you add several, Swarm ANDs them together. The
+**same pattern works for any service** — repeat the `deploy.placement.constraints`
+block under `platform-api`, `traefik`, or any other service that needs to be
+pinned or co-located. A complete, copy-ready overlay combining this with the
+reverse-proxy attachment is in
+[`docker-stack.override.example.yml`](../docker-stack.override.example.yml).

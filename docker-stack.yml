@@ -9,14 +9,19 @@ version: "3.8"
 #   docker secret create mcp_admin_password <file>    # optional - seeded on first boot
 #   docker secret create mcp_postgres_password <file>
 #
-# Traefik is on an external ingress network so cluster ingress Traefik can reach it.
-# Ingress terminates TLS (websecure) and forwards HTTP to this stack's traefik:80
-# (e.g. mcp-traefik-svc -> http://roundhouse_traefik:80). This embedded Traefik
-# only listens on :80 (entrypoint `web`); it does not terminate TLS or use Let's Encrypt.
-# Backends stay on roundhouse-network. The external ingress overlay is fixed in `networks` (traefik-public).
+# This base stack is environment-agnostic: it does NOT attach to an external
+# ingress network or pin services to particular nodes. Layer those on with a
+# site overlay at deploy time (see docker-stack.override.example.yml):
+#   docker stack deploy -c docker-stack.yml -c docker-stack.override.yml roundhouse
+#
+# The embedded Traefik only listens on :80 (entrypoint `web`); it does not
+# terminate TLS or use Let's Encrypt. In a fronted deployment an upstream
+# ingress terminates TLS (websecure) and forwards HTTP to this stack's
+# traefik:80 (e.g. mcp-traefik-svc -> http://roundhouse_traefik:80) over a
+# shared external network the overlay attaches. Backends stay on roundhouse-network.
 #   Stack name is fixed at `roundhouse` (see workflow + traefik.swarm.yml network name).
 #   Set PUBLIC_HOSTNAME in the deploy env to the host clients reach the SPA at
-#   - must match the cluster ingress Host() rule that fronts this stack.
+#   - must match the ingress Host() rule that fronts this stack.
 # v3.6+ required - older Traefik's Docker API negotiation is rejected by modern Engines.
 
 services:
@@ -78,13 +83,9 @@ services:
         target: /etc/traefik/traefik.yml
     networks:
       - roundhouse-network
-      - traefik_traefik-public
     depends_on:
       - docker-socket-proxy-traefik
     deploy:
-      placement:
-        constraints:
-          - node.labels.db == true
       restart_policy:
         condition: on-failure
 
@@ -106,9 +107,6 @@ services:
       timeout: 3s
       retries: 5
     deploy:
-      placement:
-        constraints:
-          - node.labels.db == true
       restart_policy:
         condition: on-failure
 
@@ -154,9 +152,6 @@ services:
     # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     deploy:
-      placement:
-        constraints:
-          - node.labels.db == true
       labels:
         - "traefik.enable=true"
         # Traefik v3 Swarm provider uses traefik.swarm.network (not traefik.docker.network).
@@ -189,9 +184,6 @@ networks:
   roundhouse-network:
     driver: overlay
     attachable: true
-  traefik_traefik-public:
-    external: true
-    name: ${TRAEFIK_NETWORK:-traefik_traefik-public}
 
 volumes:
   pgdata:
