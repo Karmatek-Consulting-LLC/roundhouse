@@ -48,6 +48,13 @@ services:
         constraints:
           - node.labels.db == true
 
+  # 3) Pin the Roundhouse image. The base ships
+  #    ghcr.io/karmatek-consulting-llc/roundhouse:latest, which drifts as new
+  #    builds publish — for production, pin a released version here. (Or point at
+  #    your own registry if you build the image yourself.)
+  platform-api:
+    image: ghcr.io/karmatek-consulting-llc/roundhouse:v1.2.3   # ← use a real released tag
+
 networks:
   # Your reverse-proxy network. `external: true` means Docker will NOT create
   # it — it must already exist before `docker stack deploy`, owned by whatever

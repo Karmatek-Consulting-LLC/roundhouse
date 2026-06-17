@@ -345,6 +345,7 @@ footer { margin-top: 40px; }
       <a class="toc-h3" href="#how-the-merge-behaves">How the merge behaves</a>
       <a class="toc-h3" href="#front-reverse-proxy-network">Front reverse-proxy network</a>
       <a class="toc-h3" href="#pinning-a-service-to-a-node">Pinning a service to a node</a>
+      <a class="toc-h3" href="#pinning-the-image-version">Pinning the image version</a>
   </aside>
   <article>
     <details class="toc-mobile">
@@ -388,6 +389,7 @@ footer { margin-top: 40px; }
       <a class="toc-h3" href="#how-the-merge-behaves">How the merge behaves</a>
       <a class="toc-h3" href="#front-reverse-proxy-network">Front reverse-proxy network</a>
       <a class="toc-h3" href="#pinning-a-service-to-a-node">Pinning a service to a node</a>
+      <a class="toc-h3" href="#pinning-the-image-version">Pinning the image version</a>
       </div>
     </details>
 <p>Everything you need to install, operate, and administer Roundhouse — from <code>docker compose up</code> to a fleet of deployed MCP servers.</p>
@@ -528,7 +530,8 @@ docker compose down -v     # wipe everything</code></pre></div>
 <div class="tablewrap"><table><thead><tr><th>Mode</th><th>File</th><th>Best for</th></tr></thead><tbody><tr><td><strong>Local / single-host</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-compose.yml" target="_blank" rel="noopener"><code>docker-compose.yml</code></a></td><td>Trying it out, small teams, hosting on one box. Single Docker daemon, Traefik on the same socket.</td></tr><tr><td><strong>Docker Swarm</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.yml" target="_blank" rel="noopener"><code>docker-stack.yml</code></a></td><td>Multi-node, scoped socket proxies. Designed to sit behind a cluster ingress that terminates TLS.</td></tr></tbody></table></div>
 <p>Both modes are fully self-contained — well suited to air-gapped and restricted networks where outbound connectivity and cloud integrations aren't an option.</p>
 <h2 id="extending-the-swarm-stack">Extending the Swarm stack<a class="anchor" href="#extending-the-swarm-stack" aria-label="link to section">#</a></h2>
-<p>The shipped <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.yml" target="_blank" rel="noopener"><code>docker-stack.yml</code></a> carries only what every deployment needs. Anything specific to <strong>your</strong> environment — a front reverse-proxy network, node placement, extra labels — belongs in a separate overlay file you own, layered on at deploy time rather than edited into the base. Keeping site-specific changes out of the base file is what lets you pull new releases without merge conflicts.</p>
+<p>The shipped <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.yml" target="_blank" rel="noopener"><code>docker-stack.yml</code></a> is fully self-contained: it references only public images (the Roundhouse platform-api image is published to GHCR), configures its embedded Traefik via CLI flags, and depends on no other file in this repository. <strong>Deploying needs nothing but the stack file itself</strong> — download <code>docker-stack.yml</code>, write a small overlay for your environment, and <code>docker stack deploy</code>. There's no clone, no local build, and no upstream to track.</p>
+<p>Anything specific to <strong>your</strong> environment — a front reverse-proxy network, node placement, a pinned image version, extra labels — belongs in a separate overlay file you own, layered on at deploy time rather than edited into the base. Keeping site-specific changes out of the base is what lets you drop in a new release of <code>docker-stack.yml</code> without re-applying your edits.</p>
 <p>Docker Swarm merges multiple stack files left to right, so you point <code>docker stack deploy</code> at both:</p>
 <div class="codeblock"><div class="codebar">bash</div><pre><code>docker stack deploy \
   -c docker-stack.yml \
@@ -564,6 +567,12 @@ networks:
         constraints:
           - node.labels.db == true</code></pre></div>
 <p>Label the target node once with <code>docker node update --label-add db=true &lt;node&gt;</code>. The base pins nothing, so this is the effective constraint; if you add several, Swarm ANDs them together. The <strong>same pattern works for any service</strong> — repeat the <code>deploy.placement.constraints</code> block under <code>platform-api</code>, <code>traefik</code>, or any other service that needs to be pinned or co-located. A complete, copy-ready overlay combining this with the reverse-proxy attachment is in <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.override.example.yml" target="_blank" rel="noopener"><code>docker-stack.override.example.yml</code></a>.</p>
+<h3 id="pinning-the-image-version">Pinning the image version<a class="anchor" href="#pinning-the-image-version" aria-label="link to section">#</a></h3>
+<p>The base references <code>ghcr.io/karmatek-consulting-llc/roundhouse:latest</code>, which moves as new builds publish. For production, pin a specific released version in your overlay so upgrades are deliberate rather than picked up on the next redeploy:</p>
+<div class="codeblock"><div class="codebar">yaml</div><pre><code>services:
+  platform-api:
+    image: ghcr.io/karmatek-consulting-llc/roundhouse:v1.2.3</code></pre></div>
+<p>The same block points <code>platform-api</code> at your own registry if you build the image yourself instead of pulling the published one.</p>
   </article>
 </div>
 

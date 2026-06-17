@@ -352,12 +352,18 @@ aren't an option.
 
 ## Extending the Swarm stack
 
-The shipped [`docker-stack.yml`](../docker-stack.yml) carries only what every
-deployment needs. Anything specific to **your** environment — a front
-reverse-proxy network, node placement, extra labels — belongs in a separate
-overlay file you own, layered on at deploy time rather than edited into the
-base. Keeping site-specific changes out of the base file is what lets you pull
-new releases without merge conflicts.
+The shipped [`docker-stack.yml`](../docker-stack.yml) is fully self-contained: it
+references only public images (the Roundhouse platform-api image is published to
+GHCR), configures its embedded Traefik via CLI flags, and depends on no other
+file in this repository. **Deploying needs nothing but the stack file itself** —
+download `docker-stack.yml`, write a small overlay for your environment, and
+`docker stack deploy`. There's no clone, no local build, and no upstream to track.
+
+Anything specific to **your** environment — a front reverse-proxy network, node
+placement, a pinned image version, extra labels — belongs in a separate overlay
+file you own, layered on at deploy time rather than edited into the base. Keeping
+site-specific changes out of the base is what lets you drop in a new release of
+`docker-stack.yml` without re-applying your edits.
 
 Docker Swarm merges multiple stack files left to right, so you point
 `docker stack deploy` at both:
@@ -439,3 +445,18 @@ block under `platform-api`, `traefik`, or any other service that needs to be
 pinned or co-located. A complete, copy-ready overlay combining this with the
 reverse-proxy attachment is in
 [`docker-stack.override.example.yml`](../docker-stack.override.example.yml).
+
+### Pinning the image version
+
+The base references `ghcr.io/karmatek-consulting-llc/roundhouse:latest`, which
+moves as new builds publish. For production, pin a specific released version in
+your overlay so upgrades are deliberate rather than picked up on the next redeploy:
+
+```yaml
+services:
+  platform-api:
+    image: ghcr.io/karmatek-consulting-llc/roundhouse:v1.2.3
+```
+
+The same block points `platform-api` at your own registry if you build the image
+yourself instead of pulling the published one.
