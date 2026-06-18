@@ -9,8 +9,11 @@ from app.models import Base
 
 config = context.config
 
+# `disable_existing_loggers=False` is critical: this runs inside the API's
+# startup (init_db), and the default (True) would wipe uvicorn's access/error
+# loggers and the app logger, silencing all request and 500-traceback logs.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Pull the DB URL from app settings so we don't have to keep it in sync with
 # alembic.ini (which can't read env vars on its own).
