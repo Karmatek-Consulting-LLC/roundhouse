@@ -140,9 +140,8 @@ services:
 
       # Reach the Docker API via the scoped socket-proxy, not a raw socket mount.
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
-      # Overlay network spawned MCP servers attach to. Set explicitly: the
-      # {stack}_ prefix isn't knowable inside the container, and runtime
-      # derivation proved unreliable in Swarm (fell back to an unprefixed name).
+      # Overlay network spawned MCP servers attach to. Must be the full
+      # {stack}_-prefixed name; the prefix isn't knowable inside the container.
       - MCP_DOCKER_NETWORK=roundhouse_roundhouse-network
       # Public URL clients reach the SPA at - must match the fronting Host() rule.
       - MCP_BASE_URL=https://${PUBLIC_HOSTNAME}
