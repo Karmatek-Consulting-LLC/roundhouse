@@ -48,6 +48,12 @@ jobs:
             type=semver,pattern=v{{version}}
             type=sha,format=long
 
+      # QEMU lets the amd64 runner emulate arm64 so we can build a native
+      # arm64 image alongside amd64 (the arm64 leg is emulated, so it is
+      # slower — the gha cache keeps repeat builds reasonable).
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -56,8 +62,9 @@ jobs:
         with:
           context: .
           file: api/Dockerfile
-          # amd64 matches the current build target. To ship multi-arch, add:
-          #   platforms: linux/amd64,linux/arm64
+          # Multi-arch manifest: amd64 for Linux servers, arm64 so Apple
+          # Silicon Macs run natively (no emulation) for local development.
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
