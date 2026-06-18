@@ -134,32 +134,26 @@ services:
       - server-data:/var/lib/roundhouse/servers
       - traefik-dynamic:/var/lib/roundhouse/traefik-dynamic
     environment:
-      - PYTHONUNBUFFERED=1
-
       # Secret files - entrypoint hydrates APP_KEY / ADMIN_* / DB_PASSWORD from these.
       - APP_KEY_FILE=/run/secrets/mcp_app_key
       - ADMIN_EMAIL_FILE=/run/secrets/mcp_admin_email
       - ADMIN_PASSWORD_FILE=/run/secrets/mcp_admin_password
       - DB_PASSWORD_FILE=/run/secrets/mcp_postgres_password
 
-      - DB_CONNECTION=pgsql
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_DATABASE=mcp
-      - DB_USERNAME=mcp
-
-      - AUTH_TOKEN_EXPIRATION_MINUTES=1440
-
-      # Must match `docker network ls` overlay: {stack}_roundhouse-network.
-      - MCP_DOCKER_NETWORK=roundhouse_roundhouse-network
+      # Reach the Docker API via the scoped socket-proxy, not a raw socket mount.
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
-      - MCP_TRAEFIK_ENTRYPOINTS=web
+      # Public URL clients reach the SPA at - must match the fronting Host() rule.
       - MCP_BASE_URL=https://${PUBLIC_HOSTNAME}
-      - MCP_SERVERS_DATA_DIR=/var/lib/roundhouse/servers
-      - MCP_TEMPLATES_DIR=/app/templates
-      - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/roundhouse/traefik-dynamic
-      - MCP_DEFAULT_SERVER_REPLICAS=1
+      # Cap per-server replicas below the image default (32) for this deployment.
       - MCP_MAX_SERVER_REPLICAS=4
+      #
+      # Everything else intentionally uses the image defaults:
+      #   DB_CONNECTION/HOST/PORT/DATABASE/USERNAME -> pgsql/postgres/5432/mcp/mcp
+      #   AUTH_TOKEN_EXPIRATION_MINUTES=1440, MCP_TRAEFIK_ENTRYPOINTS=web,
+      #   MCP_SERVERS_DATA_DIR, MCP_TRAEFIK_DYNAMIC_DIR, MCP_TEMPLATES_DIR=/app/templates,
+      #   MCP_DEFAULT_SERVER_REPLICAS=1, PYTHONUNBUFFERED (set in the image).
+      #   MCP_DOCKER_NETWORK is derived at runtime from this service's own
+      #   attached network (the stack-prefixed roundhouse_roundhouse-network).
     networks:
       - roundhouse-network
     # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.

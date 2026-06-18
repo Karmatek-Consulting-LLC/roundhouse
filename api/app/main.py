@@ -23,7 +23,28 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 async def lifespan(app: FastAPI):
     init_db()
     _seed_admin_if_needed()
+    _check_docker_reachable()
     yield
+
+
+def _check_docker_reachable() -> None:
+    """Fail fast at startup if the docker backend can't reach its daemon, so a
+    misconfigured MCP_DOCKER_HOST crashes loudly here instead of surfacing as a
+    500 on every server-backed page. Skipped for the kubernetes orchestrator."""
+    cfg = get_settings()
+    if (cfg.mcp_orchestrator or "docker").strip().lower() != "docker":
+        return
+    from app.services.docker_http import DockerHttp
+
+    try:
+        DockerHttp(cfg.docker_host).get("info")
+    except Exception as e:  # noqa: BLE001 - surface any connection failure clearly
+        raise RuntimeError(
+            f"Cannot reach Docker at {cfg.docker_host!r} (MCP_DOCKER_HOST/"
+            f"MCP_DOCKER_SOCKET): {e}. Check the endpoint is correct and the "
+            "socket-proxy is reachable on the stack network."
+        ) from e
+    logger.info("Docker backend reachable at %s", cfg.docker_host)
 
 
 def _seed_admin_if_needed() -> None:

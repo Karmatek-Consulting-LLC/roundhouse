@@ -34,6 +34,10 @@ ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
+# Unbuffered stdout/stderr so uvicorn/app logs stream to `docker service logs`
+# in real time (previously set per-deployment via the stack file).
+ENV PYTHONUNBUFFERED=1
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         netcat-openbsd \
         tar \

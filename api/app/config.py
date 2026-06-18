@@ -36,7 +36,10 @@ class Settings(BaseSettings):
 
     # MCP platform
     mcp_base_url: str = Field(default="http://localhost:3080", alias="MCP_BASE_URL")
-    mcp_docker_network: str = Field(default="roundhouse-network", alias="MCP_DOCKER_NETWORK")
+    # Empty -> derived at runtime from the API's own attached network (see
+    # DockerClient._resolve_network), so the stack file need not hardcode the
+    # stack-prefixed name. Set explicitly to override the derivation.
+    mcp_docker_network: str = Field(default="", alias="MCP_DOCKER_NETWORK")
     mcp_docker_host: str = Field(
         default="/var/run/docker.sock", alias="MCP_DOCKER_HOST"
     )
@@ -46,8 +49,10 @@ class Settings(BaseSettings):
     mcp_servers_data_dir: str = Field(
         default="/var/lib/roundhouse/servers", alias="MCP_SERVERS_DATA_DIR"
     )
+    # The published image ships the bundled templates at /app/templates, so that
+    # is the default. Override only if you mount templates elsewhere.
     mcp_templates_dir: str = Field(
-        default="/var/lib/roundhouse/templates", alias="MCP_TEMPLATES_DIR"
+        default="/app/templates", alias="MCP_TEMPLATES_DIR"
     )
     mcp_traefik_dynamic_dir: str = Field(
         default="/var/lib/roundhouse/traefik-dynamic",
