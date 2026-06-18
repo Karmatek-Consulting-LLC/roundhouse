@@ -20,7 +20,7 @@
   .wrap{max-width:1480px;margin:0 auto;padding:32px 28px 56px}
   header.h{display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--line);
        padding-bottom:18px;margin-bottom:8px}
-  .mark{width:54px;height:54px;flex:0 0 54px}
+  .mark{width:98px;height:56px;flex:0 0 98px}
   .title h1{margin:0;font-size:22px;letter-spacing:.2px}
   .title p{margin:3px 0 0;color:var(--muted);font-size:13.5px}
   .title .tag{color:var(--copper-deep);font-weight:600}
@@ -46,17 +46,23 @@
 <div class="wrap">
 
   <header class="h">
-    <!-- Roundhouse mark: turntable fanning out to stalls -->
-    <svg class="mark" viewBox="0 0 54 54" aria-hidden="true">
-      <circle cx="27" cy="27" r="25" fill="none" stroke="#c2703d" stroke-width="2.5"/>
-      <g stroke="#3f5161" stroke-width="2" stroke-linecap="round">
-        <line x1="27" y1="27" x2="27" y2="6"/>
-        <line x1="27" y1="27" x2="44" y2="14"/>
-        <line x1="27" y1="27" x2="48" y2="33"/>
-        <line x1="27" y1="27" x2="10" y2="14"/>
-        <line x1="27" y1="27" x2="6" y2="33"/>
+    <!-- Roundhouse brand mark (from docs/logo.svg): half-dome roundhouse with
+         stall tracks fanning from a copper turntable. Inlined to stay self-contained. -->
+    <svg class="mark" viewBox="0 0 120 68" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-label="Roundhouse">
+      <g stroke="#1a1a1a">
+        <path d="M 20 50 A 40 40 0 0 1 100 50"/>
+        <path d="M 38 50 A 22 22 0 0 1 82 50"/>
+        <line x1="20" y1="50" x2="38" y2="50"/>
+        <line x1="82" y1="50" x2="100" y2="50"/>
+        <line x1="27.6" y1="26.5" x2="42.2" y2="37.1"/>
+        <line x1="47.6" y1="12" x2="53.2" y2="29.1"/>
+        <line x1="72.4" y1="12" x2="66.8" y2="29.1"/>
+        <line x1="92.4" y1="26.5" x2="77.8" y2="37.1"/>
       </g>
-      <circle cx="27" cy="27" r="4" fill="#c2703d"/>
+      <g stroke="#c2693a">
+        <line x1="60" y1="63" x2="60" y2="28"/>
+        <circle cx="60" cy="50" r="5" fill="#c2693a"/>
+      </g>
     </svg>
     <div class="title">
       <h1>Roundhouse — Architecture Overview</h1>
