@@ -257,7 +257,7 @@
     <div class="step"><h3><span class="n">3</span>UI / API routing</h3><p>Embedded Traefik routes <code>Host(…) &amp;&amp; !PathPrefix(/s/)</code> to <b>platform-api:8000</b> — the SPA and control API.</p></div>
     <div class="step"><h3><span class="n">4</span>MCP traffic routing</h3><p>Requests under <code>/s/{name}/mcp</code> route straight to the matching <b>MCP server service</b>, bypassing platform-api.</p></div>
     <div class="step"><h3><span class="n">5</span>Provisioning (control plane)</h3><p>platform-api builds images and creates/scales MCP services through the <b>scoped socket-proxy</b> (POST+BUILD), never touching the raw socket.</p></div>
-    <div class="step"><h3><span class="n">6</span>Discovery &amp; state</h3><p>Embedded Traefik discovers services via the <b>read-only socket-proxy</b>; platform-api stores metadata in <b>Postgres</b> and writes dynamic routes to the shared volume.</p></div>
+    <div class="step"><h3><span class="n">6</span>Discovery &amp; state</h3><p>Embedded Traefik discovers each MCP server via the <b>read-only socket-proxy</b> from its Traefik service labels; platform-api stores metadata in <b>Postgres</b>.</p></div>
   </div>
 
   <footer>

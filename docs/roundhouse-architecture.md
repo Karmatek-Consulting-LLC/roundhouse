@@ -39,7 +39,6 @@ flowchart LR
   spa -.-> engine
   spt -.-> engine
   engine -. "runs server tasks" .-> mcp1
-  api -. "writes dynamic routes" .-> etraefik
 
   classDef cp fill:#fff,stroke:#c2703d,stroke-width:2px;
   classDef db fill:#e6f2f2,stroke:#2f7a7a,color:#235e5e;
@@ -53,4 +52,4 @@ flowchart LR
 3. **UI/API.** `Host(…) && !PathPrefix(/s/)` routes to `platform-api:8000`.
 4. **MCP traffic.** `/s/{name}/mcp` routes straight to the matching MCP server service.
 5. **Provisioning.** platform-api builds images and creates/scales MCP services via the scoped socket-proxy (POST+BUILD).
-6. **Discovery & state.** Embedded Traefik discovers services via the read-only socket-proxy; platform-api stores metadata in Postgres and writes dynamic routes to a shared volume.
+6. **Discovery & state.** Embedded Traefik discovers each MCP server via the read-only socket-proxy from its Traefik service labels; platform-api stores metadata in Postgres.
