@@ -26,15 +26,11 @@ services:
       - --providers.docker.endpoint=unix:///var/run/docker.sock
       - --providers.docker.exposedByDefault=false
       - --providers.docker.network=roundhouse-network
-      # Per-server /s/{name} routes the platform writes when it deploys a server.
-      - --providers.file.directory=/etc/traefik/dynamic
-      - --providers.file.watch=true
     ports:
       - "${HTTP_PORT:-3080}:80"
       - "${DASHBOARD_PORT:-3081}:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik-dynamic:/etc/traefik/dynamic:ro
     networks:
       - roundhouse-network
 
@@ -65,7 +61,6 @@ services:
       # platform-api spawns and tears down MCP server containers on this daemon.
       - /var/run/docker.sock:/var/run/docker.sock
       - server-data:/var/lib/roundhouse/servers
-      - traefik-dynamic:/var/lib/roundhouse/traefik-dynamic
     environment:
       - PYTHONUNBUFFERED=1
       # APP_KEY (base64:<32-byte-key>) keys the at-rest encryption for
@@ -92,7 +87,6 @@ services:
       - MCP_DOCKER_MODE=${MCP_DOCKER_MODE:-auto}
       - MCP_SERVERS_DATA_DIR=/var/lib/roundhouse/servers
       - MCP_TEMPLATES_DIR=/app/templates
-      - MCP_TRAEFIK_DYNAMIC_DIR=/var/lib/roundhouse/traefik-dynamic
       - MCP_DEFAULT_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
       - MCP_MAX_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
     networks:
@@ -118,4 +112,3 @@ volumes:
     name: mcp-platform_pgdata
   server-data:
     name: mcp-platform_server-data
-  traefik-dynamic:

@@ -87,11 +87,6 @@ services:
       - --providers.swarm.exposedByDefault=false
       # Must match `docker network ls`: {stack}_roundhouse-network.
       - --providers.swarm.network=roundhouse_roundhouse-network
-      # Dynamic config (routers/services written at runtime) watched from this dir.
-      - --providers.file.directory=/etc/traefik/dynamic
-      - --providers.file.watch=true
-    volumes:
-      - traefik-dynamic:/etc/traefik/dynamic:ro
     networks:
       - roundhouse-network
     depends_on:
@@ -130,7 +125,6 @@ services:
       - roundhouse_postgres_password
     volumes:
       - server-data:/var/lib/roundhouse/servers
-      - traefik-dynamic:/var/lib/roundhouse/traefik-dynamic
     environment:
       # Secret files - entrypoint hydrates APP_KEY / ADMIN_* / DB_PASSWORD from these.
       - APP_KEY_FILE=/run/secrets/roundhouse_app_key
@@ -179,4 +173,3 @@ networks:
 volumes:
   pgdata:
   server-data:
-  traefik-dynamic:
