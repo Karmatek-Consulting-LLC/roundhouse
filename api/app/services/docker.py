@@ -8,7 +8,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import socket
 import subprocess
 import tempfile
 from pathlib import Path
@@ -138,7 +137,7 @@ class DockerClient:
     def __init__(self, http: DockerHttp | None = None):
         cfg = get_settings()
         self._http = http or DockerHttp(cfg.docker_host)
-        self._network_cache: str | None = None
+        self._network = cfg.mcp_docker_network
         self._swarm_cache: bool | None = None
         self._host_name_cache: str | None = None
 
@@ -181,39 +180,6 @@ class DockerClient:
 
     def supports_scaling(self) -> bool:
         return self.swarm_mode()
-
-    # ---- Network resolution ----
-
-    @property
-    def network(self) -> str:
-        """The overlay network spawned servers attach to. Cached per client."""
-        if self._network_cache is None:
-            self._network_cache = self._resolve_network()
-        return self._network_cache
-
-    def _resolve_network(self) -> str:
-        """Use MCP_DOCKER_NETWORK when set; otherwise derive it from our own
-        container's attached network so the stack file doesn't have to hardcode
-        the stack-prefixed name (e.g. `roundhouse_roundhouse-network`)."""
-        explicit = (get_settings().mcp_docker_network or "").strip()
-        if explicit:
-            return explicit
-        try:
-            cid = socket.gethostname()
-            info = self._http.get(f"containers/{cid}/json")
-            nets = (info.get("NetworkSettings") or {}).get("Networks") or {}
-            names = [n for n in nets if n not in ("bridge", "host", "none")]
-            # Prefer the roundhouse overlay if the container is on several nets.
-            for n in names:
-                if n.endswith("roundhouse-network"):
-                    logger.info("Derived docker network: %s", n)
-                    return n
-            if names:
-                logger.info("Derived docker network: %s", names[0])
-                return names[0]
-        except DockerError as e:
-            logger.warning("Could not derive docker network (%s); falling back", e)
-        return "roundhouse-network"
 
     def image_tag(self, server_name: str, registry_prefix: str | None = None) -> str:
         return image_tag(server_name, registry_prefix)
@@ -445,7 +411,7 @@ class DockerClient:
         env_list = [f"{k}={v}" for k, v in env_vars.items()]
         logger.info("Creating container %s", name)
         host_config: dict[str, Any] = {
-            "NetworkMode": self.network,
+            "NetworkMode": self._network,
             "RestartPolicy": {"Name": "unless-stopped"},
         }
         if isinstance(cpu_limit, (int, float)) and cpu_limit > 0:
@@ -460,7 +426,7 @@ class DockerClient:
                 "Labels": labels,
                 "Env": env_list,
                 "HostConfig": host_config,
-                "NetworkingConfig": {"EndpointsConfig": {self.network: {}}},
+                "NetworkingConfig": {"EndpointsConfig": {self._network: {}}},
             },
         )
         cid = created.get("Id")
@@ -541,7 +507,7 @@ class DockerClient:
         logger.info("Creating swarm service %s (replicas=%d)", name, replicas)
         task_template: dict[str, Any] = {
             "ContainerSpec": {"Image": tag, "Env": env_list},
-            "Networks": [{"Target": self.network}],
+            "Networks": [{"Target": self._network}],
         }
         limits: dict[str, Any] = {}
         if isinstance(cpu_limit, (int, float)) and cpu_limit > 0:

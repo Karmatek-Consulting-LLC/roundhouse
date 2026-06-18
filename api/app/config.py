@@ -36,10 +36,10 @@ class Settings(BaseSettings):
 
     # MCP platform
     mcp_base_url: str = Field(default="http://localhost:3080", alias="MCP_BASE_URL")
-    # Empty -> derived at runtime from the API's own attached network (see
-    # DockerClient._resolve_network), so the stack file need not hardcode the
-    # stack-prefixed name. Set explicitly to override the derivation.
-    mcp_docker_network: str = Field(default="", alias="MCP_DOCKER_NETWORK")
+    # Overlay network spawned servers attach to. In Swarm this must be the full
+    # {stack}_-prefixed name (e.g. roundhouse_roundhouse-network), set via the
+    # stack file; the default suits single-host / compose.
+    mcp_docker_network: str = Field(default="roundhouse-network", alias="MCP_DOCKER_NETWORK")
     mcp_docker_host: str = Field(
         default="/var/run/docker.sock", alias="MCP_DOCKER_HOST"
     )
