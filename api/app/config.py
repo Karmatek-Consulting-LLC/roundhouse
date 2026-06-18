@@ -54,10 +54,6 @@ class Settings(BaseSettings):
     mcp_templates_dir: str = Field(
         default="/app/templates", alias="MCP_TEMPLATES_DIR"
     )
-    mcp_traefik_dynamic_dir: str = Field(
-        default="/var/lib/roundhouse/traefik-dynamic",
-        alias="MCP_TRAEFIK_DYNAMIC_DIR",
-    )
     mcp_traefik_entrypoints: str = Field(
         default="web", alias="MCP_TRAEFIK_ENTRYPOINTS"
     )
@@ -138,9 +134,3 @@ def servers_dir() -> Path:
 
 def templates_dir() -> Path:
     return Path(get_settings().mcp_templates_dir)
-
-
-def traefik_dynamic_dir() -> Path:
-    p = Path(get_settings().mcp_traefik_dynamic_dir)
-    p.mkdir(parents=True, exist_ok=True)
-    return p

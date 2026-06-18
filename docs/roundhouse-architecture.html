@@ -192,7 +192,7 @@
 
     <rect x="940" y="688" width="452" height="52" rx="10" fill="#fff" stroke="#cbd5e1"/>
     <text x="960" y="711" class="nt" font-size="11.5">Volumes</text>
-    <text x="960" y="729" class="ns nm" font-size="10.5">pgdata · server-data · traefik-dynamic</text>
+    <text x="960" y="729" class="ns nm" font-size="10.5">pgdata · server-data</text>
 
     <!-- ===== Edges ===== -->
     <!-- A clients -> customer traefik -->
@@ -220,7 +220,7 @@
 
     <!-- E embedded traefik -> socket proxy traefik (discovery) -->
     <path class="ctrl" d="M621,236 L621,298"/>
-    <text x="632" y="272" class="albl">discovery</text>
+    <text x="632" y="272" class="albl">discovers route labels</text>
 
     <!-- F platform-api -> socket proxy api (docker API) -->
     <path class="ctrl" d="M798,338 L760,338 L760,445 L729,445"/>
@@ -239,17 +239,13 @@
     <!-- J platform-api -> postgres -->
     <path class="db" d="M912,382 L912,468"/>
     <text x="922" y="430" class="albl">SQL</text>
-
-    <!-- K platform-api -> embedded traefik (dynamic routes) -->
-    <path class="ctrl" d="M820,250 L820,214 L729,214"/>
-    <text x="812" y="238" text-anchor="end" class="albl">writes routes</text>
   </svg>
   </div>
 
   <!-- Legend -->
   <div class="legend">
     <span class="swatch"><span class="ln" style="border-color:#c2703d"></span> <b>Request / data-plane</b> traffic</span>
-    <span class="swatch"><span class="ln" style="border-color:#5b6675;border-top-style:dashed"></span> <b>Control-plane</b> (Docker API, discovery, dynamic config)</span>
+    <span class="swatch"><span class="ln" style="border-color:#5b6675;border-top-style:dashed"></span> <b>Control-plane</b> (Docker API, service discovery)</span>
     <span class="swatch"><span class="ln" style="border-color:#2f7a7a"></span> <b>Database</b> (SQL)</span>
     <span class="swatch"><span style="display:inline-block;width:16px;height:14px;border:2px solid #c2703d;border-radius:4px"></span> request entry / app boundary</span>
   </div>

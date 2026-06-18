@@ -16,8 +16,3 @@ providers:
     endpoint: "unix:///var/run/docker.sock"
     exposedByDefault: false
     network: mcp-network
-  file:
-    # Written to by the platform-api when it deploys a server; routes per-server
-    # /s/{name} prefixes onto the spawned container.
-    directory: /etc/traefik/dynamic
-    watch: true

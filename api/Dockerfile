@@ -63,7 +63,7 @@ COPY api/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Writable dirs for spec storage + Traefik dynamic config.
-RUN mkdir -p /var/lib/roundhouse/servers /var/lib/roundhouse/traefik-dynamic
+RUN mkdir -p /var/lib/roundhouse/servers
 
 EXPOSE 8000
 
