@@ -1,14 +1,12 @@
-version: "3.8"
-
 # Docker Swarm stack for Roundhouse. The platform-api image is published to GHCR
 # by .github/workflows/build-image.yml, so a deployment needs only this file plus
 # a small site overlay for your ingress/topology — no repo clone, no local build.
 #
 # Required external secrets (one-time create on the Swarm):
-#   docker secret create mcp_app_key <file>           # APP_KEY, "base64:<32-byte-key>"
-#   docker secret create mcp_admin_email <file>       # optional - seeded on first boot
-#   docker secret create mcp_admin_password <file>    # optional - seeded on first boot
-#   docker secret create mcp_postgres_password <file>
+#   docker secret create roundhouse_app_key <file>           # APP_KEY, "base64:<32-byte-key>"
+#   docker secret create roundhouse_admin_email <file>       # optional - seeded on first boot
+#   docker secret create roundhouse_admin_password <file>    # optional - seeded on first boot
+#   docker secret create roundhouse_postgres_password <file>
 #
 # This base stack is environment-agnostic: it does NOT attach to an external
 # ingress network or pin services to particular nodes. Layer those on with a
@@ -107,9 +105,9 @@ services:
     environment:
       POSTGRES_USER: mcp
       POSTGRES_DB: mcp
-      POSTGRES_PASSWORD_FILE: /run/secrets/mcp_postgres_password
+      POSTGRES_PASSWORD_FILE: /run/secrets/roundhouse_postgres_password
     secrets:
-      - mcp_postgres_password
+      - roundhouse_postgres_password
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -126,34 +124,24 @@ services:
   platform-api:
     image: ghcr.io/karmatek-consulting-llc/roundhouse:latest
     secrets:
-      - mcp_app_key
-      - mcp_admin_email
-      - mcp_admin_password
-      - mcp_postgres_password
+      - roundhouse_app_key
+      - roundhouse_admin_email
+      - roundhouse_admin_password
+      - roundhouse_postgres_password
     volumes:
       - server-data:/var/lib/roundhouse/servers
       - traefik-dynamic:/var/lib/roundhouse/traefik-dynamic
     environment:
       # Secret files - entrypoint hydrates APP_KEY / ADMIN_* / DB_PASSWORD from these.
-      - APP_KEY_FILE=/run/secrets/mcp_app_key
-      - ADMIN_EMAIL_FILE=/run/secrets/mcp_admin_email
-      - ADMIN_PASSWORD_FILE=/run/secrets/mcp_admin_password
-      - DB_PASSWORD_FILE=/run/secrets/mcp_postgres_password
+      - APP_KEY_FILE=/run/secrets/roundhouse_app_key
+      - ADMIN_EMAIL_FILE=/run/secrets/roundhouse_admin_email
+      - ADMIN_PASSWORD_FILE=/run/secrets/roundhouse_admin_password
+      - DB_PASSWORD_FILE=/run/secrets/roundhouse_postgres_password
 
       # Reach the Docker API via the scoped socket-proxy, not a raw socket mount.
       - MCP_DOCKER_HOST=tcp://docker-socket-proxy-api:2375
       # Public URL clients reach the SPA at - must match the fronting Host() rule.
       - MCP_BASE_URL=https://${PUBLIC_HOSTNAME}
-      # Cap per-server replicas below the image default (32) for this deployment.
-      - MCP_MAX_SERVER_REPLICAS=4
-      #
-      # Everything else intentionally uses the image defaults:
-      #   DB_CONNECTION/HOST/PORT/DATABASE/USERNAME -> pgsql/postgres/5432/mcp/mcp
-      #   AUTH_TOKEN_EXPIRATION_MINUTES=1440, MCP_TRAEFIK_ENTRYPOINTS=web,
-      #   MCP_SERVERS_DATA_DIR, MCP_TRAEFIK_DYNAMIC_DIR, MCP_TEMPLATES_DIR=/app/templates,
-      #   MCP_DEFAULT_SERVER_REPLICAS=1, PYTHONUNBUFFERED (set in the image).
-      #   MCP_DOCKER_NETWORK is derived at runtime from this service's own
-      #   attached network (the stack-prefixed roundhouse_roundhouse-network).
     networks:
       - roundhouse-network
     # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.
@@ -171,13 +159,13 @@ services:
         condition: on-failure
 
 secrets:
-  mcp_app_key:
+  roundhouse_app_key:
     external: true
-  mcp_admin_email:
+  roundhouse_admin_email:
     external: true
-  mcp_admin_password:
+  roundhouse_admin_password:
     external: true
-  mcp_postgres_password:
+  roundhouse_postgres_password:
     external: true
 
 networks:
