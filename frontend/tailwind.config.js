@@ -15,6 +15,20 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      keyframes: {
+        "feed-in": {
+          "0%": { opacity: "0", transform: "translateY(-6px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "live-flash": {
+          "0%": { backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" },
+          "100%": { backgroundColor: "transparent" },
+        },
+      },
+      animation: {
+        "feed-in": "feed-in 220ms ease-out",
+        "live-flash": "live-flash 600ms ease-out",
+      },
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",

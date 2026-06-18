@@ -9,11 +9,13 @@ import {
   useNavigate,
   useOutletContext,
   useParams,
+  useSearchParams,
 } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useServers } from "@/hooks/use-servers";
 import { ServerTable } from "@/components/server-table";
 import { Dashboard } from "@/components/dashboard";
+import { ObserveConsole } from "@/components/observe/observe-console";
 import { ServerEdit } from "@/components/server-edit";
 import { CreateServerPage } from "@/components/create-server-page";
 import { LoginPage } from "@/components/login-page";
@@ -118,6 +120,12 @@ function AppShell() {
               <NavLink to="/servers" className={navLinkClass}>
                 Servers
               </NavLink>
+              <NavLink to="/observe" className={navLinkClass}>
+                <span className="inline-flex items-center gap-1.5">
+                  Observe
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px] shadow-primary/60 animate-pulse" />
+                </span>
+              </NavLink>
             </nav>
           </div>
           <div className="flex items-center gap-2">
@@ -216,6 +224,13 @@ function DashboardRoute() {
   );
 }
 
+function ObserveRoute() {
+  const { servers } = useOutletContext<ServersOutletContext>();
+  const [searchParams] = useSearchParams();
+  const server = searchParams.get("server") ?? undefined;
+  return <ObserveConsole server={server} servers={servers} />;
+}
+
 function ServersPage() {
   const navigate = useNavigate();
   const { servers, loading, error, refresh } =
@@ -283,6 +298,7 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardRoute />} />
+          <Route path="/observe" element={<ObserveRoute />} />
           <Route path="/servers" element={<ServersPage />} />
           <Route path="/servers/new" element={<CreateServerPage />} />
           <Route path="/servers/:serverName/*" element={<ServerEditRoute />} />
