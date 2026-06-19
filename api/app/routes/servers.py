@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import re
 from typing import Any, Literal
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi import File as FastApiFile
 from fastapi.responses import StreamingResponse
@@ -134,7 +136,55 @@ def _env_vars_for_response(env_vars: list[EnvVar]) -> list[dict[str, Any]]:
     return out
 
 
-def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
+# Active readiness probe. "running" from the orchestrator only means the
+# container/task is scheduled - on Swarm it's literally just replica count, with
+# no container health at all. A 200 from the server's own /healthz means FastMCP
+# is actually serving. Short timeout + concurrent fan-out keeps the list fast.
+_HEALTHZ_TIMEOUT = 1.5
+_HEALTH_UNSET = object()
+
+
+def _probe_healthz(name: str) -> str | None:
+    """GET the server's /healthz. 'healthy' on 200, 'unhealthy' on any failure
+    or non-200. None when no URL can be resolved."""
+    try:
+        url = get_server_service().healthz_url(name)
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        with httpx.Client(timeout=_HEALTHZ_TIMEOUT) as client:
+            resp = client.get(url)
+        return "healthy" if resp.status_code == 200 else "unhealthy"
+    except httpx.HTTPError:
+        return "unhealthy"
+
+
+def _probe_healthz_many(names: list[str]) -> dict[str, str | None]:
+    if not names:
+        return {}
+    out: dict[str, str | None] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(names))) as ex:
+        for n, h in zip(names, ex.map(_probe_healthz, names)):
+            out[n] = h
+    return out
+
+
+def _effective_health(snap: dict, probe: str | None) -> str | None:
+    """Combine the orchestrator's view with the active probe. Preserve Docker's
+    'starting' grace (standalone start-period) so a just-deployed server doesn't
+    flash unhealthy before its first /healthz succeeds; otherwise the probe is
+    authoritative - it's the only signal that reflects real FastMCP readiness,
+    especially on Swarm where container health isn't exposed at all."""
+    if snap.get("health") == "starting":
+        return "starting"
+    if probe is not None:
+        return probe
+    return snap.get("health")
+
+
+def _to_response(
+    db: Session, snap: dict, spec: ServerSpec | None, health_override: Any = _HEALTH_UNSET
+) -> dict:
     service = get_server_service()
     name = snap.get("name") or ""
     owner_row = (
@@ -147,7 +197,7 @@ def _to_response(db: Session, snap: dict, spec: ServerSpec | None) -> dict:
         "name": name,
         "template": snap.get("template") or "custom",
         "status": snap.get("status") or "unknown",
-        "health": snap.get("health"),
+        "health": snap.get("health") if health_override is _HEALTH_UNSET else health_override,
         "restart_count": snap.get("restart_count"),
         "url": f"{service.base_url(db)}/s/{name}/mcp",
         "description": spec.description if spec else "",
@@ -202,12 +252,19 @@ def _registered_names_for_user(db: Session, user: User) -> list[str]:
 @router.get("")
 def index(user: User = Depends(current_user), db: Session = Depends(get_db)):
     service = get_server_service()
-    out: list[dict] = []
-    for name in _registered_names_for_user(db, user):
-        snap = _docker_snapshot(name)
-        spec = service.store.load(name)
-        out.append(_to_response(db, snap, spec))
-    return out
+    names = _registered_names_for_user(db, user)
+    snaps = {name: _docker_snapshot(name) for name in names}
+    specs = {name: service.store.load(name) for name in names}
+    # Probe /healthz concurrently for servers the orchestrator reports as up, so
+    # "running" reflects real FastMCP readiness rather than just task state.
+    probes = _probe_healthz_many([n for n in names if snaps[n].get("status") == "running"])
+    return [
+        _to_response(
+            db, snaps[name], specs[name],
+            health_override=_effective_health(snaps[name], probes.get(name)),
+        )
+        for name in names
+    ]
 
 
 @router.get("/limits")
@@ -227,7 +284,8 @@ def show(name: str, user: User = Depends(current_user), db: Session = Depends(ge
     _assert_access(db, user, name)
     snap = _docker_snapshot(name)
     spec = get_server_service().store.load(name)
-    return _to_response(db, snap, spec)
+    probe = _probe_healthz(name) if snap.get("status") == "running" else None
+    return _to_response(db, snap, spec, health_override=_effective_health(snap, probe))
 
 
 @router.get("/{name}/logs", response_class=Response)

@@ -231,6 +231,20 @@ class ServerService:
                 port = codegen.route_port_for(spec)
         return f"http://{CONTAINER_PREFIX}{server_name}:{port}/metrics"
 
+    def healthz_url(self, server_name: str) -> str:
+        """Internal URL the platform probes for readiness. Same host/port as
+        metrics_url; /healthz is unauthenticated and served by the FastMCP app
+        itself (or the platform proxy for code-first), so a 200 means the server
+        is actually serving requests - not merely that the container/task is
+        running, which is all the orchestrator can tell us (and on Swarm, all it
+        exposes)."""
+        port = codegen.BACKEND_PORT
+        if self.docker.mode() != "kubernetes":
+            spec = self.store.load(server_name)
+            if spec is not None:
+                port = codegen.route_port_for(spec)
+        return f"http://{CONTAINER_PREFIX}{server_name}:{port}/healthz"
+
     # ---- Deploy orchestration ----
 
     def save_spec(self, db: Session, spec: ServerSpec) -> None:
