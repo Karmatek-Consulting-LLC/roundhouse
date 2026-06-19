@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import os
 import re
+import time
 from typing import Any, Literal
 
 import httpx
@@ -142,6 +144,10 @@ def _env_vars_for_response(env_vars: list[EnvVar]) -> list[dict[str, Any]]:
 # is actually serving. Short timeout + concurrent fan-out keeps the list fast.
 _HEALTHZ_TIMEOUT = 1.5
 _HEALTH_UNSET = object()
+# Readiness grace: how long after a task starts serving we still call a
+# not-yet-answering /healthz "starting" (amber) rather than "unhealthy" (red),
+# so a normal deploy's pull+boot window doesn't look like a failure.
+_HEALTH_GRACE_SECONDS = float(os.environ.get("RH_HEALTH_GRACE_SECONDS", "45"))
 
 
 def _probe_healthz(name: str) -> str | None:
@@ -170,15 +176,29 @@ def _probe_healthz_many(names: list[str]) -> dict[str, str | None]:
 
 
 def _effective_health(snap: dict, probe: str | None) -> str | None:
-    """Combine the orchestrator's view with the active probe. Preserve Docker's
-    'starting' grace (standalone start-period) so a just-deployed server doesn't
-    flash unhealthy before its first /healthz succeeds; otherwise the probe is
-    authoritative - it's the only signal that reflects real FastMCP readiness,
-    especially on Swarm where container health isn't exposed at all."""
+    """Combine the orchestrator's view with the active /healthz probe.
+
+    The probe is the only signal that reflects real FastMCP readiness (esp. on
+    Swarm, where container health isn't exposed). But a failing probe during a
+    normal deploy's pull+boot window must NOT read as "unhealthy" — that alarms
+    operators. So a failing probe is reported as "starting" while the workload is
+    still coming up:
+      - no running task yet (Swarm: image pulling / scheduling), or
+      - a task started within the readiness grace window.
+    Only once it's been up past the grace and still isn't serving do we go red."""
+    if probe == "healthy":
+        return "healthy"
+    # Standalone Docker's own start-period grace.
     if snap.get("health") == "starting":
         return "starting"
-    if probe is not None:
-        return probe
+    if probe == "unhealthy":
+        if snap.get("has_running_task") is False:
+            return "starting"  # pulling / scheduling — not broken, just not up yet
+        since = snap.get("running_since")
+        if since is not None and (time.time() - since) < _HEALTH_GRACE_SECONDS:
+            return "starting"
+        return "unhealthy"
+    # No probe ran (e.g. not running) — defer to the orchestrator's view.
     return snap.get("health")
 
 
