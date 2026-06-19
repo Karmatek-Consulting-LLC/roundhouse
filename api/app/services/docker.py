@@ -43,6 +43,12 @@ def image_tag(server_name: str, registry_prefix: str | None = None) -> str:
     return f"{name}:latest"
 
 
+class RegistryRequiredError(DockerError):
+    """Raised when a deploy would produce an image that can't be distributed
+    across a multi-node Swarm (no registry configured), so we refuse up front
+    instead of creating a service whose tasks get stuck 'No such image'."""
+
+
 def _split_tag(full_tag: str) -> tuple[str, str]:
     i = full_tag.rfind(":")
     if i < 0:
@@ -199,6 +205,16 @@ class DockerClient:
     def mode(self) -> str:
         return "docker-swarm" if self.swarm_mode() else "docker"
 
+    def node_count(self) -> int:
+        """Number of nodes in the swarm. 1 when not in swarm or on error - the
+        conservative answer (a single node can run locally-built images)."""
+        if not self.swarm_mode():
+            return 1
+        try:
+            return len(self._http.get("nodes") or []) or 1
+        except DockerError:
+            return 1
+
     def _host_name(self) -> str:
         """The standalone Docker host's name (from /info). Cached per client so
         we can show 'where a server lives' even on a single host, mirroring the
@@ -285,6 +301,18 @@ class DockerClient:
         route_port: int = DEFAULT_ROUTE_PORT,
     ) -> dict:
         env_vars = env_vars or {}
+        # Guardrail: a multi-node Swarm distributes images via a registry. Without
+        # one, build_image only tags locally on the build node and skips the push,
+        # so other nodes can't pull it and the service's tasks get stuck rejected
+        # with "No such image". Fail fast with an actionable message instead.
+        if not registry_prefix and self.swarm_mode() and self.node_count() > 1:
+            raise RegistryRequiredError(
+                f"Refusing to deploy {server_name!r}: this is a multi-node Docker "
+                f"Swarm ({self.node_count()} nodes) but no container registry is "
+                "configured, so the locally-built image cannot be pulled by other "
+                "nodes (their tasks fail with 'No such image'). Configure a registry "
+                "under Platform Settings -> Docker registry, then redeploy."
+            )
         tag = self.build_image(server_name, build_context, registry_prefix, registry_auth)
         if self.swarm_mode():
             return self._create_service(

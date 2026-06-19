@@ -20,7 +20,7 @@ from app.db import get_db
 from app.deps import current_user
 from app.models import ServerOwner, ServerScope, User
 from app.services import global_env, permissions
-from app.services.docker import DockerError, DockerNotFoundError, get_docker
+from app.services.docker import DockerError, DockerNotFoundError, RegistryRequiredError, get_docker
 from app.services.git_manifest import parse_manifest
 from app.services.server_service import get_server_service
 from app.services.spec import (
@@ -585,7 +585,8 @@ def store(
             docker.remove_server(name, service.registry_prefix(db))
         except Exception:  # noqa: BLE001
             pass
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        status_code = 409 if isinstance(e, RegistryRequiredError) else 500
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
 
 
 def _cleanup_orphan_registration(db: Session, name: str, user: User) -> None:
@@ -659,7 +660,8 @@ def redeploy(
         raise
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to redeploy '%s': %s", name, e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        status_code = 409 if isinstance(e, RegistryRequiredError) else 500
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
 
 
 @router.post("/{name}/rediscover")
@@ -996,7 +998,8 @@ def import_spec(
             docker.remove_server(name, service.registry_prefix(db))
         except Exception:  # noqa: BLE001
             pass
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        status_code = 409 if isinstance(e, RegistryRequiredError) else 500
+        raise HTTPException(status_code=status_code, detail=str(e)) from e
 
 
 def _now_iso() -> str:
