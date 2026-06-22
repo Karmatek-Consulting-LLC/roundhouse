@@ -10,6 +10,7 @@ import json
 import logging
 import subprocess
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,12 @@ def image_tag(server_name: str, registry_prefix: str | None = None) -> str:
         p = registry_prefix.strip().rstrip("/")
         return f"{p}/{name}:latest"
     return f"{name}:latest"
+
+
+class RegistryRequiredError(DockerError):
+    """Raised when a deploy would produce an image that can't be distributed
+    across a multi-node Swarm (no registry configured), so we refuse up front
+    instead of creating a service whose tasks get stuck 'No such image'."""
 
 
 def _split_tag(full_tag: str) -> tuple[str, str]:
@@ -91,6 +98,33 @@ def _parse_health_from_summary(status_str: str) -> str | None:
     return None
 
 
+def _parse_ts(value: str | None) -> float | None:
+    """Parse a Docker RFC3339 timestamp to epoch seconds. Docker emits these
+    with up to nanosecond precision and a trailing 'Z' (e.g. container
+    State.StartedAt, swarm task Status.Timestamp); Python can't parse 9-digit
+    fractions, so trim to microseconds. The zero value '0001-01-01...' -> None."""
+    if not value or value.startswith("0001-01-01"):
+        return None
+    s = value.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    if "." in s:
+        head, _, tail = s.partition(".")
+        frac = ""
+        rest = ""
+        for i, ch in enumerate(tail):
+            if ch.isdigit():
+                frac += ch
+            else:
+                rest = tail[i:]
+                break
+        s = f"{head}.{frac[:6]}{rest}"
+    try:
+        return datetime.fromisoformat(s).timestamp()
+    except ValueError:
+        return None
+
+
 def _container_summary_to_dict(c: dict) -> dict:
     labels = c.get("Labels") or {}
     state = c.get("State") or "unknown"
@@ -129,6 +163,10 @@ def _container_to_dict(c: dict) -> dict:
         "restart_count": restart_count,
         "created_at": c.get("Created", ""),
         "replicas_running": 1 if running else 0,
+        # When the process actually started serving — used for the readiness
+        # grace window so a fresh container shows "starting", not "unhealthy".
+        "running_since": _parse_ts(state_obj.get("StartedAt")),
+        "has_running_task": running,
         "placement": [],
     }
 
@@ -166,6 +204,16 @@ class DockerClient:
 
     def mode(self) -> str:
         return "docker-swarm" if self.swarm_mode() else "docker"
+
+    def node_count(self) -> int:
+        """Number of nodes in the swarm. 1 when not in swarm or on error - the
+        conservative answer (a single node can run locally-built images)."""
+        if not self.swarm_mode():
+            return 1
+        try:
+            return len(self._http.get("nodes") or []) or 1
+        except DockerError:
+            return 1
 
     def _host_name(self) -> str:
         """The standalone Docker host's name (from /info). Cached per client so
@@ -253,6 +301,18 @@ class DockerClient:
         route_port: int = DEFAULT_ROUTE_PORT,
     ) -> dict:
         env_vars = env_vars or {}
+        # Guardrail: a multi-node Swarm distributes images via a registry. Without
+        # one, build_image only tags locally on the build node and skips the push,
+        # so other nodes can't pull it and the service's tasks get stuck rejected
+        # with "No such image". Fail fast with an actionable message instead.
+        if not registry_prefix and self.swarm_mode() and self.node_count() > 1:
+            raise RegistryRequiredError(
+                f"Refusing to deploy {server_name!r}: this is a multi-node Docker "
+                f"Swarm ({self.node_count()} nodes) but no container registry is "
+                "configured, so the locally-built image cannot be pulled by other "
+                "nodes (their tasks fail with 'No such image'). Configure a registry "
+                "under Platform Settings -> Docker registry, then redeploy."
+            )
         tag = self.build_image(server_name, build_context, registry_prefix, registry_auth)
         if self.swarm_mode():
             return self._create_service(
@@ -606,6 +666,9 @@ class DockerClient:
                 "node_id": node_id,
                 "node_name": node_map.get(node_id) if node_id else None,
                 "state": status.get("State", "unknown"),
+                # When the task entered its current state — for a running task
+                # this is ~when it started serving (drives the readiness grace).
+                "updated_at": status.get("Timestamp"),
                 "slot": t.get("Slot"),
                 "error": err,
             })
@@ -617,8 +680,17 @@ class DockerClient:
         replicas = ((spec.get("Mode") or {}).get("Replicated") or {}).get("Replicas", 0)
         status = "running" if replicas > 0 else "stopped"
         placement = self._task_placement_for(svc) if (include_placement and self.swarm_mode()) else []
-        # Swarm doesn't expose container-level health on the service object;
-        # leaving health=None preserves the existing UI contract for swarm.
+        # Swarm doesn't expose container-level health on the service object, so
+        # health is resolved by the API layer probing /healthz. We surface the
+        # task lifecycle here so that probe can tell "still coming up" (no running
+        # task yet, or just started) from "actually broken". has_running_task is
+        # None when placement wasn't fetched (caller must treat as unknown).
+        running_tasks = [p for p in placement if p.get("state") == "running"]
+        has_running_task = bool(running_tasks) if placement else None
+        running_since: float | None = None
+        if running_tasks:
+            stamps = [t for t in (_parse_ts(p.get("updated_at")) for p in running_tasks) if t]
+            running_since = max(stamps) if stamps else None
         return {
             "name": labels.get(LABEL_SERVER_NAME, ""),
             "template": labels.get(LABEL_TEMPLATE, ""),
@@ -627,6 +699,8 @@ class DockerClient:
             "restart_count": None,
             "created_at": svc.get("CreatedAt", ""),
             "replicas_running": int(replicas),
+            "running_since": running_since,
+            "has_running_task": has_running_task,
             "placement": placement,
         }
 

@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { api, type AuditEvent } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +55,67 @@ function formatWhen(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   return d.toLocaleString();
+}
+
+const tooltipStyle = {
+  background: "var(--popover)",
+  border: "1px solid var(--border)",
+  borderRadius: 8,
+  color: "var(--popover-foreground)",
+  fontSize: 12,
+  padding: "6px 10px",
+} as const;
+
+// Relocated from the old Dashboard: 14-day rollup of audit activity, derived
+// from the loaded events so it always matches the table below.
+function ActivityChart({ events }: { events: AuditEvent[] }) {
+  const data = useMemo(() => {
+    const days = 14;
+    const byDate: Record<string, number> = {};
+    for (const e of events) {
+      if (e.created_at) {
+        const d = e.created_at.slice(0, 10);
+        byDate[d] = (byDate[d] ?? 0) + 1;
+      }
+    }
+    const out: { label: string; count: number }[] = [];
+    const today = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+      const dt = new Date(today);
+      dt.setDate(today.getDate() - i);
+      const key = dt.toISOString().slice(0, 10);
+      out.push({ label: `${dt.getMonth() + 1}/${dt.getDate()}`, count: byDate[key] ?? 0 });
+    }
+    return out;
+  }, [events]);
+
+  return (
+    <div className="rounded-md border p-4">
+      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Activity (last 14 days)
+      </h3>
+      <div className="h-[160px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
+            <XAxis
+              dataKey="label"
+              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+              stroke="var(--border)"
+              interval={1}
+            />
+            <YAxis
+              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+              stroke="var(--border)"
+              allowDecimals={false}
+              width={28}
+            />
+            <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--muted)", opacity: 0.4 }} />
+            <Bar dataKey="count" name="events" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 }
 
 export function AuditLogPage({ onBack }: AuditLogPageProps) {
@@ -138,6 +207,8 @@ export function AuditLogPage({ onBack }: AuditLogPageProps) {
           />
         </div>
       </div>
+
+      {events && events.length > 0 && <ActivityChart events={events} />}
 
       {error && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">

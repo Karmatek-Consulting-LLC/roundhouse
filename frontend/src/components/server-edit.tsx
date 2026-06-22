@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Asset, type AssetListResponse, type Primitive, type Server, type UsageSnapshot } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
@@ -1346,6 +1346,11 @@ function UsageRail({ serverName, server }: { serverName: string; server: Server 
       <div className="flex items-center gap-2">
         <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
           <RefreshCw className="mr-1 h-3 w-3" /> Refresh
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link to={`/?server=${encodeURIComponent(serverName)}`}>
+            <Activity className="mr-1 h-3 w-3" /> Live console
+          </Link>
         </Button>
         {snap && snap.available && (
           <span className="text-xs text-muted-foreground">

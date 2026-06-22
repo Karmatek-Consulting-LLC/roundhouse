@@ -21,10 +21,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+
+    from app.services.event_retention import retention_loop
+
     init_db()
     _seed_admin_if_needed()
     _check_docker_reachable()
-    yield
+    # Prune expired request_events on a schedule. Runs in every worker but is
+    # single-flighted via a Postgres advisory lock (see event_retention).
+    retention_task = asyncio.create_task(retention_loop())
+    try:
+        yield
+    finally:
+        retention_task.cancel()
 
 
 def _check_docker_reachable() -> None:
@@ -100,7 +110,9 @@ def health():
 from app.routes import audit as audit_route  # noqa: E402
 from app.routes import auth as auth_route  # noqa: E402
 from app.routes import dashboard as dashboard_route  # noqa: E402
+from app.routes import ingest as ingest_route  # noqa: E402
 from app.routes import invoke as invoke_route  # noqa: E402
+from app.routes import observability as observability_route  # noqa: E402
 from app.routes import pypi as pypi_route  # noqa: E402
 from app.routes import servers as servers_route  # noqa: E402
 from app.routes import server_scopes as server_scopes_route  # noqa: E402
@@ -113,6 +125,8 @@ from app.routes import users as users_route  # noqa: E402
 app.include_router(audit_route.router)
 app.include_router(auth_route.router)
 app.include_router(dashboard_route.router)
+app.include_router(observability_route.router)
+app.include_router(ingest_route.router)
 app.include_router(users_route.router)
 app.include_router(teams_route.router)
 app.include_router(templates_route.router)

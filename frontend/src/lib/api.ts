@@ -147,6 +147,69 @@ export interface DashboardUsage {
   top_servers: DashboardTopServer[];
 }
 
+// ---- Observability (persistent request history for the Observe console) ----
+
+export type ObsRange = "5m" | "15m" | "1h" | "6h" | "24h" | "7d";
+export type ObsBucket = "auto" | "10s" | "30s" | "1m" | "5m" | "10m" | "1h";
+
+export interface ObsKindCounts {
+  tool: number;
+  resource: number;
+  resource_template: number;
+  prompt: number;
+}
+
+export interface ObsTimeseriesBucket {
+  /** Bucket start, epoch seconds. */
+  ts: number;
+  calls: number;
+  errors: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  p99_ms: number | null;
+  by_kind: ObsKindCounts;
+}
+
+export interface ObsTimeseries {
+  buckets: ObsTimeseriesBucket[];
+  bucket_s: number;
+}
+
+export type ObsStatus = "ok" | "error";
+
+export interface ObsEvent {
+  id: number;
+  /** Epoch seconds. */
+  ts: number;
+  server_name: string;
+  kind: string;
+  name: string;
+  client_id: string | null;
+  duration_ms: number | null;
+  status: ObsStatus;
+  error: string | null;
+}
+
+export interface ObsFeedPage {
+  events: ObsEvent[];
+  last_id: number;
+}
+
+export interface ObsRankedItem {
+  key: string;
+  label: string;
+  calls: number;
+  errors: number;
+  p95_ms: number | null;
+}
+
+export interface ObsTop {
+  by: "tool" | "server" | "client";
+  ranked: ObsRankedItem[];
+  error_leaders: ObsRankedItem[];
+  latency_leaders: ObsRankedItem[];
+}
+
 export interface TemplateVariable {
   name: string;
   description: string;
@@ -510,6 +573,27 @@ export const api = {
   getServerUsage: (name: string) =>
     request<UsageSnapshot>(`/servers/${encodeURIComponent(name)}/usage`),
   getDashboardUsage: () => request<DashboardUsage>("/dashboard/usage"),
+
+  // Observability console (persistent request history)
+  getObsTimeseries: (p: { range: ObsRange; bucket?: ObsBucket; server?: string }) => {
+    const q = new URLSearchParams({ range: p.range });
+    if (p.bucket) q.set("bucket", p.bucket);
+    if (p.server) q.set("server", p.server);
+    return request<ObsTimeseries>(`/observability/timeseries?${q.toString()}`);
+  },
+  getObsFeed: (p: { since_id?: number; server?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (p.since_id != null) q.set("since_id", String(p.since_id));
+    if (p.server) q.set("server", p.server);
+    if (p.limit != null) q.set("limit", String(p.limit));
+    const s = q.toString();
+    return request<ObsFeedPage>(`/observability/feed${s ? `?${s}` : ""}`);
+  },
+  getObsTop: (p: { range: ObsRange; by: "tool" | "server" | "client"; server?: string }) => {
+    const q = new URLSearchParams({ range: p.range, by: p.by });
+    if (p.server) q.set("server", p.server);
+    return request<ObsTop>(`/observability/top?${q.toString()}`);
+  },
   listAssets: (serverName: string) =>
     request<AssetListResponse>(`/servers/${encodeURIComponent(serverName)}/assets`),
   uploadAsset: async (serverName: string, file: File): Promise<Asset> => {

@@ -362,6 +362,15 @@ class _PlatformMiddleware(_Middleware):
             await _release_gate(gate_info)
             duration_ms = round((_time.perf_counter() - started) * 1000, 2)
             _metrics_record(kind, name, client_id, duration_ms, err_type)
+            # Fire-and-forget push to the platform Observe console (metadata only).
+            try:
+                _ingest_enqueue({
+                    "ts": _time.time(), "kind": kind, "name": name,
+                    "client_id": client_id, "duration_ms": duration_ms,
+                    "error": err_type,
+                })
+            except Exception:
+                pass
             if cfg.get("log_calls", True):
                 rec = {
                     "event": "mcp.call",
@@ -501,6 +510,75 @@ async def _platform_healthz(request):
 '''
 
 
+_INGEST_MODULE_SRC = '''
+# --- Event ingest (auto-generated) ---
+# Fire-and-forget push of per-call metadata to the platform Observe console.
+# Metadata only - never request arguments or response bodies. Must never block
+# or raise into the request path; on overflow or platform-down, events are
+# silently dropped.
+try:
+    import httpx as _httpx
+except Exception:  # noqa: BLE001
+    _httpx = None
+    _INGEST_ENABLED = False
+
+_INGEST_QUEUE = _asyncio.Queue(maxsize=10000)
+_INGEST_TASK = None
+
+
+def _ingest_ensure_started():
+    global _INGEST_TASK
+    if _INGEST_TASK is not None or not _INGEST_ENABLED:
+        return
+    try:
+        _INGEST_TASK = _asyncio.get_running_loop().create_task(_ingest_flush_loop())
+    except Exception:
+        _INGEST_TASK = None
+
+
+def _ingest_enqueue(ev):
+    if not _INGEST_ENABLED:
+        return
+    _ingest_ensure_started()
+    try:
+        _INGEST_QUEUE.put_nowait(ev)
+    except _asyncio.QueueFull:
+        try:
+            _INGEST_QUEUE.get_nowait()  # drop oldest
+        except Exception:
+            pass
+        try:
+            _INGEST_QUEUE.put_nowait(ev)
+        except Exception:
+            pass
+
+
+async def _ingest_flush_loop():
+    headers = {"Authorization": "Bearer " + _METRICS_TOKEN}
+    try:
+        client = _httpx.AsyncClient(timeout=5.0)
+    except Exception:
+        return
+    try:
+        while True:
+            batch = [await _INGEST_QUEUE.get()]
+            for _ in range(499):  # drain up to 500/POST without blocking
+                try:
+                    batch.append(_INGEST_QUEUE.get_nowait())
+                except _asyncio.QueueEmpty:
+                    break
+            try:
+                await client.post(_INGEST_URL, json={"server": _INGEST_SERVER_NAME, "events": batch}, headers=headers)
+            except Exception:
+                pass  # platform unreachable: events are lost, never raise
+    finally:
+        try:
+            await client.aclose()
+        except Exception:
+            pass
+'''
+
+
 def _gen_middleware(spec: ServerSpec, metrics_token: str) -> tuple[list[str], str]:
     """Return (extra_import_lines, middleware_body).
 
@@ -545,6 +623,12 @@ def _gen_middleware(spec: ServerSpec, metrics_token: str) -> tuple[list[str], st
         "",
         "_METRICS_TOKEN = " + _py_string(metrics_token),
         "",
+        # Event ingest target. Overridable per-orchestrator (e.g. K8s Service);
+        # defaults to the docker/swarm platform-api DNS name on roundhouse-network.
+        "_INGEST_URL = _os.environ.get('RH_INGEST_URL', 'http://platform-api:8000/api/ingest/events')",
+        "_INGEST_SERVER_NAME = " + _py_string(spec.name),
+        "_INGEST_ENABLED = (_os.environ.get('RH_INGEST_ENABLED', '1') == '1')",
+        "",
         # repr() over json.dumps so booleans / None render as valid Python.
         "_MIDDLEWARE_CONFIG = " + repr(config_map),
         "",
@@ -580,6 +664,7 @@ def _gen_middleware(spec: ServerSpec, metrics_token: str) -> tuple[list[str], st
         "    if required:",
         "        return set(required).issubset(set(_mw_client_scopes() or []))",
         "    return not _MW_DENY_UNLISTED",
+        _INGEST_MODULE_SRC,
         _METRICS_MODULE_SRC,
         _MIDDLEWARE_CLASS_SRC,
         "mcp.add_middleware(_PlatformMiddleware())",
