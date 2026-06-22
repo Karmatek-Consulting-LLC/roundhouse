@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Asset, type AssetListResponse, type Primitive, type Server, type UsageSnapshot } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
+import { CopyButton } from "@/components/copy-button";
 import { PrimitiveForm } from "@/components/primitive-form";
 import { ImportsEditor } from "@/components/imports-editor";
 import { PackageManager } from "@/components/package-manager";
@@ -1922,9 +1923,12 @@ export function ServerEdit({ serverName }: ServerEditProps) {
         </Button>
         <h2 className="text-lg font-semibold">{server.name}</h2>
         <StatusBadge status={server.status} health={server.health} />
-        <code className="ml-auto rounded bg-muted px-2 py-1 text-xs font-mono">
-          {server.url}
-        </code>
+        <div className="ml-auto flex items-center gap-1.5">
+          <code className="rounded bg-muted px-2 py-1 text-xs font-mono">
+            {server.url}
+          </code>
+          {server.url && <CopyButton value={server.url} title="Copy MCP URL" />}
+        </div>
       </div>
 
       <RedeployBanner serverName={serverName} server={server} onRedeployed={refresh} />
