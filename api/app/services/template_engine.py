@@ -3,6 +3,7 @@ copy non-template files to the build context."""
 from __future__ import annotations
 
 import shutil
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -10,9 +11,8 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined  # noqa: F401 
 
 
 class TemplateEngine:
-    def __init__(self, templates_dir: Path | str, servers_dir: Path | str):
+    def __init__(self, templates_dir: Path | str):
         self.templates_dir = Path(templates_dir)
-        self.servers_dir = Path(servers_dir)
 
     def list_templates(self) -> list[dict]:
         if not self.templates_dir.is_dir():
@@ -50,8 +50,9 @@ class TemplateEngine:
             elif var["required"]:
                 raise ValueError(f"Required variable '{name}' not provided")
 
-        output_dir = self.servers_dir / server_name
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Render into a throwaway dir; the caller snapshots it into the server's
+        # build_files (Postgres) and removes it. No node-local persistence.
+        output_dir = Path(tempfile.mkdtemp(prefix=f"rh-tmpl-{server_name}-"))
 
         env = Environment(
             loader=FileSystemLoader(str(template_dir)),
@@ -73,11 +74,6 @@ class TemplateEngine:
             shutil.copy2(entry, output_dir / entry.name)
 
         return output_dir
-
-    def cleanup(self, server_name: str) -> None:
-        d = self.servers_dir / server_name
-        if d.is_dir():
-            shutil.rmtree(d, ignore_errors=True)
 
     def _load_meta(self, path: Path) -> dict | None:
         try:

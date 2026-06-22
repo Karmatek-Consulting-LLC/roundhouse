@@ -23,7 +23,7 @@ from __future__ import annotations
 import hashlib
 import sys
 
-from app.config import get_settings, servers_dir
+from app.config import get_settings
 from app.crypto import DecryptError, decrypt, looks_encrypted
 from app.services.store import ServerStore
 
@@ -52,7 +52,7 @@ def main(argv: list[str]) -> int:
     app_key = get_settings().app_key
     print(f"APP_KEY fingerprint: {fingerprint(app_key)}")
 
-    store = ServerStore(servers_dir())
+    store = ServerStore()
     specs = [store.load(argv[0])] if argv else store.list_all()
     specs = [s for s in specs if s is not None]
     if not specs:

@@ -556,17 +556,24 @@ def store(
                 raise HTTPException(
                     status_code=404, detail=f"Template '{payload.template}' not found"
                 )
+            from app.services import build_context as buildctx
             build_context = service.templates.render(payload.template, name, payload.config)
-            service.store.save(spec)
-            result = docker.build_and_start(
-                server_name=name,
-                build_context=build_context,
-                template_name=payload.template,
-                env_vars=service.effective_env(db, spec),
-                replicas=service.effective_replicas(spec),
-                registry_prefix=service.registry_prefix(db),
-                registry_auth=service.registry_auth(db),
-            )
+            try:
+                service.store.save(spec)
+                # Persist the rendered files so future redeploys (which rebuild
+                # from DB, not this temp dir) have the template's source.
+                service.store.set_build_files(name, buildctx.snapshot_dir(build_context))
+                result = docker.build_and_start(
+                    server_name=name,
+                    build_context=build_context,
+                    template_name=payload.template,
+                    env_vars=service.effective_env(db, spec),
+                    replicas=service.effective_replicas(spec),
+                    registry_prefix=service.registry_prefix(db),
+                    registry_auth=service.registry_auth(db),
+                )
+            finally:
+                shutil.rmtree(build_context, ignore_errors=True)
         else:
             result = service.build_and_deploy(db, spec)
 
@@ -758,32 +765,6 @@ def _merge_unique(existing: list[str], incoming: list[str]) -> list[str]:
     return out
 
 
-# Platform-owned files in a server's dir that a git sync must never clobber.
-_GIT_SYNC_PRESERVE = {"server.json", "assets"}
-
-
-def _sync_repo_into(server_dir: Path, src: Path) -> None:
-    """Replace the cloned repo files in server_dir with those from src,
-    preserving the spec file and uploaded assets/. Lets multi-file repos pick
-    up added/removed modules on update; codegen rewrites server.py + Dockerfile
-    from the spec afterward."""
-    for child in server_dir.iterdir():
-        if child.name in _GIT_SYNC_PRESERVE:
-            continue
-        if child.is_dir():
-            shutil.rmtree(child, ignore_errors=True)
-        else:
-            child.unlink(missing_ok=True)
-    for item in src.iterdir():
-        if item.name in _GIT_SYNC_PRESERVE:
-            continue
-        dest = server_dir / item.name
-        if item.is_dir():
-            shutil.copytree(item, dest, dirs_exist_ok=True)
-        else:
-            shutil.copy2(item, dest)
-
-
 class GitDeployIn(BaseModel):
     name: str
     description: str | None = ""
@@ -826,50 +807,54 @@ def deploy_from_git(
     if db.query(ServerOwner).filter(ServerOwner.server_name == name).first():
         raise HTTPException(status_code=409, detail=f"Server name '{name}' is already registered")
 
-    # Clone into the server's dedicated context dir so codegen / store layout matches.
-    server_dir = service.store.server_dir(name)
-    if server_dir.exists():
-        shutil.rmtree(server_dir)
+    # Clone into a throwaway dir; the repo files are snapshotted into the
+    # server's build_files (Postgres) and re-materialized at each build.
+    from app.services import build_context as buildctx
+    tmp = Path(tempfile.mkdtemp(prefix="rh-git-import-"))
+    repo = tmp / "repo"
     try:
-        server_py = _clone_repo(payload.git_url, payload.ref, server_dir)
-    except HTTPException:
-        shutil.rmtree(server_dir, ignore_errors=True)
-        raise
+        try:
+            server_py = _clone_repo(payload.git_url, payload.ref, repo)
+        except HTTPException:
+            raise
 
-    manifest = parse_manifest(server_dir)
+        manifest = parse_manifest(repo)
 
-    db.add(ServerOwner(server_name=name, owner_id=user.id))
-    db.flush()
+        db.add(ServerOwner(server_name=name, owner_id=user.id))
+        db.flush()
 
-    try:
-        # Materialize a code-mode spec seeded from the manifest. Env values are
-        # empty - the operator fills them before the first deploy. The cloned
-        # files stay in place to serve as the build context on deploy.
-        spec = ServerSpec(
-            name=name,
-            description=payload.description or "",
-            replicas=payload.replicas,
-            mode=MODE_CODE,
-            source=server_py.read_text(encoding="utf-8"),
-            pip_packages=manifest.pip_packages,
-            apt_packages=manifest.apt_packages,
-            env_vars=manifest.env_vars,
-            git_url=payload.git_url,
-            git_ref=payload.ref,
-        )
-        service.store.save(spec)
-        audit_record(db, user, "server.import_from_git", "server", name, {
-            "git_url": payload.git_url, "ref": payload.ref,
-        })
-        return _to_response(db, _docker_snapshot(name), spec)
-    except HTTPException:
-        db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
-        raise
-    except Exception as e:  # noqa: BLE001
-        logger.error("Git import failed for '%s': %s", name, e)
-        db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
-        service.store.delete(name)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        try:
+            # Materialize a code-mode spec seeded from the manifest. Env values
+            # are empty - the operator fills them before the first deploy.
+            spec = ServerSpec(
+                name=name,
+                description=payload.description or "",
+                replicas=payload.replicas,
+                mode=MODE_CODE,
+                source=server_py.read_text(encoding="utf-8"),
+                pip_packages=manifest.pip_packages,
+                apt_packages=manifest.apt_packages,
+                env_vars=manifest.env_vars,
+                git_url=payload.git_url,
+                git_ref=payload.ref,
+            )
+            service.store.save(spec)
+            service.store.set_build_files(name, buildctx.snapshot_dir(repo))
+            audit_record(db, user, "server.import_from_git", "server", name, {
+                "git_url": payload.git_url, "ref": payload.ref,
+            })
+            return _to_response(db, _docker_snapshot(name), spec)
+        except HTTPException:
+            db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+            service.store.delete(name)
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.error("Git import failed for '%s': %s", name, e)
+            db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+            service.store.delete(name)
+            raise HTTPException(status_code=500, detail=str(e)) from e
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 @router.post("/{name}/update-from-git")
@@ -892,7 +877,7 @@ def update_from_git(
             status_code=409, detail="This server was not imported from Git; nothing to update."
         )
 
-    server_dir = service.store.server_dir(name)
+    from app.services import build_context as buildctx
     tmp = Path(tempfile.mkdtemp(prefix="rh-git-update-"))
     try:
         repo = tmp / "repo"
@@ -907,10 +892,11 @@ def update_from_git(
         spec.pip_packages = _merge_unique(spec.pip_packages, manifest.pip_packages)
         spec.apt_packages = _merge_unique(spec.apt_packages, manifest.apt_packages)
 
-        # Refresh build-context files (helper modules) from the new clone, then
-        # let save_spec rewrite server.py + Dockerfile and flag redeploy.
-        _sync_repo_into(server_dir, repo)
+        # Refresh the stored build files (helper modules) from the new clone,
+        # then let save_spec persist the spec and flag redeploy; codegen
+        # rewrites server.py + Dockerfile at the next build.
         service.save_spec(db, spec)
+        service.store.set_build_files(name, buildctx.snapshot_dir(repo))
         audit_record(db, user, "server.update_from_git", "server", name, {
             "git_url": spec.git_url, "ref": spec.git_ref, "added_env": added_env,
         })
@@ -1111,7 +1097,7 @@ def list_assets(
 ):
     from app.services.assets import AssetStore, MAX_FILE_BYTES, MAX_TOTAL_BYTES
     _assert_access(db, user, name)
-    store = AssetStore(get_server_service().store.server_dir(name))
+    store = AssetStore(name)
     return {
         "assets": store.list(),
         "total_size": store.total_size(),
@@ -1128,24 +1114,25 @@ def download_asset(
     db: Session = Depends(get_db),
 ):
     """Stream an asset back to the caller as a download. Filename is run
-    through the same safe-charset gate the upload uses; the FileResponse
-    layer enforces no-cache so collaborators always pull the current
-    version."""
-    from fastapi.responses import FileResponse
+    through the same safe-charset gate the upload uses; no-cache so
+    collaborators always pull the current version."""
+    from fastapi.responses import Response as RawResponse
     from app.services.assets import AssetStore, AssetError
     _assert_access(db, user, name)
-    store = AssetStore(get_server_service().store.server_dir(name))
+    store = AssetStore(name)
     try:
-        path = store.path_for(filename)
+        data = store.read_bytes(filename)
     except AssetError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    if path is None:
+    if data is None:
         raise HTTPException(status_code=404, detail=f"Asset {filename!r} not found")
-    return FileResponse(
-        path=path,
-        filename=filename,
+    return RawResponse(
+        content=data,
         media_type="application/octet-stream",
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )
 
 
@@ -1168,7 +1155,7 @@ async def upload_asset(
             status_code=413,
             detail=f"Asset exceeds {MAX_FILE_BYTES}-byte per-file cap",
         )
-    store = AssetStore(get_server_service().store.server_dir(name))
+    store = AssetStore(name)
     try:
         record = store.write(file.filename or "", payload)
     except AssetError as e:
@@ -1188,7 +1175,7 @@ def delete_asset(
     from app.services.assets import AssetStore, AssetError
     from app.services import server_auth as _sa
     _assert_access(db, user, name)
-    store = AssetStore(get_server_service().store.server_dir(name))
+    store = AssetStore(name)
     try:
         removed = store.delete(filename)
     except AssetError as e:

@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.config import servers_dir
 from app.db import get_db
 from app.deps import current_user
 from app.models import ServerScope, User
@@ -97,7 +96,7 @@ def update(
     if not scope:
         raise HTTPException(status_code=404, detail=f"Scope '{scope_name}' not found.")
 
-    store = ServerStore(servers_dir())
+    store = ServerStore()
     if payload.name and payload.name != scope.name:
         if not _SCOPE_NAME_RE.match(payload.name):
             raise HTTPException(status_code=422, detail="Invalid scope name")
@@ -135,4 +134,4 @@ def destroy(
     )
     if not exists:
         raise HTTPException(status_code=404, detail=f"Scope '{scope_name}' not found.")
-    server_auth.delete_scope(db, ServerStore(servers_dir()), name, scope_name)
+    server_auth.delete_scope(db, ServerStore(), name, scope_name)

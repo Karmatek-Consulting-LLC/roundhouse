@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.config import servers_dir, templates_dir
+from app.config import templates_dir
 from app.deps import current_user
 from app.models import User
 from app.services.template_engine import TemplateEngine
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/templates", tags=["templates"], dependencies=[De
 
 
 def _engine() -> TemplateEngine:
-    return TemplateEngine(templates_dir(), servers_dir())
+    return TemplateEngine(templates_dir())
 
 
 @router.get("")

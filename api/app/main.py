@@ -26,6 +26,14 @@ async def lifespan(app: FastAPI):
     from app.services.event_retention import retention_loop
 
     init_db()
+    # Migrate any legacy filesystem server state (the per-node `server-data`
+    # volume) into Postgres. Idempotent + best-effort: never block startup.
+    try:
+        from app.services.spec_import import import_filesystem_specs
+
+        import_filesystem_specs()
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("Filesystem spec import failed")
     _seed_admin_if_needed()
     _check_docker_reachable()
     # Prune expired request_events on a schedule. Runs in every worker but is
