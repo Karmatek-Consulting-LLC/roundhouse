@@ -141,9 +141,40 @@ services:
       - MCP_BASE_URL=https://${PUBLIC_HOSTNAME}
     networks:
       - roundhouse-network
+    # Readiness gate for zero-downtime rolling deploys: a 200 from /api/health
+    # means uvicorn is up AND the lifespan startup (incl. alembic upgrade) has
+    # finished. python is in the image, so no extra deps. start_period covers
+    # boot + migrations so a slow start isn't flagged unhealthy.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 4s
+      retries: 3
+      start_period: 45s
     # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     deploy:
+      # Single instance until specs/assets move off the per-node `server-data`
+      # volume into Postgres (Phase 2). Until then platform-api MUST stay on the
+      # one node that holds that volume, or a start-first rollout could schedule
+      # the new task on an empty node, pass /api/health, and replace the good
+      # task with a blank inventory. Pin by labelling that node:
+      #   docker node update --label-add roundhouse_data=true <node>
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.roundhouse_data == true
+      # Start the replacement task and wait for its healthcheck to pass BEFORE
+      # stopping the old one, so the UI never goes dark during a deploy. Roll
+      # back automatically if the new task never becomes healthy.
+      update_config:
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+        delay: 5s
+      rollback_config:
+        order: start-first
+        failure_action: pause
       labels:
         - "traefik.enable=true"
         # Traefik v3 Swarm provider uses traefik.swarm.network (not traefik.docker.network).
