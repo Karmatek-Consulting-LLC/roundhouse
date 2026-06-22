@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
 import { TurntableEmpty } from "@/components/turntable-empty";
+import { CopyButton } from "@/components/copy-button";
 import { Search, X } from "lucide-react";
 
 interface ServerTableProps {
@@ -166,9 +167,12 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
                 <StatusBadge status={s.status} />
               </TableCell>
               <TableCell className="min-w-0">
-                <code className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-                  {s.url}
-                </code>
+                <div className="flex items-center gap-1.5">
+                  <code className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                    {s.url}
+                  </code>
+                  {s.url && <CopyButton value={s.url} title="Copy MCP URL" />}
+                </div>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-2">
