@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react";
 import { api, type Server } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -11,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
 import { TurntableEmpty } from "@/components/turntable-empty";
+import { Search, X } from "lucide-react";
 
 interface ServerTableProps {
   servers: Server[];
@@ -18,53 +27,30 @@ interface ServerTableProps {
   onSelect: (name: string) => void;
 }
 
-// Relocated from the old Dashboard: aggregate server inventory by owner. Lives
-// here next to the per-server Owner column it summarizes.
-function ServersByOwner({ servers }: { servers: Server[] }) {
-  const owners = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const s of servers) {
-      const o = s.owner_email ?? "—";
-      counts[o] = (counts[o] ?? 0) + 1;
-    }
-    return Object.entries(counts)
-      .map(([owner, value]) => ({ owner, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8);
-  }, [servers]);
-
-  if (owners.length < 2) return null;
-  const max = Math.max(1, ...owners.map((o) => o.value));
-
-  return (
-    <div className="rounded-lg border p-4">
-      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Servers by owner
-      </h3>
-      <div className="flex flex-col gap-1.5">
-        {owners.map((o) => (
-          <div key={o.owner} className="flex items-center gap-2 text-xs">
-            <div className="relative min-w-0 flex-1">
-              <div
-                className="absolute inset-y-0 left-0 rounded-sm opacity-15"
-                style={{ width: `${(o.value / max) * 100}%`, background: "var(--chart-2)" }}
-              />
-              <span className="relative block truncate px-1.5 py-1 font-mono" title={o.owner}>
-                {o.owner}
-              </span>
-            </div>
-            <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-              {o.value}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+const ALL_OWNERS = "__all__";
 
 export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [owner, setOwner] = useState<string>(ALL_OWNERS);
+
+  // Distinct owners for the dropdown, sorted; only worth showing when >1.
+  const owners = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of servers) set.add(s.owner_email ?? "—");
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [servers]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return servers.filter((s) => {
+      const ownerEmail = s.owner_email ?? "—";
+      if (owner !== ALL_OWNERS && ownerEmail !== owner) return false;
+      if (q && !s.name.toLowerCase().includes(q) && !ownerEmail.toLowerCase().includes(q))
+        return false;
+      return true;
+    });
+  }, [servers, query, owner]);
 
   async function handleAction(name: string, action: () => Promise<unknown>) {
     setBusy(name);
@@ -84,9 +70,52 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
     );
   }
 
+  const hasFilter = query.trim() !== "" || owner !== ALL_OWNERS;
+
   return (
     <div className="space-y-4">
-      <ServersByOwner servers={servers} />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[16rem] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by server name or owner…"
+            className="pl-8"
+          />
+        </div>
+        {owners.length > 1 && (
+          <Select value={owner} onValueChange={setOwner}>
+            <SelectTrigger className="w-[14rem]">
+              <SelectValue placeholder="All owners" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_OWNERS}>All owners</SelectItem>
+              {owners.map((o) => (
+                <SelectItem key={o} value={o}>
+                  {o}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {hasFilter && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setQuery("");
+              setOwner(ALL_OWNERS);
+            }}
+          >
+            <X className="mr-1 h-3.5 w-3.5" /> Clear
+          </Button>
+        )}
+        <span className="ml-auto font-mono text-xs text-muted-foreground tabular-nums">
+          {hasFilter ? `${filtered.length} of ${servers.length}` : `${servers.length}`} server
+          {servers.length === 1 ? "" : "s"}
+        </span>
+      </div>
       <div className="w-full min-w-0 rounded-lg border">
         <Table>
         <TableHeader>
@@ -101,7 +130,14 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
           </TableRow>
         </TableHeader>
         <TableBody>
-          {servers.map((s) => (
+          {filtered.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                No servers match this filter.
+              </TableCell>
+            </TableRow>
+          )}
+          {filtered.map((s) => (
             <TableRow key={s.name}>
               <TableCell>
                 <button
