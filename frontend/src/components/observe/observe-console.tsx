@@ -6,6 +6,7 @@ import { KpiTiles } from "./kpi-tiles";
 import { TrafficChart, LatencyChart, ErrorRateChart, KindDonut } from "./charts";
 import { LiveFeed } from "./live-feed";
 import { BreakdownPanels } from "./breakdown-panels";
+import { FleetStatusCard } from "./fleet-status-card";
 
 const RANGE_SECONDS: Record<ObsRange, number> = {
   "5m": 300,
@@ -20,12 +21,15 @@ export function ObserveConsole({
   server,
   servers = [],
   compact = false,
+  showFleet = false,
 }: {
   /** When set, the whole console is scoped to one server (drilldown). */
   server?: string;
   servers?: Server[];
   /** Hide the page title (e.g. when embedded in the server editor). */
   compact?: boolean;
+  /** Show the fleet-status widget (the unified landing dashboard). */
+  showFleet?: boolean;
 }) {
   // Internal server filter only meaningful for the global console.
   const [filter, setFilter] = useState<string | undefined>(server);
@@ -51,10 +55,20 @@ export function ObserveConsole({
         {!compact && (
           <div>
             <h1 className="font-display text-3xl font-extrabold uppercase tracking-[0.08em]">
-              Obser<span className="text-primary">ve</span>
+              {showFleet ? (
+                <>
+                  Over<span className="text-primary">view</span>
+                </>
+              ) : (
+                <>
+                  Obser<span className="text-primary">ve</span>
+                </>
+              )}
             </h1>
             <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              Realtime MCP traffic console
+              {showFleet
+                ? "Realtime MCP traffic & fleet health"
+                : "Realtime MCP traffic console"}
             </p>
           </div>
         )}
@@ -101,6 +115,8 @@ export function ObserveConsole({
         <KindDonut data={data} />
         <BreakdownPanels range={range} server={effectiveServer} className="lg:col-span-2" />
       </div>
+
+      {showFleet && <FleetStatusCard servers={servers} />}
     </div>
   );
 }

@@ -1348,7 +1348,7 @@ function UsageRail({ serverName, server }: { serverName: string; server: Server 
           <RefreshCw className="mr-1 h-3 w-3" /> Refresh
         </Button>
         <Button asChild size="sm" variant="outline">
-          <Link to={`/observe?server=${encodeURIComponent(serverName)}`}>
+          <Link to={`/?server=${encodeURIComponent(serverName)}`}>
             <Activity className="mr-1 h-3 w-3" /> Live console
           </Link>
         </Button>

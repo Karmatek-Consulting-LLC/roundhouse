@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api, type Server } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +16,51 @@ interface ServerTableProps {
   servers: Server[];
   onRefresh: () => void;
   onSelect: (name: string) => void;
+}
+
+// Relocated from the old Dashboard: aggregate server inventory by owner. Lives
+// here next to the per-server Owner column it summarizes.
+function ServersByOwner({ servers }: { servers: Server[] }) {
+  const owners = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of servers) {
+      const o = s.owner_email ?? "—";
+      counts[o] = (counts[o] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([owner, value]) => ({ owner, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+  }, [servers]);
+
+  if (owners.length < 2) return null;
+  const max = Math.max(1, ...owners.map((o) => o.value));
+
+  return (
+    <div className="rounded-lg border p-4">
+      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Servers by owner
+      </h3>
+      <div className="flex flex-col gap-1.5">
+        {owners.map((o) => (
+          <div key={o.owner} className="flex items-center gap-2 text-xs">
+            <div className="relative min-w-0 flex-1">
+              <div
+                className="absolute inset-y-0 left-0 rounded-sm opacity-15"
+                style={{ width: `${(o.value / max) * 100}%`, background: "var(--chart-2)" }}
+              />
+              <span className="relative block truncate px-1.5 py-1 font-mono" title={o.owner}>
+                {o.owner}
+              </span>
+            </div>
+            <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+              {o.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) {
@@ -40,8 +85,10 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
   }
 
   return (
-    <div className="w-full min-w-0 rounded-lg border">
-      <Table>
+    <div className="space-y-4">
+      <ServersByOwner servers={servers} />
+      <div className="w-full min-w-0 rounded-lg border">
+        <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
@@ -131,7 +178,8 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
             </TableRow>
           ))}
         </TableBody>
-      </Table>
+        </Table>
+      </div>
     </div>
   );
 }
