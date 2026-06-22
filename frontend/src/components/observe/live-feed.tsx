@@ -94,7 +94,7 @@ export function LiveFeed({ server, className }: { server?: string; className?: s
           </Button>
         </div>
       </div>
-      <div className="min-h-[300px] flex-1 divide-y divide-border/40 overflow-y-auto max-h-[68vh]">
+      <div className="min-h-0 flex-1 divide-y divide-border/40 overflow-y-auto">
         {visible.length === 0 ? (
           <div className="flex h-[300px] flex-col items-center justify-center gap-1 text-center text-xs text-muted-foreground">
             <span>Idle on the turntable.</span>
