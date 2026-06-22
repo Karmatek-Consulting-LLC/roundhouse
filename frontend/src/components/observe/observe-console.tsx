@@ -106,8 +106,11 @@ export function ObserveConsole({
             <ErrorRateChart data={data} />
           </div>
         </div>
-        <div className="xl:col-span-5">
-          <LiveFeed server={effectiveServer} className="h-full" />
+        {/* On xl the cell stretches to the left column's height; the feed fills
+            it absolutely so its list scrolls internally instead of growing the
+            whole grid. On smaller screens it stacks with a bounded height. */}
+        <div className="relative min-h-[480px] xl:col-span-5">
+          <LiveFeed server={effectiveServer} className="absolute inset-0" />
         </div>
       </div>
 
