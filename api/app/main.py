@@ -29,9 +29,9 @@ async def lifespan(app: FastAPI):
     # Migrate any legacy filesystem server state (the per-node `server-data`
     # volume) into Postgres. Idempotent + best-effort: never block startup.
     try:
-        from app.services.spec_import import import_filesystem_specs
+        from app.services.spec_import import import_on_startup
 
-        import_filesystem_specs()
+        import_on_startup()
     except Exception:  # noqa: BLE001
         logging.getLogger(__name__).exception("Filesystem spec import failed")
     _seed_admin_if_needed()

@@ -18,8 +18,10 @@ import json
 import logging
 from pathlib import Path
 
+from sqlalchemy import text
+
 from app.config import servers_dir
-from app.db import db_session
+from app.db import IMPORT_LOCK_KEY, _engine, db_session
 from app.models import Server, ServerAsset
 from app.services.build_context import snapshot_dir
 from app.services.spec import ServerSpec
@@ -97,6 +99,24 @@ def import_filesystem_specs(base: Path | str | None = None) -> dict:
             summary,
         )
     return summary
+
+
+def import_on_startup() -> dict:
+    """Startup entrypoint: single-flight the import across the 2 uvicorn workers
+    with a Postgres try-lock so only one worker imports (the other no-ops). The
+    import is idempotent regardless, so the lock just avoids duplicate-insert
+    races and wasted work."""
+    if _engine.dialect.name != "postgresql":
+        return import_filesystem_specs()
+    with db_session() as s:
+        got = s.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": IMPORT_LOCK_KEY}).scalar()
+        if not got:
+            logger.info("Spec import skipped: another worker holds the import lock")
+            return {"skipped_locked": True}
+        try:
+            return import_filesystem_specs()
+        finally:
+            s.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": IMPORT_LOCK_KEY})
 
 
 if __name__ == "__main__":  # pragma: no cover - manual CLI
