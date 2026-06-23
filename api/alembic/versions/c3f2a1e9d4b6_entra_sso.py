@@ -11,7 +11,7 @@ flow needs:
     read by the claim->grant engine. See docs/entra-sso-plan.md.
 
 Revision ID: c3f2a1e9d4b6
-Revises: b7e1c0a4d2f8
+Revises: c3d2f1a8e9b4
 Create Date: 2026-06-23 00:00:00.000000
 
 """
@@ -24,7 +24,9 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'c3f2a1e9d4b6'
-down_revision: Union[str, Sequence[str], None] = 'b7e1c0a4d2f8'
+# Chained after the rc.2 servers/assets migration (merged in) so the platform
+# has a single linear head; the lab already at c3d2f1a8e9b4 just applies this.
+down_revision: Union[str, Sequence[str], None] = 'c3d2f1a8e9b4'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
