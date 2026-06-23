@@ -44,12 +44,15 @@ def _display_name_from_claims(claims: dict, fallback: str) -> str:
     return str(claims.get("name") or fallback)
 
 
-def upsert_sso_user(db: Session, claims: dict) -> User:
+def upsert_sso_user(db: Session, claims: dict, *, link_local_by_email: bool = False) -> User:
     """Find or JIT-create the user behind these claims.
 
     Match order: oidc_sub (stable), then email. An email that already belongs to
-    a *local* account is refused rather than silently converted — that protects
-    the break-glass guarantee and prevents email-collision account takeover."""
+    a *local* account is, by default, refused rather than silently converted —
+    that protects the break-glass guarantee and prevents email-collision account
+    takeover. When `link_local_by_email` is on, such an account is instead
+    *adopted*: marked entra and given this sub, while keeping its password so it
+    can still serve as a local break-glass fallback."""
     sub = claims.get("sub")
     if not sub:
         raise SsoError("ID token has no subject (sub) claim")
@@ -67,11 +70,17 @@ def upsert_sso_user(db: Session, claims: dict) -> User:
     existing = db.query(User).filter(func.lower(User.email) == email).first()
     if existing is not None:
         if existing.auth_source != "entra":
-            raise SsoError(
-                f"An account for {email} already exists as a local user; "
-                "an administrator must migrate it before SSO can be used."
-            )
-        # An entra user whose sub changed (rare — app re-registration). Adopt it.
+            if not link_local_by_email:
+                raise SsoError(
+                    f"An account for {email} already exists as a local user; "
+                    "an administrator must migrate it before SSO can be used."
+                )
+            # Adopt the local account: keep its id/teams/ownership + password
+            # (break-glass), but authenticate it via Entra from now on.
+            existing.auth_source = "entra"
+            logger.info("Linked local account %s to Entra (sub=%s)", email, sub)
+        # An entra user whose sub changed (rare — app re-registration) or a
+        # freshly-linked local account: (re)bind the subject + refresh name.
         existing.oidc_sub = str(sub)
         existing.display_name = _display_name_from_claims(claims, existing.display_name)
         return existing

@@ -109,6 +109,34 @@ def test_email_collision_with_local_user_refused(db):
         upsert_sso_user(db, {"sub": "s2", "email": "dup@corp.com", "name": "X"})
 
 
+def test_link_local_account_when_enabled(db):
+    local = User(email="dup@corp.com", password_hash="keep-me", display_name="Local",
+                 role="superadmin", auth_source="local")
+    db.add(local)
+    db.flush()
+    local_id = local.id
+
+    user = upsert_sso_user(
+        db, {"sub": "s2", "email": "dup@corp.com", "name": "Now Entra"},
+        link_local_by_email=True,
+    )
+    # Same record adopted (id/teams/ownership preserved), now Entra-authenticated.
+    assert user.id == local_id
+    assert user.auth_source == "entra"
+    assert user.oidc_sub == "s2"
+    assert user.role == "superadmin"  # not provisioned fresh as "user"
+    assert user.password_hash == "keep-me"  # kept as break-glass fallback
+
+
+def test_link_disabled_by_default_still_refuses(db):
+    db.add(User(email="dup@corp.com", password_hash="x", display_name="Local",
+                role="user", auth_source="local"))
+    db.flush()
+    with pytest.raises(SsoError):
+        upsert_sso_user(db, {"sub": "s2", "email": "dup@corp.com", "name": "X"},
+                        link_local_by_email=False)
+
+
 def test_missing_email_refused(db):
     with pytest.raises(SsoError):
         upsert_sso_user(db, {"sub": "s3", "name": "No Email"})

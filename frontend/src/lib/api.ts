@@ -436,6 +436,8 @@ export interface SsoConfig {
   entra_client_secret_configured: boolean;
   /** Read-only: derived from the public base URL (PUBLIC_HOSTNAME). */
   entra_redirect_uri: string;
+  /** When true, a first SSO login adopts a matching local account by email. */
+  link_local_by_email: boolean;
   enabled: boolean;
 }
 
@@ -862,6 +864,7 @@ export const api = {
     entra_client_id: string;
     // Omit to keep the stored secret; "" clears it; any value replaces it.
     entra_client_secret?: string;
+    link_local_by_email?: boolean;
   }) =>
     request<SsoConfig>("/settings/sso", {
       method: "PUT",

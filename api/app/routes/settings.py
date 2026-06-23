@@ -136,6 +136,7 @@ def _sso_response(db: Session) -> dict:
         "entra_client_secret_configured": sso_config.secret_configured(db),
         # Read-only: derived from the public base URL. Register this on Entra.
         "entra_redirect_uri": cfg.redirect_uri,
+        "link_local_by_email": sso_config.link_local_enabled(db),
         "enabled": cfg.enabled,
     }
 
@@ -150,6 +151,8 @@ class SsoConfigIn(BaseModel):
     entra_client_id: str = ""
     # Write-only: omit/None keeps the stored secret, "" clears it, else replaces.
     entra_client_secret: str | None = None
+    # None leaves the toggle unchanged.
+    link_local_by_email: bool | None = None
 
 
 @router.put("/sso")
@@ -159,6 +162,7 @@ def update_sso(payload: SsoConfigIn, db: Session = Depends(get_db)):
         tenant_id=payload.entra_tenant_id,
         client_id=payload.entra_client_id,
         client_secret=payload.entra_client_secret,
+        link_local_by_email=payload.link_local_by_email,
     )
     db.flush()
     return _sso_response(db)

@@ -150,7 +150,9 @@ def oidc_callback(request: Request, db: Session = Depends(get_db)):
         return _login_error_redirect("Sign-in could not be verified")
 
     try:
-        user = upsert_sso_user(db, claims)
+        user = upsert_sso_user(
+            db, claims, link_local_by_email=sso_config.link_local_enabled(db)
+        )
         sync_grants(db, user, resolve_grants(db, claims))
         db.flush()
         token = issue_token(db, user, name="sso")

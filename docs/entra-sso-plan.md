@@ -70,6 +70,10 @@ Two **independent** auth systems exist today. Don't conflate them.
 - Local (`auth_source = local`) users exempt from sync — never wiped.
 - **Never let sync demote the last superadmin** — hard floor.
 
+### Existing-account migration (added 2026-06-23)
+- A first SSO login whose email matches an existing **local** account is **refused by default** (anti-takeover / break-glass protection).
+- Opt-in setting **"Link existing local accounts on first SSO login"** (`sso_link_local_by_email`, default off): when on, that account is **adopted** by email match — same user id/teams/server-ownership, `oidc_sub` bound, `auth_source` flipped to `entra`, and **password kept** so a dedicated local admin remains a break-glass fallback. Email match is safe in single-tenant Entra (the IdP owns the namespace).
+
 ### Build these as standalone, reusable modules (for Phase 2)
 - **OIDC client**: discovery + JWKS cache + token validation. Reused verbatim by MCP.
 - **Claim → grant mapping engine**: input = claims; output = grants. Dashboard wants `{role, teams}`; MCP will want `{scopes}`. Same engine, different output target.

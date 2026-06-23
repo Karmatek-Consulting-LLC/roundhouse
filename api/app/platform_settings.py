@@ -40,3 +40,6 @@ SETTING_GLOBAL_ENV_VARS = "mcp_global_env_vars"
 SETTING_ENTRA_TENANT_ID = "entra_tenant_id"
 SETTING_ENTRA_CLIENT_ID = "entra_client_id"
 SETTING_ENTRA_CLIENT_SECRET = "entra_client_secret"
+# When "true", a first SSO login whose email matches an existing LOCAL account
+# links to it (adopts the user) instead of refusing. Opt-in; default off.
+SETTING_SSO_LINK_LOCAL = "sso_link_local_by_email"

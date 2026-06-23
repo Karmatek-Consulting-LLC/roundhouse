@@ -72,6 +72,7 @@ export function SsoSettingsCard() {
   const [clientId, setClientId] = useState("");
   const [secret, setSecret] = useState("");
   const [clearSecret, setClearSecret] = useState(false);
+  const [linkLocal, setLinkLocal] = useState(false);
   const [savingConn, setSavingConn] = useState(false);
   const [connError, setConnError] = useState<string | null>(null);
 
@@ -86,6 +87,7 @@ export function SsoSettingsCard() {
     setConfig(cfg);
     setTenantId(cfg.entra_tenant_id);
     setClientId(cfg.entra_client_id);
+    setLinkLocal(cfg.link_local_by_email);
     setSecret("");
     setClearSecret(false);
   }, []);
@@ -113,9 +115,11 @@ export function SsoSettingsCard() {
         entra_tenant_id: string;
         entra_client_id: string;
         entra_client_secret?: string;
+        link_local_by_email: boolean;
       } = {
         entra_tenant_id: tenantId.trim(),
         entra_client_id: clientId.trim(),
+        link_local_by_email: linkLocal,
       };
       // Write-only secret: send the new value, or "" to clear; omit to keep.
       if (secret.length > 0) body.entra_client_secret = secret;
@@ -285,6 +289,23 @@ export function SsoSettingsCard() {
                     the redirect matches your public URL.
                   </p>
                 )}
+              </div>
+              <div className="grid gap-1.5">
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 accent-primary"
+                    checked={linkLocal}
+                    onChange={(e) => setLinkLocal(e.target.checked)}
+                  />
+                  <span>Link existing local accounts on first SSO login</span>
+                </label>
+                <p className="text-xs text-muted-foreground pl-6">
+                  When a user signs in with Microsoft and their email matches an
+                  existing local account, adopt that account (keeping its teams,
+                  server ownership, and password as a break-glass fallback) instead
+                  of refusing. Match is by email — safe in a single tenant.
+                </p>
               </div>
               {connError && <p className="text-sm text-destructive">{connError}</p>}
               <Button size="sm" onClick={handleSaveConnection} disabled={savingConn}>

@@ -27,6 +27,7 @@ from app.platform_settings import (
     SETTING_ENTRA_CLIENT_ID,
     SETTING_ENTRA_CLIENT_SECRET,
     SETTING_ENTRA_TENANT_ID,
+    SETTING_SSO_LINK_LOCAL,
     forget_setting,
     get_setting,
     put_setting,
@@ -90,17 +91,26 @@ def secret_configured(db: Session) -> bool:
     return bool((get_setting(db, SETTING_ENTRA_CLIENT_SECRET, "") or "").strip())
 
 
+def link_local_enabled(db: Session) -> bool:
+    """Whether a first SSO login may adopt an existing local account by email."""
+    return (get_setting(db, SETTING_SSO_LINK_LOCAL, "") or "") == "true"
+
+
 def save(
     db: Session,
     *,
     tenant_id: str,
     client_id: str,
     client_secret: str | None,
+    link_local_by_email: bool | None = None,
 ) -> None:
     """Persist connection settings. `client_secret` is write-only: None keeps the
-    stored value, "" clears it, any other value replaces it (encrypted)."""
+    stored value, "" clears it, any other value replaces it (encrypted).
+    `link_local_by_email` None leaves the toggle unchanged."""
     put_setting(db, SETTING_ENTRA_TENANT_ID, tenant_id.strip())
     put_setting(db, SETTING_ENTRA_CLIENT_ID, client_id.strip())
+    if link_local_by_email is not None:
+        put_setting(db, SETTING_SSO_LINK_LOCAL, "true" if link_local_by_email else "false")
     if client_secret is not None:
         if client_secret == "":
             forget_setting(db, SETTING_ENTRA_CLIENT_SECRET)
