@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { EnvVarsEditor } from "@/components/env-vars-editor";
+import { SsoMappingsCard } from "@/components/sso-settings";
 import type { EnvVar } from "@/lib/api";
 import {
   Select,
@@ -205,6 +206,8 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       </div>
 
       <h2 className="text-2xl font-semibold tracking-tight">Platform Settings</h2>
+
+      <SsoMappingsCard />
 
       <Card>
         <CardHeader>
