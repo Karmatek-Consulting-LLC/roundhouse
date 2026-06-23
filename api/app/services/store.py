@@ -1,54 +1,69 @@
-"""Filesystem persistence for ServerSpecs - one JSON file per server."""
+"""Postgres persistence for ServerSpecs.
+
+Replaces the old one-JSON-file-per-server layout on the `server-data` volume so
+platform-api carries no node-local state and can scale to multiple replicas.
+Each method opens its own short-lived session (the spec store was never
+transactional with the relational owner/scope/token writes — that separation is
+preserved), so the existing call sites keep their `store.save(spec)` /
+`store.load(name)` shape unchanged."""
 from __future__ import annotations
 
-import json
-import shutil
-from pathlib import Path
-
+from app.db import db_session
+from app.models import Server, ServerAsset
 from app.services.spec import ServerSpec
 
 
 class ServerStore:
-    def __init__(self, base_dir: Path | str):
-        self.base_dir = Path(base_dir)
-
-    def server_dir(self, name: str) -> Path:
-        return self.base_dir / name
-
-    def _spec_path(self, name: str) -> Path:
-        return self.server_dir(name) / "server.json"
-
     def save(self, spec: ServerSpec) -> None:
-        d = self.server_dir(spec.name)
-        d.mkdir(parents=True, exist_ok=True)
-        text = json.dumps(spec.to_dict(), indent=4, ensure_ascii=False)
-        self._spec_path(spec.name).write_text(text, encoding="utf-8")
+        data = spec.to_dict()
+        with db_session() as s:
+            row = s.get(Server, spec.name)
+            if row is None:
+                s.add(Server(name=spec.name, spec=data, mode=spec.mode))
+            else:
+                row.spec = data
+                row.mode = spec.mode
 
     def load(self, name: str) -> ServerSpec | None:
-        p = self._spec_path(name)
-        if not p.is_file():
-            return None
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
+        with db_session() as s:
+            row = s.get(Server, name)
+            if row is None:
+                return None
+            data = row.spec
         if not isinstance(data, dict):
             return None
         return ServerSpec.from_dict(data)
 
     def delete(self, name: str) -> None:
-        d = self.server_dir(name)
-        if d.is_dir():
-            shutil.rmtree(d, ignore_errors=True)
+        with db_session() as s:
+            row = s.get(Server, name)
+            if row is not None:
+                s.delete(row)
+            s.query(ServerAsset).filter(ServerAsset.server_name == name).delete()
 
     def list_all(self) -> list[ServerSpec]:
-        if not self.base_dir.is_dir():
-            return []
+        with db_session() as s:
+            rows = s.query(Server).order_by(Server.name).all()
+            specs = [r.spec for r in rows]
         out: list[ServerSpec] = []
-        for entry in sorted(self.base_dir.iterdir()):
-            if not entry.is_dir():
-                continue
-            spec = self.load(entry.name)
-            if spec is not None:
-                out.append(spec)
+        for data in specs:
+            if isinstance(data, dict):
+                out.append(ServerSpec.from_dict(data))
         return out
+
+    # ---- Build-context files (git clone / template render snapshots) ----
+
+    def get_build_files(self, name: str) -> bytes | None:
+        """The gzip tarball of non-regenerable build files for this server, or
+        None (structured/code/remote servers have none)."""
+        with db_session() as s:
+            row = s.get(Server, name)
+            return bytes(row.build_files) if row and row.build_files else None
+
+    def set_build_files(self, name: str, data: bytes | None) -> None:
+        """Attach (or clear) the build-files tarball for a server. The server
+        row must already exist (save() it first)."""
+        with db_session() as s:
+            row = s.get(Server, name)
+            if row is not None:
+                row.build_files = data

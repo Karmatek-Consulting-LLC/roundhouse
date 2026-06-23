@@ -25,6 +25,8 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -298,3 +300,55 @@ class RequestEvent(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Denormalized from `error` so error-rate filters are a clean indexed predicate.
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ok")  # ok | error
+
+
+class Server(Base):
+    """Authoritative per-server definition. Replaces the old per-node
+    `server.json` on the `server-data` Swarm volume so platform-api can scale
+    out (no node-local state). `spec` is the lossless ServerSpec.to_dict()
+    JSON; `build_files` is a gzip tarball of the non-regenerable build context
+    (cloned git repo / rendered template files) materialized into a temp dir
+    at build time. Generated server.py/Dockerfile are NOT stored — codegen
+    rewrites them each build."""
+
+    __tablename__ = "servers"
+
+    name: Mapped[str] = mapped_column(String(255), primary_key=True)
+    spec: Mapped[dict] = mapped_column(JSON, nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, default="structured")
+    build_files: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ServerAsset(Base):
+    """Per-server uploaded asset, baked into the spawned image at build time.
+    Moved off the per-node volume into Postgres alongside the spec. Bounded by
+    the app layer (10 MB/file, 100 MB/server) so bytea stays modest."""
+
+    __tablename__ = "server_assets"
+    __table_args__ = (
+        UniqueConstraint("server_name", "filename", name="server_assets_name_uq"),
+        Index("server_assets_server_index", "server_name"),
+    )
+
+    # BigInteger on Postgres; INTEGER on SQLite so it aliases rowid and
+    # autoincrements (BIGINT does not) — keeps the model usable in tests.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    server_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

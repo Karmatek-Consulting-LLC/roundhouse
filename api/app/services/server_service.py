@@ -248,20 +248,18 @@ class ServerService:
     # ---- Deploy orchestration ----
 
     def save_spec(self, db: Session, spec: ServerSpec) -> None:
-        """Persist a spec change to disk + flag the server as needing a
-        redeploy. Does NOT touch Docker - users batch edits, then redeploy."""
+        """Persist a spec change + flag the server as needing a redeploy. Does
+        NOT touch Docker - users batch edits, then redeploy. The build context
+        is materialized from DB state at deploy time, so there is nothing to
+        stage here."""
         spec.tokens = server_auth.tokens_for_codegen(db, spec.name)
-        codegen.write_build_context(
-            spec, self.store.server_dir(spec.name), self.custom_ca_cert(db)
-        )
         self.store.save(spec)
         server_auth.mark_redeploy_required(db, spec.name)
 
     def build_and_deploy(self, db: Session, spec: ServerSpec) -> dict:
+        from app.services import build_context as buildctx
+
         spec.tokens = server_auth.tokens_for_codegen(db, spec.name)
-        build_context = codegen.write_build_context(
-            spec, self.store.server_dir(spec.name), self.custom_ca_cert(db)
-        )
         self.store.save(spec)
         env = self.effective_env(db, spec)
         # Leave a deploy-time trail so a missing env var is never a mystery: name
@@ -278,18 +276,19 @@ class ServerService:
             len(declared_secrets),
             f"; NOT applied: {dropped}" if dropped else "",
         )
-        result = self.docker.build_and_start(
-            server_name=spec.name,
-            build_context=build_context,
-            template_name="custom",
-            env_vars=env,
-            replicas=self.effective_replicas(spec),
-            registry_prefix=self.registry_prefix(db),
-            registry_auth=self.registry_auth(db),
-            cpu_limit=spec.cpu_limit,
-            memory_limit_mb=spec.memory_limit_mb,
-            route_port=codegen.route_port_for(spec),
-        )
+        with buildctx.materialize(spec, self.store, self.custom_ca_cert(db)) as ctx:
+            result = self.docker.build_and_start(
+                server_name=spec.name,
+                build_context=ctx,
+                template_name="custom",
+                env_vars=env,
+                replicas=self.effective_replicas(spec),
+                registry_prefix=self.registry_prefix(db),
+                registry_auth=self.registry_auth(db),
+                cpu_limit=spec.cpu_limit,
+                memory_limit_mb=spec.memory_limit_mb,
+                route_port=codegen.route_port_for(spec),
+            )
         server_auth.clear_redeploy_required(db, spec.name)
         return result
 
@@ -324,10 +323,10 @@ _singleton: ServerService | None = None
 def get_server_service() -> ServerService:
     global _singleton
     if _singleton is None:
-        from app.config import servers_dir, templates_dir
+        from app.config import templates_dir
         from app.services.docker import get_docker
 
-        store = ServerStore(servers_dir())
-        templates = TemplateEngine(templates_dir(), servers_dir())
+        store = ServerStore()
+        templates = TemplateEngine(templates_dir())
         _singleton = ServerService(get_docker(), store, templates)
     return _singleton
