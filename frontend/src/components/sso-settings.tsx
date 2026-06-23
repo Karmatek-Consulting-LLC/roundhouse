@@ -36,34 +36,30 @@ import {
 } from "@/components/ui/table";
 import { Pencil, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 
-// Radix Select forbids an empty-string item value, so represent "no team" with
-// a sentinel and translate at the API boundary.
-const NO_TEAM = "__none__";
-
-type FormState = {
+type TeamForm = {
   entra_app_role: string;
-  roundhouse_role: "user" | "superadmin";
   team_id: string;
   team_role: "admin" | "member";
 };
 
-const EMPTY_FORM: FormState = {
-  entra_app_role: "",
-  roundhouse_role: "user",
-  team_id: NO_TEAM,
-  team_role: "member",
-};
+const parseRoles = (s: string): string[] =>
+  s.split(",").map((x) => x.trim()).filter(Boolean);
+
+const joinRoles = (rows: RoleMapping[], role: "superadmin" | "user"): string =>
+  rows
+    .filter((m) => m.team_id === null && m.roundhouse_role === role)
+    .map((m) => m.entra_app_role)
+    .join(", ");
 
 /**
- * Platform Settings → Entra ID SSO. Two cards:
- *  - Connection: the OIDC connection settings (tenant/client/secret/redirect),
- *    stored in platform settings (NOT env). The secret is write-only.
- *  - Role mappings: Entra app role → Roundhouse grant table read on every login.
- * Superadmin-gated by the route that renders Settings.
+ * Platform Settings → Entra ID SSO. Cards:
+ *  - Connection: OIDC connection settings (tenant/client/secret), redirect URI
+ *    read-only, plus the link-local toggle.
+ *  - Built-in roles: which Entra app roles grant Super Admin / User.
+ *  - Team access: Entra app role → team membership grants.
  */
 export function SsoSettingsCard() {
   const [config, setConfig] = useState<SsoConfig | null>(null);
-  const [mappings, setMappings] = useState<RoleMapping[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -76,12 +72,23 @@ export function SsoSettingsCard() {
   const [savingConn, setSavingConn] = useState(false);
   const [connError, setConnError] = useState<string | null>(null);
 
-  // Mapping dialog
+  // Built-in role mappings (comma-separated Entra app roles per built-in role)
+  const [superAdminRoles, setSuperAdminRoles] = useState("");
+  const [userRoles, setUserRoles] = useState("");
+  const [savingRoles, setSavingRoles] = useState(false);
+  const [rolesError, setRolesError] = useState<string | null>(null);
+
+  // Team mappings (team_id != null rows)
+  const [teamMappings, setTeamMappings] = useState<RoleMapping[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<RoleMapping | null>(null);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [teamForm, setTeamForm] = useState<TeamForm>({
+    entra_app_role: "",
+    team_id: "",
+    team_role: "member",
+  });
+  const [savingTeam, setSavingTeam] = useState(false);
+  const [teamError, setTeamError] = useState<string | null>(null);
 
   const applyConfig = useCallback((cfg: SsoConfig) => {
     setConfig(cfg);
@@ -92,20 +99,34 @@ export function SsoSettingsCard() {
     setClearSecret(false);
   }, []);
 
-  const refresh = useCallback(async () => {
+  // Split the flat mapping list into the two UI sections.
+  const applyMappings = useCallback((rows: RoleMapping[], seedBuiltin: boolean) => {
+    setTeamMappings(rows.filter((m) => m.team_id !== null));
+    if (seedBuiltin) {
+      setSuperAdminRoles(joinRoles(rows, "superadmin"));
+      setUserRoles(joinRoles(rows, "user"));
+    }
+  }, []);
+
+  const loadAll = useCallback(async () => {
     const [cfg, rows, teamList] = await Promise.all([
       api.getSsoConfig(),
       api.listRoleMappings(),
       api.listTeams().catch(() => [] as Team[]),
     ]);
     applyConfig(cfg);
-    setMappings(rows);
     setTeams(teamList);
-  }, [applyConfig]);
+    applyMappings(rows, true);
+  }, [applyConfig, applyMappings]);
 
   useEffect(() => {
-    refresh().finally(() => setLoading(false));
-  }, [refresh]);
+    loadAll().finally(() => setLoading(false));
+  }, [loadAll]);
+
+  // Refresh only the team-mapping table (don't clobber unsaved built-in edits).
+  const reloadTeamMappings = useCallback(async () => {
+    applyMappings(await api.listRoleMappings(), false);
+  }, [applyMappings]);
 
   async function handleSaveConnection() {
     setConnError(null);
@@ -121,7 +142,6 @@ export function SsoSettingsCard() {
         entra_client_id: clientId.trim(),
         link_local_by_email: linkLocal,
       };
-      // Write-only secret: send the new value, or "" to clear; omit to keep.
       if (secret.length > 0) body.entra_client_secret = secret;
       else if (clearSecret) body.entra_client_secret = "";
       applyConfig(await api.updateSsoConfig(body));
@@ -132,53 +152,65 @@ export function SsoSettingsCard() {
     }
   }
 
-  function openCreate() {
-    setEditing(null);
-    setForm(EMPTY_FORM);
-    setError(null);
-    setDialogOpen(true);
-  }
-
-  function openEdit(m: RoleMapping) {
-    setEditing(m);
-    setForm({
-      entra_app_role: m.entra_app_role,
-      roundhouse_role: m.roundhouse_role,
-      team_id: m.team_id ?? NO_TEAM,
-      team_role: m.team_role,
-    });
-    setError(null);
-    setDialogOpen(true);
-  }
-
-  async function handleSaveMapping() {
-    setError(null);
-    setSaving(true);
+  async function handleSaveRoles() {
+    setRolesError(null);
+    setSavingRoles(true);
     try {
-      const body = {
-        entra_app_role: form.entra_app_role.trim(),
-        roundhouse_role: form.roundhouse_role,
-        team_id: form.team_id === NO_TEAM ? null : form.team_id,
-        team_role: form.team_role,
-      };
-      if (editing) {
-        await api.updateRoleMapping(editing.id, body);
-      } else {
-        await api.createRoleMapping(body);
-      }
-      setDialogOpen(false);
-      refresh();
+      const rows = await api.updateBuiltinRoleMappings({
+        superadmin: parseRoles(superAdminRoles),
+        user: parseRoles(userRoles),
+      });
+      applyMappings(rows, true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save mapping");
+      setRolesError(e instanceof Error ? e.message : "Failed to save role mappings");
     } finally {
-      setSaving(false);
+      setSavingRoles(false);
     }
   }
 
-  async function handleDelete(m: RoleMapping) {
-    if (!confirm(`Delete the mapping for "${m.entra_app_role}"?`)) return;
+  function openCreateTeam() {
+    setEditing(null);
+    setTeamForm({ entra_app_role: "", team_id: teams[0]?.id ?? "", team_role: "member" });
+    setTeamError(null);
+    setDialogOpen(true);
+  }
+
+  function openEditTeam(m: RoleMapping) {
+    setEditing(m);
+    setTeamForm({
+      entra_app_role: m.entra_app_role,
+      team_id: m.team_id ?? "",
+      team_role: m.team_role,
+    });
+    setTeamError(null);
+    setDialogOpen(true);
+  }
+
+  async function handleSaveTeamMapping() {
+    setTeamError(null);
+    setSavingTeam(true);
+    try {
+      const body = {
+        entra_app_role: teamForm.entra_app_role.trim(),
+        roundhouse_role: "user" as const, // team grants don't set a top-level role
+        team_id: teamForm.team_id,
+        team_role: teamForm.team_role,
+      };
+      if (editing) await api.updateRoleMapping(editing.id, body);
+      else await api.createRoleMapping(body);
+      setDialogOpen(false);
+      reloadTeamMappings();
+    } catch (e) {
+      setTeamError(e instanceof Error ? e.message : "Failed to save team mapping");
+    } finally {
+      setSavingTeam(false);
+    }
+  }
+
+  async function handleDeleteTeam(m: RoleMapping) {
+    if (!confirm(`Delete the team mapping for "${m.entra_app_role}"?`)) return;
     await api.deleteRoleMapping(m.id);
-    refresh();
+    reloadTeamMappings();
   }
 
   const teamName = (id: string | null) =>
@@ -203,7 +235,7 @@ export function SsoSettingsCard() {
             Connect a single-tenant Entra ID app so users can sign in with
             Microsoft. Register the redirect URI below on the Entra app, then
             paste the tenant ID, client ID, and a client secret. The secret is
-            encrypted at rest. SSO turns on once all four values are set.
+            encrypted at rest. SSO turns on once all values are set.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -319,29 +351,76 @@ export function SsoSettingsCard() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Role mappings</CardTitle>
+          <CardTitle>Built-in roles</CardTitle>
           <CardDescription>
-            Map Entra <strong>app roles</strong> (from the token's{" "}
-            <code className="rounded bg-muted px-1">roles</code> claim) to a
-            Roundhouse role and optional team. Applied on every SSO sign-in; Entra
-            is authoritative for SSO users. A user whose roles match no mapping
-            signs in with the lowest privilege (
-            <code className="rounded bg-muted px-1">user</code>).
+            Enter the Entra <strong>app roles</strong> (from the token's{" "}
+            <code className="rounded bg-muted px-1">roles</code> claim) that grant
+            each Roundhouse role. Comma-separate to map several. A user whose roles
+            match none signs in as <code className="rounded bg-muted px-1">User</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="role-superadmin">
+              Super Admin <span className="text-muted-foreground">— full platform control</span>
+            </Label>
+            <Input
+              id="role-superadmin"
+              value={superAdminRoles}
+              onChange={(e) => setSuperAdminRoles(e.target.value)}
+              placeholder="Roundhouse.Admins, Platform.Owners"
+              className="font-mono text-sm"
+              autoComplete="off"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="role-user">
+              User <span className="text-muted-foreground">— own + teammates' servers</span>
+            </Label>
+            <Input
+              id="role-user"
+              value={userRoles}
+              onChange={(e) => setUserRoles(e.target.value)}
+              placeholder="Roundhouse.Users"
+              className="font-mono text-sm"
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional — listing roles here is only needed if you want to restrict
+              sign-in later; unmatched users already default to User.
+            </p>
+          </div>
+          {rolesError && <p className="text-sm text-destructive">{rolesError}</p>}
+          <Button size="sm" onClick={handleSaveRoles} disabled={savingRoles}>
+            <Save className="mr-1 h-4 w-4" />
+            {savingRoles ? "Saving…" : "Save roles"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Team access</CardTitle>
+          <CardDescription>
+            Optionally grant team membership from an Entra app role. Each maps an
+            app role to a team and a team role (member or admin).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex justify-end">
-            <Button size="sm" onClick={openCreate}>
+            <Button size="sm" onClick={openCreateTeam} disabled={teams.length === 0}>
               <Plus className="mr-1 h-4 w-4" />
-              Add mapping
+              Add team mapping
             </Button>
           </div>
 
-          {loading ? (
-            <div className="py-8 text-center text-muted-foreground">Loading…</div>
-          ) : mappings.length === 0 ? (
+          {teams.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
-              No mappings yet. Add one to grant SSO users a role or team.
+              No teams exist yet. Create a team first to map app roles to it.
+            </div>
+          ) : teamMappings.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No team mappings yet.
             </div>
           ) : (
             <div className="rounded-lg border">
@@ -349,32 +428,22 @@ export function SsoSettingsCard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Entra app role</TableHead>
-                    <TableHead>Roundhouse role</TableHead>
                     <TableHead>Team</TableHead>
                     <TableHead>Team role</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mappings.map((m) => (
+                  {teamMappings.map((m) => (
                     <TableRow key={m.id}>
                       <TableCell className="font-mono text-sm">
                         {m.entra_app_role}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={
-                            m.roundhouse_role === "superadmin" ? "default" : "secondary"
-                          }
-                        >
-                          {m.roundhouse_role}
-                        </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {teamName(m.team_id)}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {m.team_id ? m.team_role : "—"}
+                        {m.team_role}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
@@ -382,8 +451,8 @@ export function SsoSettingsCard() {
                             variant="outline"
                             size="sm"
                             title="Edit mapping"
-                            aria-label={`Edit mapping ${m.entra_app_role}`}
-                            onClick={() => openEdit(m)}
+                            aria-label={`Edit team mapping ${m.entra_app_role}`}
+                            onClick={() => openEditTeam(m)}
                           >
                             <Pencil className="h-3 w-3" />
                           </Button>
@@ -391,8 +460,8 @@ export function SsoSettingsCard() {
                             variant="destructive"
                             size="sm"
                             title="Delete mapping"
-                            aria-label={`Delete mapping ${m.entra_app_role}`}
-                            onClick={() => handleDelete(m)}
+                            aria-label={`Delete team mapping ${m.entra_app_role}`}
+                            onClick={() => handleDeleteTeam(m)}
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -410,51 +479,35 @@ export function SsoSettingsCard() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit mapping" : "Add mapping"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit team mapping" : "Add team mapping"}
+            </DialogTitle>
             <DialogDescription>
-              Map an Entra app role to a Roundhouse grant.
+              Grant a team membership from an Entra app role.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label>Entra app role</Label>
               <Input
-                value={form.entra_app_role}
+                value={teamForm.entra_app_role}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, entra_app_role: e.target.value }))
+                  setTeamForm((f) => ({ ...f, entra_app_role: e.target.value }))
                 }
-                placeholder="Roundhouse.Admin"
+                placeholder="Roundhouse.TeamA"
                 className="font-mono text-sm"
               />
             </div>
             <div className="grid gap-2">
-              <Label>Roundhouse role</Label>
+              <Label>Team</Label>
               <Select
-                value={form.roundhouse_role}
-                onValueChange={(v) =>
-                  setForm((f) => ({ ...f, roundhouse_role: v as FormState["roundhouse_role"] }))
-                }
+                value={teamForm.team_id}
+                onValueChange={(v) => setTeamForm((f) => ({ ...f, team_id: v }))}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="superadmin">SuperAdmin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>Team (optional)</Label>
-              <Select
-                value={form.team_id}
-                onValueChange={(v) => setForm((f) => ({ ...f, team_id: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_TEAM}>No team</SelectItem>
                   {teams.map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.name}
@@ -463,33 +516,31 @@ export function SsoSettingsCard() {
                 </SelectContent>
               </Select>
             </div>
-            {form.team_id !== NO_TEAM && (
-              <div className="grid gap-2">
-                <Label>Team role</Label>
-                <Select
-                  value={form.team_role}
-                  onValueChange={(v) =>
-                    setForm((f) => ({ ...f, team_role: v as FormState["team_role"] }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            <div className="grid gap-2">
+              <Label>Team role</Label>
+              <Select
+                value={teamForm.team_role}
+                onValueChange={(v) =>
+                  setTeamForm((f) => ({ ...f, team_role: v as TeamForm["team_role"] }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {teamError && <p className="text-sm text-destructive">{teamError}</p>}
           </div>
           <DialogFooter>
             <Button
-              onClick={handleSaveMapping}
-              disabled={saving || !form.entra_app_role.trim()}
+              onClick={handleSaveTeamMapping}
+              disabled={savingTeam || !teamForm.entra_app_role.trim() || !teamForm.team_id}
             >
-              {saving ? "Saving…" : editing ? "Save changes" : "Add mapping"}
+              {savingTeam ? "Saving…" : editing ? "Save changes" : "Add mapping"}
             </Button>
           </DialogFooter>
         </DialogContent>

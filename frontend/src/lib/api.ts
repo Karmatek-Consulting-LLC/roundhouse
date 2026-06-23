@@ -873,6 +873,12 @@ export const api = {
 
   // SSO role mappings (superadmin only)
   listRoleMappings: () => request<RoleMapping[]>("/role-mappings"),
+  // Reconcile the built-in (team-less) role mappings to these Entra app-role lists.
+  updateBuiltinRoleMappings: (body: { superadmin: string[]; user: string[] }) =>
+    request<RoleMapping[]>("/role-mappings/builtin", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   createRoleMapping: (body: Omit<RoleMapping, "id">) =>
     request<RoleMapping>("/role-mappings", {
       method: "POST",

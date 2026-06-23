@@ -74,6 +74,70 @@ def store(payload: RoleMappingIn, db: Session = Depends(get_db)):
     return _to_api(m)
 
 
+class BuiltinMappingsIn(BaseModel):
+    """Entra app roles that grant each built-in top-level role. Each list maps a
+    set of Entra app roles -> that Roundhouse role (team_id NULL rows)."""
+
+    superadmin: list[str] = []
+    user: list[str] = []
+
+
+def _norm(values: list[str]) -> list[str]:
+    seen: dict[str, None] = {}
+    for v in values:
+        s = v.strip()
+        if s:
+            seen.setdefault(s, None)
+    return list(seen)
+
+
+@router.put("/builtin")
+def update_builtin(payload: BuiltinMappingsIn, db: Session = Depends(get_db)):
+    """Reconcile the built-in role mappings (team_id NULL rows) to exactly match
+    the given lists. Team mappings (team_id set) are left untouched."""
+    desired: dict[str, str] = {}
+    for role in _norm(payload.superadmin):
+        desired[role] = "superadmin"
+    for role in _norm(payload.user):
+        if role in desired:
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{role}' can't map to both Super Admin and User",
+            )
+        desired[role] = "user"
+
+    # An Entra app role is unique across ALL rows, so a value already used by a
+    # team mapping can't also be a built-in role mapping.
+    team_roles = {
+        m.entra_app_role
+        for m in db.query(RoleMapping).filter(RoleMapping.team_id.isnot(None)).all()
+    }
+    for role in desired:
+        if role in team_roles:
+            raise HTTPException(
+                status_code=409,
+                detail=f"'{role}' is mapped to a team; use a different app role "
+                "or remove the team mapping first",
+            )
+
+    existing = {
+        m.entra_app_role: m
+        for m in db.query(RoleMapping).filter(RoleMapping.team_id.is_(None)).all()
+    }
+    for app_role, m in existing.items():
+        if app_role not in desired:
+            db.delete(m)
+    for app_role, rh_role in desired.items():
+        m = existing.get(app_role)
+        if m is None:
+            db.add(RoleMapping(entra_app_role=app_role, roundhouse_role=rh_role, team_id=None))
+        elif m.roundhouse_role != rh_role:
+            m.roundhouse_role = rh_role
+    db.flush()
+    rows = db.query(RoleMapping).order_by(RoleMapping.entra_app_role).all()
+    return [_to_api(m) for m in rows]
+
+
 @router.put("/{mapping_id}")
 def update(mapping_id: int, payload: RoleMappingIn, db: Session = Depends(get_db)):
     m = _find(db, mapping_id)

@@ -131,7 +131,11 @@ class RoleMapping(Base):
         UniqueConstraint("entra_app_role", name="role_mappings_entra_app_role_unique"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # BigInteger on Postgres; INTEGER on SQLite so it aliases rowid and
+    # autoincrements (BIGINT does not) — keeps the model usable in tests.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     # The value as it appears in the Entra `roles` claim (app role value).
     entra_app_role: Mapped[str] = mapped_column(String(255), nullable=False)
     # Roundhouse top-level role to grant (e.g. "superadmin" | "user"). Required.
