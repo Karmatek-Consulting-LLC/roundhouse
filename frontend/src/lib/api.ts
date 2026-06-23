@@ -907,9 +907,7 @@ export const api = {
 
   // Settings
   getSettings: () => request<{
-    hostname: string;
-    /** True when public URLs use https:// (TLS terminated upstream). */
-    external_https: boolean;
+    /** Read-only: set at deploy time via MCP_BASE_URL / PUBLIC_HOSTNAME. */
     base_url: string;
     default_mcp_server_replicas: number;
     max_mcp_server_replicas: number;
@@ -945,15 +943,6 @@ export const api = {
     }>("/settings/docker-registry", {
       method: "PUT",
       body: JSON.stringify(body),
-    }),
-  updateHostname: (hostname: string, external_https: boolean) =>
-    request<{
-      hostname: string;
-      external_https: boolean;
-      base_url: string;
-    }>("/settings/hostname", {
-      method: "PUT",
-      body: JSON.stringify({ hostname, external_https }),
     }),
   getMcpEnvSettings: () => request<{ env_vars: EnvVar[] }>("/settings/mcp-env"),
   putMcpEnvSettings: (env_vars: EnvVar[]) =>

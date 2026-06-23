@@ -15,13 +15,6 @@ import {
 import { EnvVarsEditor } from "@/components/env-vars-editor";
 import { SsoSettingsCard } from "@/components/sso-settings";
 import type { EnvVar } from "@/lib/api";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ArrowLeft, Boxes, Container, Globe, KeyRound, Save, Shield, Trash2, Variable } from "lucide-react";
 
 interface PlatformSettingsProps {
@@ -29,10 +22,6 @@ interface PlatformSettingsProps {
 }
 
 export function PlatformSettings({ onBack }: PlatformSettingsProps) {
-  const [hostname, setHostname] = useState("");
-  const [savedHostname, setSavedHostname] = useState("");
-  const [scheme, setScheme] = useState<"http" | "https">("http");
-  const [savedScheme, setSavedScheme] = useState<"http" | "https">("http");
   const [baseUrl, setBaseUrl] = useState("");
   const [defaultReplicas, setDefaultReplicas] = useState<number | null>(null);
   const [maxReplicas, setMaxReplicas] = useState<number | null>(null);
@@ -54,18 +43,12 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
   const [savedGlobalEnvVars, setSavedGlobalEnvVars] = useState<EnvVar[]>([]);
   const [savingGlobalEnv, setSavingGlobalEnv] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [savingRegistry, setSavingRegistry] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const data = await api.getSettings();
-      setHostname(data.hostname);
-      setSavedHostname(data.hostname);
-      const initialScheme = data.external_https ? "https" : "http";
-      setScheme(initialScheme);
-      setSavedScheme(initialScheme);
       setBaseUrl(data.base_url);
       setDefaultReplicas(data.default_mcp_server_replicas);
       setMaxReplicas(data.max_mcp_server_replicas);
@@ -145,21 +128,6 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       setError(e instanceof Error ? e.message : "Failed to save global environment variables");
     } finally {
       setSavingGlobalEnv(false);
-    }
-  }
-
-  async function handleSaveHostname() {
-    setSaving(true);
-    setError(null);
-    try {
-      const data = await api.updateHostname(hostname, scheme === "https");
-      setSavedHostname(hostname);
-      setSavedScheme(scheme);
-      setBaseUrl(data.base_url);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -375,47 +343,31 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5" />
-            Hostname
+            Public URL
           </CardTitle>
           <CardDescription>
-            Public hostname and scheme used to build URLs for MCP servers. TLS
-            is terminated upstream of this stack; pick <code className="rounded bg-muted px-1">https</code>{" "}
-            when an external Traefik or cluster ingress fronts this app with a cert.
+            The public base URL the platform reports for MCP server URLs and the
+            SSO redirect. It's set at deploy time from{" "}
+            <code className="rounded bg-muted px-1">PUBLIC_HOSTNAME</code> (the same
+            value your ingress routes on), so it stays in sync with routing — and
+            is therefore read-only here. To change it, redeploy with a new{" "}
+            <code className="rounded bg-muted px-1">PUBLIC_HOSTNAME</code>.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select value={scheme} onValueChange={(v) => setScheme(v as "http" | "https")}>
-              <SelectTrigger className="w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="http">http</SelectItem>
-                <SelectItem value="https">https</SelectItem>
-              </SelectContent>
-            </Select>
-            <span className="text-muted-foreground">://</span>
-            <Input
-              placeholder="mcp.yourcompany.com"
-              value={hostname}
-              onChange={(e) => setHostname(e.target.value)}
-              className="max-w-md"
-            />
-            <Button
-              onClick={handleSaveHostname}
-              disabled={saving || (hostname === savedHostname && scheme === savedScheme)}
-              size="sm"
-            >
-              <Save className="mr-1 h-4 w-4" />
-              {saving ? "Saving..." : "Save"}
-            </Button>
-          </div>
+        <CardContent className="space-y-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span>Current base URL:</span>
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
               {baseUrl}
             </code>
           </div>
+          {baseUrl.includes("localhost") && (
+            <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+              The base URL is still localhost. Set{" "}
+              <code className="rounded bg-muted px-1">PUBLIC_HOSTNAME</code> at
+              deploy before sharing MCP server URLs or enabling SSO.
+            </div>
+          )}
         </CardContent>
       </Card>
 

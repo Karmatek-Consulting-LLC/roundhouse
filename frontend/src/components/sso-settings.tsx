@@ -286,6 +286,13 @@ export function SsoSettingsCard() {
                 <p className="text-xs text-muted-foreground">
                   Must exactly match a redirect URI registered on the Entra app.
                 </p>
+                {redirectUri.includes("localhost") && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    This points at localhost. Deploy with a real{" "}
+                    <code className="rounded bg-muted px-1">PUBLIC_HOSTNAME</code> so
+                    the redirect matches your public URL.
+                  </p>
+                )}
               </div>
               {connError && <p className="text-sm text-destructive">{connError}</p>}
               <Button size="sm" onClick={handleSaveConnection} disabled={savingConn}>

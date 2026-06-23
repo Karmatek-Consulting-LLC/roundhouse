@@ -5,7 +5,11 @@ metadata:
   labels:
     {{- include "roundhouse.labels" . | nindent 4 }}
 data:
+  {{- if .Values.baseUrl }}
+  # Optional. When unset, the app defaults to http://localhost:3080 and the
+  # admin sets the public hostname in the UI (Settings -> Hostname).
   MCP_BASE_URL: {{ .Values.baseUrl | quote }}
+  {{- end }}
   MCP_ORCHESTRATOR: kubernetes
   MCP_K8S_API_URL: https://kubernetes.default.svc
   MCP_K8S_NAMESPACE: {{ .Values.workloadsNamespace.name | quote }}

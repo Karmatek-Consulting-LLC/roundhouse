@@ -47,8 +47,11 @@ imageBuilder:
     ## Build timeout (seconds).
     timeoutSeconds: 600
 
-## External-facing URL the platform reports to MCP clients. Must match the host
-## the IngressRoute terminates on, e.g. "https://mcp.example.com".
+## External-facing URL the platform reports to MCP clients, e.g.
+## "https://mcp.example.com". OPTIONAL: leave empty to default to
+## http://localhost:3080 and set the hostname in the UI (Settings -> Hostname)
+## instead — a required first-run step. When set, must match the host the
+## IngressRoute terminates on.
 baseUrl: ""
 
 ## Initial admin account, created on first boot. Override before installing.

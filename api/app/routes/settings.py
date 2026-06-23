@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import ssl
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -16,8 +16,6 @@ from app.platform_settings import (
     SETTING_DOCKER_REGISTRY,
     SETTING_DOCKER_REGISTRY_PASSWORD,
     SETTING_DOCKER_REGISTRY_USERNAME,
-    SETTING_EXTERNAL_HTTPS,
-    SETTING_HOSTNAME,
     get_setting,
     put_setting,
 )
@@ -29,12 +27,12 @@ from app.services.spec import EnvVar
 router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_superadmin)])
 
 
-def _base_url(db: Session) -> str:
-    hostname = (get_setting(db, SETTING_HOSTNAME, "") or "").strip()
-    if not hostname:
-        return get_settings().mcp_base_url
-    scheme = "https" if get_setting(db, SETTING_EXTERNAL_HTTPS, "") == "true" else "http"
-    return f"{scheme}://{hostname}"
+def _base_url() -> str:
+    # Single source of truth: the public base URL is set at deploy time via
+    # MCP_BASE_URL (derived from PUBLIC_HOSTNAME, the same value Traefik routes
+    # on). It is read-only in the UI; changing it is a redeploy. Defaults to
+    # http://localhost:3080 when unset.
+    return get_settings().mcp_base_url
 
 
 def _registry_prefix(db: Session) -> str:
@@ -50,9 +48,9 @@ def _password_configured(db: Session) -> bool:
 def index(_: User = Depends(require_superadmin), db: Session = Depends(get_db)):
     cfg = get_settings()
     return {
-        "hostname": get_setting(db, SETTING_HOSTNAME, "") or "",
-        "external_https": get_setting(db, SETTING_EXTERNAL_HTTPS, "") == "true",
-        "base_url": _base_url(db),
+        # Read-only: the public base URL is set at deploy time (MCP_BASE_URL /
+        # PUBLIC_HOSTNAME), not editable from the UI.
+        "base_url": _base_url(),
         "default_mcp_server_replicas": cfg.mcp_default_server_replicas,
         "max_mcp_server_replicas": cfg.mcp_max_server_replicas,
         "orchestrator": get_docker().mode(),
@@ -66,24 +64,6 @@ def index(_: User = Depends(require_superadmin), db: Session = Depends(get_db)):
             (get_setting(db, SETTING_CUSTOM_CA_CERT, "") or "").strip()
         ),
         "custom_ca_cert_count": _count_certs(get_setting(db, SETTING_CUSTOM_CA_CERT, "") or ""),
-    }
-
-
-class HostnameIn(BaseModel):
-    hostname: str = Field(min_length=1)
-    external_https: bool | None = None
-
-
-@router.put("/hostname")
-def update_hostname(payload: HostnameIn, db: Session = Depends(get_db)):
-    hostname = payload.hostname.strip()
-    put_setting(db, SETTING_HOSTNAME, hostname)
-    if payload.external_https is not None:
-        put_setting(db, SETTING_EXTERNAL_HTTPS, "true" if payload.external_https else "false")
-    return {
-        "hostname": hostname,
-        "external_https": get_setting(db, SETTING_EXTERNAL_HTTPS, "") == "true",
-        "base_url": _base_url(db),
     }
 
 
@@ -147,10 +127,10 @@ def delete_custom_ca(db: Session = Depends(get_db)):
     return {"custom_ca_cert_configured": False}
 
 
-def _suggested_redirect_uri(db: Session) -> str:
+def _suggested_redirect_uri() -> str:
     # The callback the SPA's OIDC flow uses; offered as a default in the UI so it
     # matches what must be registered on the Entra app.
-    return f"{_base_url(db).rstrip('/')}/api/auth/oidc/callback"
+    return f"{_base_url().rstrip('/')}/api/auth/oidc/callback"
 
 
 @router.get("/sso")
@@ -162,7 +142,7 @@ def get_sso(db: Session = Depends(get_db)):
         # Never return the secret; only whether one is stored.
         "entra_client_secret_configured": sso_config.secret_configured(db),
         "entra_redirect_uri": cfg.redirect_uri,
-        "suggested_redirect_uri": _suggested_redirect_uri(db),
+        "suggested_redirect_uri": _suggested_redirect_uri(),
         "enabled": cfg.enabled,
     }
 
@@ -191,7 +171,7 @@ def update_sso(payload: SsoConfigIn, db: Session = Depends(get_db)):
         "entra_client_id": cfg.client_id,
         "entra_client_secret_configured": sso_config.secret_configured(db),
         "entra_redirect_uri": cfg.redirect_uri,
-        "suggested_redirect_uri": _suggested_redirect_uri(db),
+        "suggested_redirect_uri": _suggested_redirect_uri(),
         "enabled": cfg.enabled,
     }
 

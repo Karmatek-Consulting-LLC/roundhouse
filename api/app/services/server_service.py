@@ -12,8 +12,6 @@ from app.platform_settings import (
     SETTING_DOCKER_REGISTRY,
     SETTING_DOCKER_REGISTRY_PASSWORD,
     SETTING_DOCKER_REGISTRY_USERNAME,
-    SETTING_EXTERNAL_HTTPS,
-    SETTING_HOSTNAME,
     get_setting,
 )
 from app.services import codegen, global_env, server_auth
@@ -210,11 +208,10 @@ class ServerService:
         return {"username": username, "password": password}
 
     def base_url(self, db: Session) -> str:
-        hostname = (get_setting(db, SETTING_HOSTNAME, "") or "").strip()
-        if not hostname:
-            return get_settings().mcp_base_url
-        scheme = "https" if get_setting(db, SETTING_EXTERNAL_HTTPS, "") == "true" else "http"
-        return f"{scheme}://{hostname}"
+        # Single source of truth: the public base URL is the deploy-time
+        # MCP_BASE_URL (from PUBLIC_HOSTNAME), kept in lockstep with Traefik
+        # routing. `db` is accepted for call-site stability but unused.
+        return get_settings().mcp_base_url
 
     def metrics_url(self, server_name: str) -> str:
         """Internal URL the platform scrapes for a server's /metrics snapshot.

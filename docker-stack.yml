@@ -137,7 +137,11 @@ services:
       # Overlay network spawned MCP servers attach to. Must be the full
       # {stack}_-prefixed name; the prefix isn't knowable inside the container.
       - MCP_DOCKER_NETWORK=roundhouse_roundhouse-network
-      # Public URL clients reach the SPA at - must match the fronting Host() rule.
+      # Public base URL the app reports for MCP server URLs + the SSO redirect.
+      # Derived from the SAME PUBLIC_HOSTNAME that drives the Traefik Host() rule
+      # below, so the app's base URL and ingress routing can never diverge. This
+      # is the single source of truth — it is shown read-only in the UI and is
+      # changed by redeploying (which also updates routing), not from the UI.
       - MCP_BASE_URL=https://${PUBLIC_HOSTNAME}
     networks:
       - roundhouse-network
