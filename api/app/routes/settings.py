@@ -21,7 +21,7 @@ from app.platform_settings import (
     get_setting,
     put_setting,
 )
-from app.services import global_env
+from app.services import global_env, sso_config
 from app.services.docker import get_docker
 from app.services.server_service import get_server_service
 from app.services.spec import EnvVar
@@ -145,6 +145,55 @@ def update_custom_ca(payload: CustomCaIn, db: Session = Depends(get_db)):
 def delete_custom_ca(db: Session = Depends(get_db)):
     put_setting(db, SETTING_CUSTOM_CA_CERT, "")
     return {"custom_ca_cert_configured": False}
+
+
+def _suggested_redirect_uri(db: Session) -> str:
+    # The callback the SPA's OIDC flow uses; offered as a default in the UI so it
+    # matches what must be registered on the Entra app.
+    return f"{_base_url(db).rstrip('/')}/api/auth/oidc/callback"
+
+
+@router.get("/sso")
+def get_sso(db: Session = Depends(get_db)):
+    cfg = sso_config.load(db)
+    return {
+        "entra_tenant_id": cfg.tenant_id,
+        "entra_client_id": cfg.client_id,
+        # Never return the secret; only whether one is stored.
+        "entra_client_secret_configured": sso_config.secret_configured(db),
+        "entra_redirect_uri": cfg.redirect_uri,
+        "suggested_redirect_uri": _suggested_redirect_uri(db),
+        "enabled": cfg.enabled,
+    }
+
+
+class SsoConfigIn(BaseModel):
+    entra_tenant_id: str = ""
+    entra_client_id: str = ""
+    entra_redirect_uri: str = ""
+    # Write-only: omit/None keeps the stored secret, "" clears it, else replaces.
+    entra_client_secret: str | None = None
+
+
+@router.put("/sso")
+def update_sso(payload: SsoConfigIn, db: Session = Depends(get_db)):
+    sso_config.save(
+        db,
+        tenant_id=payload.entra_tenant_id,
+        client_id=payload.entra_client_id,
+        redirect_uri=payload.entra_redirect_uri,
+        client_secret=payload.entra_client_secret,
+    )
+    db.flush()
+    cfg = sso_config.load(db)
+    return {
+        "entra_tenant_id": cfg.tenant_id,
+        "entra_client_id": cfg.client_id,
+        "entra_client_secret_configured": sso_config.secret_configured(db),
+        "entra_redirect_uri": cfg.redirect_uri,
+        "suggested_redirect_uri": _suggested_redirect_uri(db),
+        "enabled": cfg.enabled,
+    }
 
 
 @router.get("/mcp-env")

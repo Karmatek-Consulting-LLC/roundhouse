@@ -429,6 +429,17 @@ export interface RoleMapping {
   team_role: "admin" | "member";
 }
 
+export interface SsoConfig {
+  entra_tenant_id: string;
+  entra_client_id: string;
+  /** The secret is never returned — only whether one is stored. */
+  entra_client_secret_configured: boolean;
+  entra_redirect_uri: string;
+  /** Default redirect URI derived from the platform hostname. */
+  suggested_redirect_uri: string;
+  enabled: boolean;
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;
@@ -844,6 +855,20 @@ export const api = {
     }),
   me: () => request<AuthUser>("/auth/me"),
   oidcStatus: () => request<{ enabled: boolean }>("/auth/oidc/status"),
+
+  // SSO connection config (superadmin only). Stored in platform settings, not env.
+  getSsoConfig: () => request<SsoConfig>("/settings/sso"),
+  updateSsoConfig: (body: {
+    entra_tenant_id: string;
+    entra_client_id: string;
+    entra_redirect_uri: string;
+    // Omit to keep the stored secret; "" clears it; any value replaces it.
+    entra_client_secret?: string;
+  }) =>
+    request<SsoConfig>("/settings/sso", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 
   // SSO role mappings (superadmin only)
   listRoleMappings: () => request<RoleMapping[]>("/role-mappings"),

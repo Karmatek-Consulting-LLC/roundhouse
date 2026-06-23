@@ -24,7 +24,7 @@ import httpx
 from authlib.jose import JsonWebKey, JsonWebToken
 from authlib.jose.errors import JoseError
 
-from app.config import Settings
+from app.services.sso_config import EntraConfig
 
 # Discovery + JWKS cache TTL. Short enough to follow rotation, long enough that
 # a burst of logins doesn't hammer the IdP.
@@ -77,13 +77,13 @@ class OidcClient:
     # ---------- construction ----------
 
     @classmethod
-    def from_settings(cls, settings: Settings) -> "OidcClient":
+    def from_entra_config(cls, cfg: EntraConfig) -> "OidcClient":
         return cls(
-            discovery_url=settings.entra_discovery_url,
-            issuer=settings.entra_issuer,
-            client_id=settings.entra_client_id,
-            client_secret=settings.entra_client_secret,
-            redirect_uri=settings.entra_redirect_uri,
+            discovery_url=cfg.discovery_url,
+            issuer=cfg.issuer,
+            client_id=cfg.client_id,
+            client_secret=cfg.client_secret,
+            redirect_uri=cfg.redirect_uri,
         )
 
     # ---------- discovery / jwks ----------
@@ -243,18 +243,13 @@ _client: OidcClient | None = None
 _client_key: tuple | None = None
 
 
-def get_client(settings: Settings) -> OidcClient:
-    """Return a cached client, rebuilding it if the relevant settings changed
-    (so a config reload / test monkeypatch is honoured without a restart)."""
+def get_client(cfg: EntraConfig) -> OidcClient:
+    """Return a cached client, rebuilding it if the connection config changed
+    (so a settings edit in the UI is honoured without a restart)."""
     global _client, _client_key
-    key = (
-        settings.entra_discovery_url,
-        settings.entra_client_id,
-        settings.entra_client_secret,
-        settings.entra_redirect_uri,
-    )
+    key = (cfg.discovery_url, cfg.client_id, cfg.client_secret, cfg.redirect_uri)
     if _client is None or _client_key != key:
-        _client = OidcClient.from_settings(settings)
+        _client = OidcClient.from_entra_config(cfg)
         _client_key = key
     return _client
 

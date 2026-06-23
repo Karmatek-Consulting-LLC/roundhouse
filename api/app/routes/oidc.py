@@ -28,10 +28,11 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.auth import issue_token
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.crypto import DecryptError, decrypt, encrypt
 from app.db import get_db
 from app.services import oidc as oidc_service
+from app.services import sso_config
 from app.services.claim_mapping import resolve_grants
 from app.services.oidc import OidcError
 from app.services.sso import SsoError, sync_grants, upsert_sso_user
@@ -45,6 +46,8 @@ router = APIRouter(prefix="/api/auth/oidc", tags=["auth"])
 _TX_COOKIE = "rh_oidc_tx"
 _TX_MAX_AGE_SECONDS = 600
 _COOKIE_PATH = "/api/auth/oidc"
+# SPA route the callback bounces to with the minted token in the URL fragment.
+_POST_LOGIN_REDIRECT = "/auth/callback"
 
 
 def _https(request: Request) -> bool:
@@ -64,21 +67,23 @@ def _login_error_redirect(message: str) -> RedirectResponse:
 
 
 @router.get("/status")
-def oidc_status(settings: Settings = Depends(get_settings)) -> dict:
-    return {"enabled": settings.oidc_enabled}
+def oidc_status(db: Session = Depends(get_db)) -> dict:
+    return {"enabled": sso_config.load(db).enabled}
 
 
 @router.get("/login")
-def oidc_login(request: Request, settings: Settings = Depends(get_settings)):
-    if not settings.oidc_enabled:
+def oidc_login(request: Request, db: Session = Depends(get_db)):
+    cfg = sso_config.load(db)
+    if not cfg.enabled:
         return _login_error_redirect("SSO is not configured")
-    if not settings.app_key:
+    app_key = get_settings().app_key
+    if not app_key:
         # We sign the transaction cookie with APP_KEY; refuse rather than fall
         # back to an unsigned (forgeable) state cookie.
         logger.error("OIDC login attempted but APP_KEY is not set")
         return _login_error_redirect("SSO is misconfigured (no APP_KEY)")
 
-    client = oidc_service.get_client(settings)
+    client = oidc_service.get_client(cfg)
     verifier = client.new_pkce_verifier()
     state = client.new_state()
     nonce = client.new_nonce()
@@ -92,7 +97,7 @@ def oidc_login(request: Request, settings: Settings = Depends(get_settings)):
 
     tx = encrypt(
         json.dumps({"state": state, "nonce": nonce, "verifier": verifier, "ts": int(time.time())}),
-        settings.app_key,
+        app_key,
     )
     resp = RedirectResponse(url=auth_url, status_code=302)
     resp.set_cookie(
@@ -108,12 +113,9 @@ def oidc_login(request: Request, settings: Settings = Depends(get_settings)):
 
 
 @router.get("/callback")
-def oidc_callback(
-    request: Request,
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-):
-    if not settings.oidc_enabled:
+def oidc_callback(request: Request, db: Session = Depends(get_db)):
+    cfg = sso_config.load(db)
+    if not cfg.enabled:
         return _login_error_redirect("SSO is not configured")
 
     params = request.query_params
@@ -127,7 +129,7 @@ def oidc_callback(
     if not code or not state:
         return _login_error_redirect("Malformed SSO response")
 
-    tx = _read_transaction(request, settings)
+    tx = _read_transaction(request, get_settings().app_key)
     if tx is None:
         return _login_error_redirect("SSO session expired; please try again")
     # State must match the value minted in /login (CSRF defense).
@@ -136,7 +138,7 @@ def oidc_callback(
     if not _secrets.compare_digest(str(tx.get("state", "")), state):
         return _login_error_redirect("SSO state mismatch; please try again")
 
-    client = oidc_service.get_client(settings)
+    client = oidc_service.get_client(cfg)
     try:
         tokens = client.exchange_code(code=code, code_verifier=tx["verifier"])
         id_token = tokens.get("id_token")
@@ -158,20 +160,20 @@ def oidc_callback(
 
     # Token rides back in the URL fragment: it is never sent to a server and
     # stays out of access logs / Referer headers. The SPA callback reads it.
-    target = f"{settings.oidc_post_login_redirect}#token={quote(token)}"
+    target = f"{_POST_LOGIN_REDIRECT}#token={quote(token)}"
     resp = RedirectResponse(url=target, status_code=302)
     resp.delete_cookie(_TX_COOKIE, path=_COOKIE_PATH)
     return resp
 
 
-def _read_transaction(request: Request, settings: Settings) -> dict | None:
+def _read_transaction(request: Request, app_key: str) -> dict | None:
     """Decrypt + validate the transaction cookie. None if absent, tampered, or
     older than the allowed round-trip window."""
     raw = request.cookies.get(_TX_COOKIE)
-    if not raw or not settings.app_key:
+    if not raw or not app_key:
         return None
     try:
-        payload = json.loads(decrypt(raw, settings.app_key))
+        payload = json.loads(decrypt(raw, app_key))
     except (DecryptError, ValueError):
         return None
     ts = payload.get("ts")

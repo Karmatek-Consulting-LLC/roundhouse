@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type RoleMapping, type Team } from "@/lib/api";
+import { api, type RoleMapping, type SsoConfig, type Team } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Pencil, Plus, Save, ShieldCheck, Trash2 } from "lucide-react";
 
 // Radix Select forbids an empty-string item value, so represent "no team" with
 // a sentinel and translate at the API boundary.
@@ -55,40 +55,83 @@ const EMPTY_FORM: FormState = {
 };
 
 /**
- * Manage the Entra app role -> Roundhouse grant mappings (the table the SSO
- * login flow reads on every sign-in). Self-contained card for the Platform
- * Settings page; superadmin-gated by the route that renders Settings.
+ * Platform Settings → Entra ID SSO. Two cards:
+ *  - Connection: the OIDC connection settings (tenant/client/secret/redirect),
+ *    stored in platform settings (NOT env). The secret is write-only.
+ *  - Role mappings: Entra app role → Roundhouse grant table read on every login.
+ * Superadmin-gated by the route that renders Settings.
  */
-export function SsoMappingsCard() {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
+export function SsoSettingsCard() {
+  const [config, setConfig] = useState<SsoConfig | null>(null);
   const [mappings, setMappings] = useState<RoleMapping[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Connection form
+  const [tenantId, setTenantId] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [redirectUri, setRedirectUri] = useState("");
+  const [secret, setSecret] = useState("");
+  const [clearSecret, setClearSecret] = useState(false);
+  const [savingConn, setSavingConn] = useState(false);
+  const [connError, setConnError] = useState<string | null>(null);
+
+  // Mapping dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<RoleMapping | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const [status, rows, teamList] = await Promise.all([
-        api.oidcStatus().catch(() => ({ enabled: false })),
-        api.listRoleMappings(),
-        api.listTeams().catch(() => [] as Team[]),
-      ]);
-      setEnabled(status.enabled);
-      setMappings(rows);
-      setTeams(teamList);
-    } finally {
-      setLoading(false);
-    }
+  const applyConfig = useCallback((cfg: SsoConfig) => {
+    setConfig(cfg);
+    setTenantId(cfg.entra_tenant_id);
+    setClientId(cfg.entra_client_id);
+    // Prefill the redirect URI suggestion when none is set yet.
+    setRedirectUri(cfg.entra_redirect_uri || cfg.suggested_redirect_uri);
+    setSecret("");
+    setClearSecret(false);
   }, []);
 
+  const refresh = useCallback(async () => {
+    const [cfg, rows, teamList] = await Promise.all([
+      api.getSsoConfig(),
+      api.listRoleMappings(),
+      api.listTeams().catch(() => [] as Team[]),
+    ]);
+    applyConfig(cfg);
+    setMappings(rows);
+    setTeams(teamList);
+  }, [applyConfig]);
+
   useEffect(() => {
-    refresh();
+    refresh().finally(() => setLoading(false));
   }, [refresh]);
+
+  async function handleSaveConnection() {
+    setConnError(null);
+    setSavingConn(true);
+    try {
+      const body: {
+        entra_tenant_id: string;
+        entra_client_id: string;
+        entra_redirect_uri: string;
+        entra_client_secret?: string;
+      } = {
+        entra_tenant_id: tenantId.trim(),
+        entra_client_id: clientId.trim(),
+        entra_redirect_uri: redirectUri.trim(),
+      };
+      // Write-only secret: send the new value, or "" to clear; omit to keep.
+      if (secret.length > 0) body.entra_client_secret = secret;
+      else if (clearSecret) body.entra_client_secret = "";
+      applyConfig(await api.updateSsoConfig(body));
+    } catch (e) {
+      setConnError(e instanceof Error ? e.message : "Failed to save SSO settings");
+    } finally {
+      setSavingConn(false);
+    }
+  }
 
   function openCreate() {
     setEditing(null);
@@ -109,7 +152,7 @@ export function SsoMappingsCard() {
     setDialogOpen(true);
   }
 
-  async function handleSave() {
+  async function handleSaveMapping() {
     setError(null);
     setSaving(true);
     try {
@@ -142,109 +185,207 @@ export function SsoMappingsCard() {
   const teamName = (id: string | null) =>
     id ? teams.find((t) => t.id === id)?.name ?? "(deleted team)" : "—";
 
+  const secretConfigured = config?.entra_client_secret_configured ?? false;
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5" />
-          Entra ID SSO
-          {enabled !== null && (
-            <Badge variant={enabled ? "default" : "secondary"}>
-              {enabled ? "Enabled" : "Not configured"}
-            </Badge>
-          )}
-        </CardTitle>
-        <CardDescription>
-          Map Entra <strong>app roles</strong> (from the token's{" "}
-          <code className="rounded bg-muted px-1">roles</code> claim) to a
-          Roundhouse role and optional team. These are applied on every SSO
-          sign-in; Entra is authoritative for SSO users. A user whose roles match
-          no mapping signs in with the lowest privilege (<code className="rounded bg-muted px-1">user</code>).
-          {enabled === false && (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5" />
+            Entra ID SSO
+            {config && (
+              <Badge variant={config.enabled ? "default" : "secondary"}>
+                {config.enabled ? "Enabled" : "Not configured"}
+              </Badge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            Connect a single-tenant Entra ID app so users can sign in with
+            Microsoft. Register the redirect URI below on the Entra app, then
+            paste the tenant ID, client ID, and a client secret. The secret is
+            encrypted at rest. SSO turns on once all four values are set.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loading ? (
+            <div className="py-8 text-center text-muted-foreground">Loading…</div>
+          ) : (
             <>
-              {" "}Mappings can be edited now and take effect once the{" "}
-              <code className="rounded bg-muted px-1">ENTRA_*</code> environment
-              variables are set.
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2 min-w-0">
+                  <Label htmlFor="entra-tenant">Tenant ID</Label>
+                  <Input
+                    id="entra-tenant"
+                    value={tenantId}
+                    onChange={(e) => setTenantId(e.target.value)}
+                    placeholder="00000000-0000-0000-0000-000000000000"
+                    className="font-mono text-sm"
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="grid gap-2 min-w-0">
+                  <Label htmlFor="entra-client">Client ID</Label>
+                  <Input
+                    id="entra-client"
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                    placeholder="00000000-0000-0000-0000-000000000000"
+                    className="font-mono text-sm"
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2 min-w-0">
+                <Label htmlFor="entra-secret">Client secret</Label>
+                <Input
+                  id="entra-secret"
+                  type="password"
+                  value={secret}
+                  onChange={(e) => {
+                    setSecret(e.target.value);
+                    if (e.target.value.length > 0) setClearSecret(false);
+                  }}
+                  placeholder={
+                    secretConfigured
+                      ? "Leave blank to keep saved secret"
+                      : "Entra app client secret value"
+                  }
+                  className="font-mono text-sm"
+                  autoComplete="new-password"
+                />
+                {secretConfigured && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-0 py-1 text-xs text-muted-foreground hover:text-destructive"
+                    onClick={() => {
+                      setClearSecret(true);
+                      setSecret("");
+                    }}
+                  >
+                    Clear saved secret
+                  </Button>
+                )}
+                {clearSecret && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Saved secret will be removed on save.
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-2 min-w-0">
+                <Label htmlFor="entra-redirect">Redirect URI</Label>
+                <Input
+                  id="entra-redirect"
+                  value={redirectUri}
+                  onChange={(e) => setRedirectUri(e.target.value)}
+                  className="font-mono text-sm"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Must exactly match a redirect URI registered on the Entra app.
+                </p>
+              </div>
+              {connError && <p className="text-sm text-destructive">{connError}</p>}
+              <Button size="sm" onClick={handleSaveConnection} disabled={savingConn}>
+                <Save className="mr-1 h-4 w-4" />
+                {savingConn ? "Saving…" : "Save connection"}
+              </Button>
             </>
           )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex justify-end">
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="mr-1 h-4 w-4" />
-            Add mapping
-          </Button>
-        </div>
+        </CardContent>
+      </Card>
 
-        {loading ? (
-          <div className="py-8 text-center text-muted-foreground">Loading…</div>
-        ) : mappings.length === 0 ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">
-            No mappings yet. Add one to grant SSO users a role or team.
+      <Card>
+        <CardHeader>
+          <CardTitle>Role mappings</CardTitle>
+          <CardDescription>
+            Map Entra <strong>app roles</strong> (from the token's{" "}
+            <code className="rounded bg-muted px-1">roles</code> claim) to a
+            Roundhouse role and optional team. Applied on every SSO sign-in; Entra
+            is authoritative for SSO users. A user whose roles match no mapping
+            signs in with the lowest privilege (
+            <code className="rounded bg-muted px-1">user</code>).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex justify-end">
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="mr-1 h-4 w-4" />
+              Add mapping
+            </Button>
           </div>
-        ) : (
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Entra app role</TableHead>
-                  <TableHead>Roundhouse role</TableHead>
-                  <TableHead>Team</TableHead>
-                  <TableHead>Team role</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {mappings.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="font-mono text-sm">
-                      {m.entra_app_role}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          m.roundhouse_role === "superadmin" ? "default" : "secondary"
-                        }
-                      >
-                        {m.roundhouse_role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {teamName(m.team_id)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {m.team_id ? m.team_role : "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          title="Edit mapping"
-                          aria-label={`Edit mapping ${m.entra_app_role}`}
-                          onClick={() => openEdit(m)}
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          title="Delete mapping"
-                          aria-label={`Delete mapping ${m.entra_app_role}`}
-                          onClick={() => handleDelete(m)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
+
+          {loading ? (
+            <div className="py-8 text-center text-muted-foreground">Loading…</div>
+          ) : mappings.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No mappings yet. Add one to grant SSO users a role or team.
+            </div>
+          ) : (
+            <div className="rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Entra app role</TableHead>
+                    <TableHead>Roundhouse role</TableHead>
+                    <TableHead>Team</TableHead>
+                    <TableHead>Team role</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
+                </TableHeader>
+                <TableBody>
+                  {mappings.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-mono text-sm">
+                        {m.entra_app_role}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            m.roundhouse_role === "superadmin" ? "default" : "secondary"
+                          }
+                        >
+                          {m.roundhouse_role}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {teamName(m.team_id)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {m.team_id ? m.team_role : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            title="Edit mapping"
+                            aria-label={`Edit mapping ${m.entra_app_role}`}
+                            onClick={() => openEdit(m)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            title="Delete mapping"
+                            aria-label={`Delete mapping ${m.entra_app_role}`}
+                            onClick={() => handleDelete(m)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -325,7 +466,7 @@ export function SsoMappingsCard() {
           </div>
           <DialogFooter>
             <Button
-              onClick={handleSave}
+              onClick={handleSaveMapping}
               disabled={saving || !form.entra_app_role.trim()}
             >
               {saving ? "Saving…" : editing ? "Save changes" : "Add mapping"}
@@ -333,6 +474,6 @@ export function SsoMappingsCard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }

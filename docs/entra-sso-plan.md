@@ -56,7 +56,7 @@ Two **independent** auth systems exist today. Don't conflate them.
 ### Backend
 - New endpoints: `GET /api/auth/oidc/login` (redirect to Entra) + `GET /api/auth/oidc/callback` (code exchange → validate ID token against Entra JWKS: verify `iss`/`aud`/`exp`/signature → upsert user → run mapping/sync → issue PAT).
 - Library: `authlib` or `msal`.
-- Config via env (pattern exists alongside `APP_KEY`): `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_REDIRECT_URI`.
+- **Connection config is dashboard-managed, NOT env** (decided 2026-06-23): tenant id, client id, client secret, redirect URI live in `platform_settings` (see `app/services/sso_config.py`, edited via Settings → Entra ID SSO). The client secret is encrypted at rest with the `app.crypto` AES envelope (keyed off `APP_KEY`). `APP_KEY` remains the only env var SSO needs (it also signs the login transaction cookie).
 
 ### Frontend
 - "Sign in with Microsoft" button → redirect; callback route stashes the returned token into the existing `AuthProvider`. Minimal change.
@@ -122,5 +122,5 @@ Single pre-registered app for Phase 1 dashboard SSO (no DCR needed here):
 3. Certificates & secrets → new client secret → copy the value.
 4. Token configuration / App roles → define app roles (e.g. `Roundhouse.Admin`, `Roundhouse.User`); these surface in the `roles` claim.
 5. Enterprise applications → assign users/groups to those app roles.
-6. Hand back: **Tenant ID**, **Client ID**, **Client secret** → set as `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, `ENTRA_REDIRECT_URI` env vars.
-7. In Roundhouse: create `role_mappings` rows (Settings → SSO) mapping each Entra app role to a Roundhouse role / team.
+6. Hand back: **Tenant ID**, **Client ID**, **Client secret** → enter them in Roundhouse under **Settings → Entra ID SSO → Connection** (not env vars). The page shows the exact redirect URI to register in step 2.
+7. In Roundhouse: add role mappings (Settings → Entra ID SSO → Role mappings) mapping each Entra app role to a Roundhouse role / team.

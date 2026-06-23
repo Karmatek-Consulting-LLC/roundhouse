@@ -30,20 +30,9 @@ class Settings(BaseSettings):
         default=1440, alias="AUTH_TOKEN_EXPIRATION_MINUTES"
     )
 
-    # ---- Entra ID SSO (OIDC) ----
-    # When tenant/client/secret are all set, "Sign in with Microsoft" turns on.
-    # Single-tenant: the discovery/issuer is scoped to this tenant id.
-    entra_tenant_id: str = Field(default="", alias="ENTRA_TENANT_ID")
-    entra_client_id: str = Field(default="", alias="ENTRA_CLIENT_ID")
-    entra_client_secret: str = Field(default="", alias="ENTRA_CLIENT_SECRET")
-    # Must exactly match a redirect URI registered on the Entra app, and point at
-    # this API's callback: https://<host>/api/auth/oidc/callback
-    entra_redirect_uri: str = Field(default="", alias="ENTRA_REDIRECT_URI")
-    # Where the callback sends the browser after minting the session token. The
-    # SPA is served same-origin, so a root-relative path is the sane default.
-    oidc_post_login_redirect: str = Field(
-        default="/auth/callback", alias="OIDC_POST_LOGIN_REDIRECT"
-    )
+    # Entra ID SSO (OIDC) connection settings are NOT here — they're configured
+    # in the dashboard and stored in platform_settings (see app.services.sso_config).
+    # APP_KEY (above) still encrypts the stored client secret + the login cookie.
 
     # Initial admin (seeded once on first run if no users exist).
     admin_email: str = Field(default="admin@mcp.local", alias="ADMIN_EMAIL")
@@ -119,31 +108,6 @@ class Settings(BaseSettings):
     # Jobs land on the same node as the api pod and can share the RWO PVC.
     node_name: str = Field(default="", alias="NODE_NAME")
     pod_namespace: str = Field(default="", alias="POD_NAMESPACE")
-
-    @property
-    def oidc_enabled(self) -> bool:
-        """True only when every Entra credential needed for the auth-code flow
-        is present. Drives whether the login UI shows the Microsoft button and
-        whether the OIDC routes accept requests."""
-        return bool(
-            self.entra_tenant_id
-            and self.entra_client_id
-            and self.entra_client_secret
-            and self.entra_redirect_uri
-        )
-
-    @property
-    def entra_discovery_url(self) -> str:
-        # v2.0 OIDC discovery document for the single tenant.
-        return (
-            f"https://login.microsoftonline.com/{self.entra_tenant_id}"
-            "/v2.0/.well-known/openid-configuration"
-        )
-
-    @property
-    def entra_issuer(self) -> str:
-        # Expected `iss` for single-tenant v2.0 tokens.
-        return f"https://login.microsoftonline.com/{self.entra_tenant_id}/v2.0"
 
     @property
     def docker_host(self) -> str:
