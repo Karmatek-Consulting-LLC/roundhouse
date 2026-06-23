@@ -18,6 +18,7 @@ import { ObserveConsole } from "@/components/observe/observe-console";
 import { ServerEdit } from "@/components/server-edit";
 import { CreateServerPage } from "@/components/create-server-page";
 import { LoginPage } from "@/components/login-page";
+import { AuthCallback } from "@/components/auth-callback";
 import { UserManagement } from "@/components/user-management";
 import { TeamManagement } from "@/components/team-management";
 import { PlatformSettings } from "@/components/platform-settings";
@@ -284,6 +285,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardRoute />} />

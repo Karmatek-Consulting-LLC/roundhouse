@@ -417,6 +417,16 @@ export interface AuthUser {
   email: string;
   display_name: string;
   role: string;
+  /** "local" (password / break-glass) or "entra" (SSO). Absent on older API. */
+  auth_source?: "local" | "entra";
+}
+
+export interface RoleMapping {
+  id: number;
+  entra_app_role: string;
+  roundhouse_role: "superadmin" | "user";
+  team_id: string | null;
+  team_role: "admin" | "member";
 }
 
 export interface TokenResponse {
@@ -465,6 +475,10 @@ export interface CreateServerRequest {
 }
 
 const BASE = "/api";
+
+// Full-page navigation target for "Sign in with Microsoft". This is a browser
+// redirect (the server bounces it to Entra), NOT a fetch, so it is a plain URL.
+export const OIDC_LOGIN_URL = `${BASE}/auth/oidc/login`;
 
 function formatApiErrorDetail(detail: unknown): string {
   if (typeof detail === "string") return detail;
@@ -829,6 +843,22 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<AuthUser>("/auth/me"),
+  oidcStatus: () => request<{ enabled: boolean }>("/auth/oidc/status"),
+
+  // SSO role mappings (superadmin only)
+  listRoleMappings: () => request<RoleMapping[]>("/role-mappings"),
+  createRoleMapping: (body: Omit<RoleMapping, "id">) =>
+    request<RoleMapping>("/role-mappings", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateRoleMapping: (id: number, body: Omit<RoleMapping, "id">) =>
+    request<RoleMapping>(`/role-mappings/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteRoleMapping: (id: number) =>
+    request<void>(`/role-mappings/${id}`, { method: "DELETE" }),
   register: (data: { email: string; password: string; display_name: string; role?: string }) =>
     request<AuthUser>("/auth/register", {
       method: "POST",

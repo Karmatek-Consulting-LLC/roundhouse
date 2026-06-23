@@ -20,6 +20,9 @@ interface AuthContextValue {
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /** Install a token obtained out-of-band (e.g. the SSO callback). The `me`
+   * effect then loads the user, same as a password login. */
+  applyToken: (token: string) => void;
   logout: () => void;
 }
 
@@ -54,6 +57,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user as AuthUser);
   }, []);
 
+  const applyToken = useCallback((newToken: string) => {
+    localStorage.setItem("token", newToken);
+    setLoading(true);
+    setToken(newToken);
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem("token");
     setToken(null);
@@ -72,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, applyToken, logout }}>
       {children}
     </AuthContext.Provider>
   );

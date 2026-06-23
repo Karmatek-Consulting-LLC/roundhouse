@@ -4,6 +4,7 @@ Tables:
   - users
   - teams
   - team_memberships
+  - role_mappings
   - server_owners
   - platform_settings
   - server_scopes
@@ -47,9 +48,17 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(PgUUID(as_uuid=False), primary_key=True, default=_uuid_str)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Nullable since the Entra SSO work: Entra-only users authenticate via OIDC
+    # and have no local password. Local (break-glass) users still set one.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
+    # How this user authenticates. "local" users are break-glass and exempt from
+    # SSO sync; "entra" users are re-synced from claims on every login.
+    auth_source: Mapped[str] = mapped_column(String(20), default="local", nullable=False)
+    # Entra `sub` (subject) claim — the stable per-user, per-app identifier we
+    # match on across logins. Unique when present, NULL for local users.
+    oidc_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -68,6 +77,7 @@ class User(Base):
             "email": self.email,
             "display_name": self.display_name,
             "role": self.role,
+            "auth_source": self.auth_source,
         }
 
 
@@ -103,6 +113,41 @@ class TeamMembership(Base):
 
     user: Mapped["User"] = relationship(back_populates="memberships")
     team: Mapped["Team"] = relationship(back_populates="memberships")
+
+
+class RoleMapping(Base):
+    """Entra app role -> Roundhouse grant. The claim->grant engine reads these
+    rows to translate an SSO user's `roles` claim into a Roundhouse role and
+    (optionally) a team membership. This is the authoritative, UI-editable
+    mapping table that replaces raw name-matching; see docs/entra-sso-plan.md.
+
+    A single Entra app role may produce both a top-level role and a team grant.
+    Phase 2 (MCP) will reuse the same table shape to emit scopes."""
+
+    __tablename__ = "role_mappings"
+    __table_args__ = (
+        UniqueConstraint("entra_app_role", name="role_mappings_entra_app_role_unique"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # The value as it appears in the Entra `roles` claim (app role value).
+    entra_app_role: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Roundhouse top-level role to grant (e.g. "superadmin" | "user"). Required.
+    roundhouse_role: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Optional team grant: when team_id is set, the user is added to that team
+    # with team_role (default "member") during sync.
+    team_id: Mapped[str | None] = mapped_column(
+        PgUUID(as_uuid=False),
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    team_role: Mapped[str] = mapped_column(String(20), default="member", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class ServerOwner(Base):

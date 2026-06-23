@@ -113,7 +113,9 @@ from app.routes import dashboard as dashboard_route  # noqa: E402
 from app.routes import ingest as ingest_route  # noqa: E402
 from app.routes import invoke as invoke_route  # noqa: E402
 from app.routes import observability as observability_route  # noqa: E402
+from app.routes import oidc as oidc_route  # noqa: E402
 from app.routes import pypi as pypi_route  # noqa: E402
+from app.routes import role_mappings as role_mappings_route  # noqa: E402
 from app.routes import servers as servers_route  # noqa: E402
 from app.routes import server_scopes as server_scopes_route  # noqa: E402
 from app.routes import server_tokens as server_tokens_route  # noqa: E402
@@ -124,6 +126,8 @@ from app.routes import users as users_route  # noqa: E402
 
 app.include_router(audit_route.router)
 app.include_router(auth_route.router)
+app.include_router(oidc_route.router)
+app.include_router(role_mappings_route.router)
 app.include_router(dashboard_route.router)
 app.include_router(observability_route.router)
 app.include_router(ingest_route.router)

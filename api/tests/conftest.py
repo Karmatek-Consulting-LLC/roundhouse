@@ -10,6 +10,11 @@ import os
 
 import pytest
 
+# Default the test suite to SQLite so importing app.db doesn't eagerly require
+# the Postgres driver. Set before any app module is imported (collection time).
+os.environ.setdefault("DB_CONNECTION", "sqlite")
+os.environ.setdefault("DB_DATABASE", ":memory:")
+
 
 @pytest.fixture(autouse=True)
 def _isolate_settings(monkeypatch):
