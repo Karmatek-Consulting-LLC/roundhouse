@@ -43,7 +43,6 @@ def _save(db, secret="s3cret"):
         db,
         tenant_id="tenant-1",
         client_id="client-1",
-        redirect_uri="https://app/api/auth/oidc/callback",
         client_secret=secret,
     )
     db.flush()
@@ -57,26 +56,34 @@ def test_secret_encrypted_at_rest_and_roundtrips(db):
     assert sso_config.load(db).client_secret == "s3cret"  # decrypts back
 
 
-def test_enabled_only_when_all_present(db):
+def test_enabled_only_when_credentials_present(db):
     _save(db)
     assert sso_config.load(db).enabled is True
-    # Clear the redirect URI -> no longer enabled.
-    sso_config.save(
-        db, tenant_id="tenant-1", client_id="client-1", redirect_uri="", client_secret=None
-    )
+    # Clear the client id -> no longer enabled.
+    sso_config.save(db, tenant_id="tenant-1", client_id="", client_secret=None)
     db.flush()
     assert sso_config.load(db).enabled is False
 
 
+def test_redirect_uri_derived_from_base_url(db):
+    # No MCP_BASE_URL set in tests -> localhost default.
+    assert sso_config.load(db).redirect_uri == "http://localhost:3080/api/auth/oidc/callback"
+
+
+def test_redirect_uri_tracks_configured_base_url(db, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("MCP_BASE_URL", "https://roundhouse.example.com")
+    get_settings.cache_clear()
+    assert (
+        sso_config.load(db).redirect_uri
+        == "https://roundhouse.example.com/api/auth/oidc/callback"
+    )
+
+
 def test_secret_none_keeps_existing(db):
     _save(db, secret="keepme")
-    sso_config.save(
-        db,
-        tenant_id="tenant-2",
-        client_id="client-2",
-        redirect_uri="https://app/api/auth/oidc/callback",
-        client_secret=None,
-    )
+    sso_config.save(db, tenant_id="tenant-2", client_id="client-2", client_secret=None)
     db.flush()
     cfg = sso_config.load(db)
     assert cfg.tenant_id == "tenant-2"
@@ -86,13 +93,7 @@ def test_secret_none_keeps_existing(db):
 
 def test_secret_empty_clears(db):
     _save(db, secret="dropme")
-    sso_config.save(
-        db,
-        tenant_id="tenant-1",
-        client_id="client-1",
-        redirect_uri="https://app/api/auth/oidc/callback",
-        client_secret="",
-    )
+    sso_config.save(db, tenant_id="tenant-1", client_id="client-1", client_secret="")
     db.flush()
     assert sso_config.secret_configured(db) is False
     assert sso_config.load(db).enabled is False

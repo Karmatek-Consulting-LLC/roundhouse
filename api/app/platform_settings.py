@@ -35,8 +35,8 @@ SETTING_CUSTOM_CA_CERT = "custom_ca_cert"
 SETTING_GLOBAL_ENV_VARS = "mcp_global_env_vars"
 
 # Entra ID SSO (OIDC) connection — configured in the UI, stored here (not env).
-# The client secret is encrypted at rest with the app.crypto AES envelope.
+# The client secret is encrypted at rest with the app.crypto AES envelope. The
+# redirect URI is NOT stored: it's derived from the public base URL.
 SETTING_ENTRA_TENANT_ID = "entra_tenant_id"
 SETTING_ENTRA_CLIENT_ID = "entra_client_id"
 SETTING_ENTRA_CLIENT_SECRET = "entra_client_secret"
-SETTING_ENTRA_REDIRECT_URI = "entra_redirect_uri"

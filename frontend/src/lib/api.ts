@@ -434,9 +434,8 @@ export interface SsoConfig {
   entra_client_id: string;
   /** The secret is never returned — only whether one is stored. */
   entra_client_secret_configured: boolean;
+  /** Read-only: derived from the public base URL (PUBLIC_HOSTNAME). */
   entra_redirect_uri: string;
-  /** Default redirect URI derived from the platform hostname. */
-  suggested_redirect_uri: string;
   enabled: boolean;
 }
 
@@ -861,7 +860,6 @@ export const api = {
   updateSsoConfig: (body: {
     entra_tenant_id: string;
     entra_client_id: string;
-    entra_redirect_uri: string;
     // Omit to keep the stored secret; "" clears it; any value replaces it.
     entra_client_secret?: string;
   }) =>

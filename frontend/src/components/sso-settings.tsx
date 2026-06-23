@@ -70,7 +70,6 @@ export function SsoSettingsCard() {
   // Connection form
   const [tenantId, setTenantId] = useState("");
   const [clientId, setClientId] = useState("");
-  const [redirectUri, setRedirectUri] = useState("");
   const [secret, setSecret] = useState("");
   const [clearSecret, setClearSecret] = useState(false);
   const [savingConn, setSavingConn] = useState(false);
@@ -87,8 +86,6 @@ export function SsoSettingsCard() {
     setConfig(cfg);
     setTenantId(cfg.entra_tenant_id);
     setClientId(cfg.entra_client_id);
-    // Prefill the redirect URI suggestion when none is set yet.
-    setRedirectUri(cfg.entra_redirect_uri || cfg.suggested_redirect_uri);
     setSecret("");
     setClearSecret(false);
   }, []);
@@ -115,12 +112,10 @@ export function SsoSettingsCard() {
       const body: {
         entra_tenant_id: string;
         entra_client_id: string;
-        entra_redirect_uri: string;
         entra_client_secret?: string;
       } = {
         entra_tenant_id: tenantId.trim(),
         entra_client_id: clientId.trim(),
-        entra_redirect_uri: redirectUri.trim(),
       };
       // Write-only secret: send the new value, or "" to clear; omit to keep.
       if (secret.length > 0) body.entra_client_secret = secret;
@@ -275,18 +270,15 @@ export function SsoSettingsCard() {
                 )}
               </div>
               <div className="grid gap-2 min-w-0">
-                <Label htmlFor="entra-redirect">Redirect URI</Label>
-                <Input
-                  id="entra-redirect"
-                  value={redirectUri}
-                  onChange={(e) => setRedirectUri(e.target.value)}
-                  className="font-mono text-sm"
-                  autoComplete="off"
-                />
+                <Label>Redirect URI</Label>
+                <code className="block rounded bg-muted px-2 py-1.5 text-sm font-mono break-all">
+                  {config?.entra_redirect_uri}
+                </code>
                 <p className="text-xs text-muted-foreground">
-                  Must exactly match a redirect URI registered on the Entra app.
+                  Read-only — derived from your public URL (PUBLIC_HOSTNAME).
+                  Register this exact value as a redirect URI on the Entra app.
                 </p>
-                {redirectUri.includes("localhost") && (
+                {config?.entra_redirect_uri.includes("localhost") && (
                   <p className="text-xs text-amber-700 dark:text-amber-400">
                     This points at localhost. Deploy with a real{" "}
                     <code className="rounded bg-muted px-1">PUBLIC_HOSTNAME</code> so
