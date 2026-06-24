@@ -65,6 +65,17 @@ def upsert_sso_user(db: Session, claims: dict, *, link_local_by_email: bool = Fa
         # Keep email/display_name fresh from the IdP.
         user.email = email
         user.display_name = _display_name_from_claims(claims, user.display_name)
+        if user.auth_source != "entra":
+            # Self-heal break-glass: a user an admin parked in "local" (while
+            # Entra was down/misconfigured/missing their role) returns to SSO
+            # governance automatically on their next successful Entra login — no
+            # admin flip needed. sync_grants (called right after) then re-applies
+            # their mapped role. This point is only reached once Entra actually
+            # grants a mapped role, because the callback runs resolve_grants
+            # first and denies sign-in otherwise — so a still-unmapped user stays
+            # on their local break-glass password instead of being promoted.
+            logger.info("Break-glass user %s re-promoted to Entra on SSO login", email)
+            user.auth_source = "entra"
         return user
 
     existing = db.query(User).filter(func.lower(User.email) == email).first()
@@ -99,9 +110,10 @@ def upsert_sso_user(db: Session, claims: dict, *, link_local_by_email: bool = Fa
     return user
 
 
-def _would_orphan_last_superadmin(db: Session, user: User, new_role: str) -> bool:
+def would_orphan_last_superadmin(db: Session, user: User, new_role: str) -> bool:
     """True if demoting `user` from superadmin to `new_role` would leave the
-    platform with zero superadmins."""
+    platform with zero superadmins. Shared by SSO sync (which silently refuses
+    the demotion) and the admin user-update route (which rejects it loudly)."""
     if user.role != "superadmin" or new_role == "superadmin":
         return False
     others = (
@@ -121,7 +133,7 @@ def sync_grants(db: Session, user: User, grants: Grants) -> None:
     if user.auth_source != "entra":
         return  # break-glass / local users are exempt from sync
 
-    if _would_orphan_last_superadmin(db, user, grants.role):
+    if would_orphan_last_superadmin(db, user, grants.role):
         logger.warning(
             "Refusing to demote last superadmin %s via SSO sync; keeping superadmin",
             user.email,

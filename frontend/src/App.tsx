@@ -174,10 +174,14 @@ function AppShell() {
                     <DropdownMenuSeparator />
                   </>
                 )}
-                <DropdownMenuItem onSelect={() => setChangePasswordOpen(true)}>
-                  <KeyRound className="mr-2 h-4 w-4" />
-                  Change password
-                </DropdownMenuItem>
+                {/* SSO (Entra) accounts are external: their password lives in
+                    Entra, not Roundhouse, so there's nothing to change here. */}
+                {user.auth_source !== "entra" && (
+                  <DropdownMenuItem onSelect={() => setChangePasswordOpen(true)}>
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    Change password
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={logout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign Out

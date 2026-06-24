@@ -904,6 +904,14 @@ export const api = {
 
   // Users
   listUsers: () => request<AuthUser[]>("/users"),
+  updateUser: (
+    userId: string,
+    data: { role?: "user" | "superadmin"; auth_source?: "local" | "entra" },
+  ) =>
+    request<AuthUser>(`/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   setUserPassword: (userId: string, new_password: string) =>
     request<void>(`/users/${userId}/password`, {
       method: "PUT",

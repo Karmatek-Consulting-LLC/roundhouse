@@ -13,6 +13,8 @@ export interface AuthUser {
   email: string;
   display_name: string;
   role: "superadmin" | "user";
+  /** "local" (password / break-glass) or "entra" (SSO). Absent on older API. */
+  auth_source?: "local" | "entra";
 }
 
 interface AuthContextValue {

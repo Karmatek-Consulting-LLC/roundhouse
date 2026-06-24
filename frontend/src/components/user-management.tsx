@@ -29,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SetUserPasswordDialog } from "@/components/change-password-dialog";
-import { ArrowLeft, KeyRound, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 
 interface UserManagementProps {
   onBack: () => void;
@@ -46,6 +46,7 @@ export function UserManagement({ onBack }: UserManagementProps) {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [passwordTarget, setPasswordTarget] = useState<AuthUser | null>(null);
+  const [editTarget, setEditTarget] = useState<AuthUser | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -148,6 +149,7 @@ export function UserManagement({ onBack }: UserManagementProps) {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -157,6 +159,11 @@ export function UserManagement({ onBack }: UserManagementProps) {
                 <TableRow key={u.id}>
                   <TableCell className="font-medium">{u.display_name}</TableCell>
                   <TableCell className="text-muted-foreground">{u.email}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">
+                      {u.auth_source === "entra" ? "SSO" : "Local"}
+                    </Badge>
+                  </TableCell>
                   <TableCell>
                     <Badge variant={u.role === "superadmin" ? "default" : "secondary"}>
                       {u.role}
@@ -168,12 +175,26 @@ export function UserManagement({ onBack }: UserManagementProps) {
                         type="button"
                         variant="outline"
                         size="sm"
-                        title="Set password"
-                        aria-label={`Set password for ${u.email}`}
-                        onClick={() => setPasswordTarget(u)}
+                        title="Edit user"
+                        aria-label={`Edit ${u.email}`}
+                        onClick={() => setEditTarget(u)}
                       >
-                        <KeyRound className="h-3 w-3" />
+                        <Pencil className="h-3 w-3" />
                       </Button>
+                      {/* SSO users are external — their password lives in Entra,
+                          so the set-password action only applies to local users. */}
+                      {u.auth_source !== "entra" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          title="Set password"
+                          aria-label={`Set password for ${u.email}`}
+                          onClick={() => setPasswordTarget(u)}
+                        >
+                          <KeyRound className="h-3 w-3" />
+                        </Button>
+                      )}
                       <Button
                         variant="destructive"
                         size="sm"
@@ -203,6 +224,117 @@ export function UserManagement({ onBack }: UserManagementProps) {
           }}
         />
       ) : null}
+
+      {editTarget ? (
+        <EditUserDialog
+          key={editTarget.id}
+          user={editTarget}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditTarget(null);
+          }}
+          onSaved={refresh}
+        />
+      ) : null}
     </div>
+  );
+}
+
+interface EditUserDialogProps {
+  user: AuthUser;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved: () => void;
+}
+
+function EditUserDialog({ user, open, onOpenChange, onSaved }: EditUserDialogProps) {
+  const [authSource, setAuthSource] = useState<"local" | "entra">(
+    user.auth_source ?? "local",
+  );
+  const [role, setRole] = useState<"user" | "superadmin">(
+    user.role === "superadmin" ? "superadmin" : "user",
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Roles for SSO users are driven by Entra group mappings, so we only send a
+  // manual role when the account is (or is becoming) local.
+  const isLocal = authSource === "local";
+  const convertingToLocal = user.auth_source === "entra" && authSource === "local";
+
+  async function handleSave() {
+    setError(null);
+    setSaving(true);
+    try {
+      await api.updateUser(user.id, {
+        auth_source: authSource,
+        ...(isLocal ? { role } : {}),
+      });
+      onSaved();
+      onOpenChange(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update user");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit User</DialogTitle>
+          <DialogDescription>{user.email}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label>Account type</Label>
+            <Select
+              value={authSource}
+              onValueChange={(v) => setAuthSource(v as "local" | "entra")}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="entra">External (SSO)</SelectItem>
+                <SelectItem value="local">Local</SelectItem>
+              </SelectContent>
+            </Select>
+            {convertingToLocal && (
+              <p className="text-xs text-muted-foreground">
+                Break-glass: lets this user sign in locally with a password while
+                Entra is unavailable. Set a password afterward. They return to SSO
+                automatically the next time they sign in with Entra — no need to
+                switch them back.
+              </p>
+            )}
+          </div>
+          <div className="grid gap-2">
+            <Label>Role</Label>
+            <Select
+              value={role}
+              onValueChange={(v) => setRole(v as "user" | "superadmin")}
+              disabled={!isLocal}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="user">User</SelectItem>
+                <SelectItem value="superadmin">SuperAdmin</SelectItem>
+              </SelectContent>
+            </Select>
+            {!isLocal && (
+              <p className="text-xs text-muted-foreground">
+                Roles for SSO users are managed by Entra group mappings.
+              </p>
+            )}
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
