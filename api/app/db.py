@@ -22,9 +22,10 @@ SessionLocal = sessionmaker(_engine, autoflush=False, autocommit=False, future=T
 
 # Stable 64-bit advisory-lock keys (retention uses 0x726F756E6431 = "round1").
 # Each uvicorn worker runs the startup lifespan, so migrations + the one-time
-# spec import must be single-flighted across workers.
+# spec import + the admin seed must be single-flighted across workers.
 MIGRATION_LOCK_KEY = 0x726F756E6432  # "round2"
 IMPORT_LOCK_KEY = 0x726F756E6433  # "round3"
+SEED_LOCK_KEY = 0x726F756E6434  # "round4"
 
 # alembic.ini sits next to the `app/` package: api/alembic.ini in dev,
 # /app/alembic.ini in the container.
@@ -56,6 +57,27 @@ def db_session() -> Generator[Session, None, None]:
         raise
     finally:
         session.close()
+
+
+@contextmanager
+def advisory_lock(key: int) -> Generator[None, None, None]:
+    """Hold a Postgres session-level advisory lock for the duration of the block,
+    blocking until it is acquired and releasing on exit.
+
+    A no-op on non-Postgres backends (sqlite in tests), where a single process
+    means there is no cross-worker race. Used to single-flight startup work that
+    every uvicorn worker would otherwise run concurrently (migrations, seed)."""
+    if _engine.dialect.name != "postgresql":
+        yield
+        return
+
+    with _engine.connect() as conn:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": key})
+        try:
+            yield
+        finally:
+            conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
 
 
 def _run_migrations() -> None:
@@ -91,14 +113,5 @@ def init_db() -> None:
     TABLE and one crashes with a duplicate-pg_type error. The first worker
     migrates; the rest wait, then upgrade is a no-op.
     """
-    if _engine.dialect.name != "postgresql":
-        _run_migrations()  # sqlite/tests: single process, no contention
-        return
-
-    with _engine.connect() as conn:
-        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
-        conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": MIGRATION_LOCK_KEY})
-        try:
-            _run_migrations()
-        finally:
-            conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": MIGRATION_LOCK_KEY})
+    with advisory_lock(MIGRATION_LOCK_KEY):
+        _run_migrations()

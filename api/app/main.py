@@ -66,22 +66,38 @@ def _check_docker_reachable() -> None:
 
 
 def _seed_admin_if_needed() -> None:
-    """If the users table is empty, seed an initial superadmin from env."""
+    """If the users table is empty, seed an initial superadmin from env.
+
+    This runs in every uvicorn worker at startup (the image launches with
+    `--workers 2`), so on a fresh DB two workers would otherwise both observe an
+    empty table and both INSERT the same admin email — the loser hitting the
+    `users.email` unique constraint and crashing startup. We single-flight the
+    check-and-insert behind a blocking advisory lock so exactly one worker seeds
+    while the rest wait and then see the row. The IntegrityError catch is a
+    backstop for backends without advisory locks (sqlite/tests) and any other
+    concurrent insert path.
+    """
+    from sqlalchemy.exc import IntegrityError
+
     from app.auth import hash_password
+    from app.db import SEED_LOCK_KEY, advisory_lock
     from app.models import User
 
     cfg = get_settings()
-    with db_session() as db:
-        if db.query(User).first() is not None:
-            return
-        admin = User(
-            email=cfg.admin_email,
-            password_hash=hash_password(cfg.admin_password),
-            display_name="Admin",
-            role="superadmin",
-        )
-        db.add(admin)
-        logger.info("Seeded initial admin user %s", cfg.admin_email)
+    try:
+        with advisory_lock(SEED_LOCK_KEY), db_session() as db:
+            if db.query(User).first() is not None:
+                return
+            admin = User(
+                email=cfg.admin_email,
+                password_hash=hash_password(cfg.admin_password),
+                display_name="Admin",
+                role="superadmin",
+            )
+            db.add(admin)
+            logger.info("Seeded initial admin user %s", cfg.admin_email)
+    except IntegrityError:
+        logger.info("Admin user already seeded by another worker; skipping.")
 
 
 app = FastAPI(title="MCP Platform API", lifespan=lifespan)
