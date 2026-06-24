@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 import app.models  # noqa: F401 - register tables on Base.metadata
 from app.db import Base
 from app.models import RoleMapping, Team, TeamMembership, User
-from app.services.claim_mapping import resolve_grants
+from app.services.claim_mapping import AccessDenied, resolve_grants
 from app.services.sso import SsoError, sync_grants, upsert_sso_user
 
 
@@ -50,10 +50,19 @@ def _mapping(db, app_role, role, team_id=None, team_role="member"):
 
 # ---------- claim -> grant ----------
 
-def test_no_matching_mapping_defaults_to_user(db):
-    grants = resolve_grants(db, {"roles": ["SomethingUnmapped"]})
-    assert grants.role == "user"
-    assert grants.teams == []
+def test_no_matching_mapping_denies_access(db):
+    # Access is mapping-gated: claims matching no row are turned away, NOT
+    # provisioned at a default "user" role.
+    with pytest.raises(AccessDenied):
+        resolve_grants(db, {"roles": ["SomethingUnmapped"]})
+
+
+def test_empty_roles_claim_denies_access(db):
+    _mapping(db, "Roundhouse.Admin", "superadmin")
+    with pytest.raises(AccessDenied):
+        resolve_grants(db, {"roles": []})
+    with pytest.raises(AccessDenied):
+        resolve_grants(db, {})
 
 
 def test_highest_role_wins(db):
@@ -145,32 +154,35 @@ def test_missing_email_refused(db):
 # ---------- sync guardrails ----------
 
 def test_local_user_exempt_from_sync(db):
+    _mapping(db, "R.User", "user")
     user = User(email="admin@mcp.local", password_hash="x", display_name="Admin",
                 role="superadmin", auth_source="local")
     db.add(user)
     db.flush()
-    sync_grants(db, user, resolve_grants(db, {"roles": ["unmapped"]}))
+    sync_grants(db, user, resolve_grants(db, {"roles": ["R.User"]}))
     assert user.role == "superadmin"  # untouched
 
 
 def test_last_superadmin_not_demoted(db):
+    _mapping(db, "R.User", "user")
     user = User(email="boss@corp.com", display_name="Boss", role="superadmin",
                 auth_source="entra", oidc_sub="s4")
     db.add(user)
     db.flush()
     # Grants would set role=user, but this is the only superadmin.
-    sync_grants(db, user, resolve_grants(db, {"roles": ["unmapped"]}))
+    sync_grants(db, user, resolve_grants(db, {"roles": ["R.User"]}))
     assert user.role == "superadmin"
 
 
 def test_superadmin_demoted_when_another_exists(db):
+    _mapping(db, "R.User", "user")
     db.add(User(email="other@corp.com", display_name="Other", role="superadmin",
                 auth_source="local", password_hash="x"))
     user = User(email="demote@corp.com", display_name="D", role="superadmin",
                 auth_source="entra", oidc_sub="s5")
     db.add(user)
     db.flush()
-    sync_grants(db, user, resolve_grants(db, {"roles": ["unmapped"]}))
+    sync_grants(db, user, resolve_grants(db, {"roles": ["R.User"]}))
     assert user.role == "user"
 
 

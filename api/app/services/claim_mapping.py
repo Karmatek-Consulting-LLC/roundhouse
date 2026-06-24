@@ -21,9 +21,17 @@ from app.models import RoleMapping
 # Roundhouse top-level role precedence, highest first. When a user's claims map
 # to several roundhouse roles, the highest wins.
 _ROLE_PRECEDENCE = {"superadmin": 2, "user": 1}
-# Role granted to an SSO user whose claims match no mapping row. They can sign in
-# (JIT) but get the least privilege; an admin raises them via the mapping table.
-_DEFAULT_ROLE = "user"
+# Precedence floor for a user who DOES match at least one mapping row: every
+# mapped user is at least a "user". This is NOT a fallback for unmapped users —
+# claims matching no row are denied access (see resolve_grants / AccessDenied).
+_BASE_ROLE = "user"
+
+
+class AccessDenied(Exception):
+    """The verified claims matched no role-mapping row, so the user is entitled
+    to nothing. Membership in Roundhouse is mapping-gated: an account with no
+    matching mapping is denied sign-in rather than provisioned at a default
+    role. The OIDC route turns this into an access-denied login redirect."""
 
 
 @dataclass(frozen=True)
@@ -66,11 +74,17 @@ def _matched_mappings(db: Session, app_roles: list[str]) -> list[RoleMapping]:
 
 
 def resolve_grants(db: Session, claims: dict) -> Grants:
-    """Project verified claims into dashboard grants ({role, teams})."""
-    matched = _matched_mappings(db, extract_app_roles(claims))
+    """Project verified claims into dashboard grants ({role, teams}).
 
-    role = _DEFAULT_ROLE
-    best = _ROLE_PRECEDENCE.get(_DEFAULT_ROLE, 0)
+    Raises AccessDenied when the claims match no mapping row: Roundhouse access
+    is mapping-gated, so an unmapped user is turned away rather than given a
+    default role."""
+    matched = _matched_mappings(db, extract_app_roles(claims))
+    if not matched:
+        raise AccessDenied("no role mapping matches the user's Entra app roles")
+
+    role = _BASE_ROLE
+    best = _ROLE_PRECEDENCE.get(_BASE_ROLE, 0)
     teams: dict[str, str] = {}  # team_id -> team_role (last write wins per team)
     for m in matched:
         rank = _ROLE_PRECEDENCE.get(m.roundhouse_role, 0)

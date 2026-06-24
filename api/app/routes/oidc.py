@@ -33,7 +33,7 @@ from app.crypto import DecryptError, decrypt, encrypt
 from app.db import get_db
 from app.services import oidc as oidc_service
 from app.services import sso_config
-from app.services.claim_mapping import resolve_grants
+from app.services.claim_mapping import AccessDenied, resolve_grants
 from app.services.oidc import OidcError
 from app.services.sso import SsoError, sync_grants, upsert_sso_user
 
@@ -149,11 +149,24 @@ def oidc_callback(request: Request, db: Session = Depends(get_db)):
         logger.warning("OIDC callback validation failed: %s", e)
         return _login_error_redirect("Sign-in could not be verified")
 
+    # Resolve grants *before* provisioning: Roundhouse access is mapping-gated,
+    # so a user whose claims match no mapping row is turned away here — and,
+    # crucially, never JIT-provisioned (get_db commits on this redirect, so an
+    # account created before the check would leak as an orphan row).
+    try:
+        grants = resolve_grants(db, claims)
+    except AccessDenied as e:
+        logger.info("SSO access denied for %s: %s", claims.get("preferred_username") or claims.get("email"), e)
+        return _login_error_redirect(
+            "Access denied: your account has not been granted a role in "
+            "Roundhouse. Contact your administrator."
+        )
+
     try:
         user = upsert_sso_user(
             db, claims, link_local_by_email=sso_config.link_local_enabled(db)
         )
-        sync_grants(db, user, resolve_grants(db, claims))
+        sync_grants(db, user, grants)
         db.flush()
         token = issue_token(db, user, name="sso")
     except SsoError as e:
