@@ -36,6 +36,16 @@ def _key_bytes(app_key: str) -> bytes:
     return app_key.encode("utf-8")
 
 
+def key_fingerprint(app_key: str) -> str:
+    """A stable, non-reversible id for an APP_KEY.
+
+    Used by backup/restore to verify a backup is being restored under the same
+    key that encrypted its server_tokens — a different key would leave every
+    stored token silently undecryptable. Returns a short hex digest; raises
+    DecryptError when no key is configured."""
+    return hashlib.sha256(_key_bytes(app_key)).hexdigest()[:16]
+
+
 def encrypt(plaintext: str, app_key: str) -> str:
     key = _key_bytes(app_key)
     iv = os.urandom(16)
