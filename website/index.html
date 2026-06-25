@@ -1052,10 +1052,22 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
     btn.textContent = label;
     setTimeout(() => { btn.textContent = old; }, 1400);
   }
+  // Copy only the runnable commands: drop sample comments (.cm) and output
+  // (.ok), strip the shell prompt ("$ "), and trim resulting blank lines.
+  // Leaves prompt-less blocks (e.g. the JSON config) untouched.
+  function runnableText(src) {
+    const clone = src.cloneNode(true);
+    clone.querySelectorAll(".cm, .ok").forEach(n => n.remove());
+    return clone.textContent
+      .split("\n")
+      .map(l => l.replace(/^\$\s?/, ""))
+      .filter(l => l.trim().length)
+      .join("\n");
+  }
   document.querySelectorAll(".copy-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const src = document.getElementById("copy-" + btn.dataset.copy);
-      navigator.clipboard.writeText(src.innerText).then(() => flash(btn, "Copied ✓"));
+      navigator.clipboard.writeText(runnableText(src)).then(() => flash(btn, "Copied ✓"));
     });
   });
   document.getElementById("hero-copy").addEventListener("click", function () {
