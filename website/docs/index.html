@@ -399,8 +399,9 @@ footer { margin-top: 40px; }
 <h3 id="install">Install<a class="anchor" href="#install" aria-label="link to section">#</a></h3>
 <p>Roundhouse runs from a published image — no clone, no build. Download the single-host Compose file and bring it up:</p>
 <div class="codeblock"><div class="codebar">bash</div><pre><code>curl -O https://raw.githubusercontent.com/Karmatek-Consulting-LLC/roundhouse/main/docker-compose.yml
-docker compose up -d</code></pre></div>
-<p>When the API logs print <code>Application startup complete</code>, the platform is live at <strong>http://localhost:3080</strong>.</p>
+docker compose up -d
+docker compose logs -f platform-api   # watch for "Application startup complete", then Ctrl-C</code></pre></div>
+<p>Once the logs print <code>Application startup complete</code>, the platform is live at <strong>http://localhost:3080</strong>.</p>
 <p>(Building from source instead? Clone the repo and use <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-compose.dev.yml" target="_blank" rel="noopener"><code>docker-compose.dev.yml</code></a>, which builds the image and hot-reloads the <code>api/</code> and <code>frontend/</code> source.)</p>
 <p>To stop the platform:</p>
 <div class="codeblock"><div class="codebar">bash</div><pre><code>docker compose down        # preserve database + spec files

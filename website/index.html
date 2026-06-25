@@ -790,7 +790,8 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
       <div>
         <h2 class="reveal d1">Up and running before your coffee cools</h2>
         <p class="qs-note reveal d2">
-          Requires Docker and Docker Compose — nothing else. When the API logs print
+          Requires Docker and Docker Compose — nothing else. Tail
+          <code>docker compose logs -f platform-api</code>; once it prints
           <code>Application startup complete</code>, open
           <code>http://localhost:3080</code> and sign in with the seed admin.
           From there, the <a href="/docs/">field manual</a> covers every surface —
