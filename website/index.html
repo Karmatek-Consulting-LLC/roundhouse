@@ -820,12 +820,11 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
         </div>
       </div>
       <div class="term reveal d2">
-        <div class="term-bar">quick start — four commands <button class="copy-btn" data-copy="qs">Copy</button></div>
-        <pre id="copy-qs"><span class="ps">$</span> git clone https://github.com/Karmatek-Consulting-LLC/roundhouse.git
-<span class="ps">$</span> cd roundhouse
-<span class="ps">$</span> cp .env.example .env
+        <div class="term-bar">quick start — three commands <button class="copy-btn" data-copy="qs">Copy</button></div>
+        <pre id="copy-qs"><span class="ps">$</span> curl -O https://raw.githubusercontent.com/Karmatek-Consulting-LLC/roundhouse/main/docker-compose.yml
 <span class="ps">$</span> docker compose up -d
-<span class="cm"># …images build, migrations run, Traefik takes the door…</span>
+<span class="ps">$</span> docker compose logs -f platform-api
+<span class="cm"># …migrations run, Traefik takes the door…</span>
 <span class="ok">✓ platform-api    | Application startup complete</span>
 <span class="cm"># open http://localhost:3080 → admin@mcp.local / admin</span></pre>
       </div>
@@ -1060,7 +1059,7 @@ footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
     });
   });
   document.getElementById("hero-copy").addEventListener("click", function () {
-    navigator.clipboard.writeText("docker compose up -d");
+    navigator.clipboard.writeText("curl -O https://raw.githubusercontent.com/Karmatek-Consulting-LLC/roundhouse/main/docker-compose.yml\ndocker compose up -d");
     const el = this;
     el.style.background = "var(--signal)";
     setTimeout(() => { el.style.background = ""; }, 500);
