@@ -57,9 +57,10 @@ option.
 ```bash
 curl -O https://raw.githubusercontent.com/Karmatek-Consulting-LLC/roundhouse/main/docker-compose.yml
 docker compose up -d
+docker compose logs -f platform-api   # watch for "Application startup complete", then Ctrl-C
 ```
 
-When the API logs print `Application startup complete`, open
+Once the logs print `Application startup complete`, open
 **<http://localhost:3080>** and sign in with `admin@mcp.local` / `admin`.
 
 ## Connect Claude

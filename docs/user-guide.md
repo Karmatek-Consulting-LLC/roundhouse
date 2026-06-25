@@ -19,9 +19,10 @@ single-host Compose file and bring it up:
 ```bash
 curl -O https://raw.githubusercontent.com/Karmatek-Consulting-LLC/roundhouse/main/docker-compose.yml
 docker compose up -d
+docker compose logs -f platform-api   # watch for "Application startup complete", then Ctrl-C
 ```
 
-When the API logs print `Application startup complete`, the platform is
+Once the logs print `Application startup complete`, the platform is
 live at **http://localhost:3080**.
 
 (Building from source instead? Clone the repo and use
