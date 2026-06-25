@@ -342,6 +342,63 @@ export interface AuditEvent {
   created_at: string | null;
 }
 
+// ---- Backup & restore (superadmin) ----
+
+export interface BackupCounts {
+  servers: number;
+  users: number;
+  server_tokens: number;
+}
+
+/** Live deployment summary shown before an export / compared against on restore. */
+export interface DeploymentInfo {
+  postgres: boolean;
+  alembic_revision: string | null;
+  app_key_fingerprint: string | null;
+  base_url: string;
+  orchestrator: string;
+  counts: BackupCounts;
+}
+
+/** Metadata embedded in a backup archive's manifest.json. */
+export interface BackupManifest {
+  format_version: number;
+  created_at: string;
+  alembic_revision: string | null;
+  app_key_fingerprint: string | null;
+  base_url: string;
+  orchestrator: string;
+  pg_dump_format: string;
+  counts: BackupCounts;
+}
+
+/** Dry-run validation of an uploaded backup. `problems` empty = safe to apply. */
+export interface RestorePreview {
+  manifest: BackupManifest;
+  problems: string[];
+  current: DeploymentInfo;
+}
+
+export interface ReconcileError {
+  server: string;
+  op: string;
+  error: string;
+}
+
+/** Outcome of making live workloads match the restored database. */
+export interface ReconcileSummary {
+  redeployed: string[];
+  reaped: string[];
+  errors: ReconcileError[];
+}
+
+export interface RestoreResult {
+  manifest: BackupManifest;
+  problems: string[];
+  forced: boolean;
+  reconcile: ReconcileSummary;
+}
+
 /** Health values come from Docker HEALTHCHECK. `starting` while the
  * grace period hasn't elapsed; `healthy` once the probe has succeeded;
  * `unhealthy` after retry failures. `null` when no healthcheck is defined
@@ -979,4 +1036,43 @@ export const api = {
     }),
   removeTeamMember: (teamId: string, userId: string) =>
     request<Team>(`/teams/${teamId}/members/${userId}`, { method: "DELETE" }),
+
+  // Backup & restore (superadmin)
+  getBackupInfo: () => request<DeploymentInfo>("/backup/info"),
+  exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
+    const token = localStorage.getItem("token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${BASE}/backup/export`, { headers });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const d = (body as { detail?: unknown }).detail;
+      throw new Error(d != null ? formatApiErrorDetail(d) : `Backup failed: ${res.status}`);
+    }
+    const cd = res.headers.get("Content-Disposition") ?? "";
+    const m = /filename="?([^"]+)"?/.exec(cd);
+    const filename = m ? m[1] : "roundhouse-backup.tar.gz";
+    return { blob: await res.blob(), filename };
+  },
+  previewRestore: async (file: File): Promise<RestorePreview> =>
+    uploadBackup<RestorePreview>("/backup/restore/preview", file),
+  restoreBackup: async (file: File, force = false): Promise<RestoreResult> =>
+    uploadBackup<RestoreResult>(`/backup/restore${force ? "?force=true" : ""}`, file),
 };
+
+/** Shared multipart POST for backup uploads (preview + restore). Restore can
+ * run for minutes while it rebuilds servers, so this has no client timeout. */
+async function uploadBackup<T>(path: string, file: File): Promise<T> {
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: form });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const d = (body as { detail?: unknown }).detail;
+    throw new Error(d != null ? formatApiErrorDetail(d) : `Request failed: ${res.status}`);
+  }
+  return res.json();
+}

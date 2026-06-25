@@ -133,6 +133,7 @@ def health():
 # Routers
 from app.routes import audit as audit_route  # noqa: E402
 from app.routes import auth as auth_route  # noqa: E402
+from app.routes import backup as backup_route  # noqa: E402
 from app.routes import dashboard as dashboard_route  # noqa: E402
 from app.routes import ingest as ingest_route  # noqa: E402
 from app.routes import invoke as invoke_route  # noqa: E402
@@ -164,6 +165,7 @@ app.include_router(server_tokens_route.router)
 app.include_router(invoke_route.router)
 app.include_router(pypi_route.router)
 app.include_router(settings_route.router)
+app.include_router(backup_route.router)
 
 
 class SPAStaticFiles(StaticFiles):

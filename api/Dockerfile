@@ -38,11 +38,25 @@ ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \
 # in real time (previously set per-deployment via the stack file).
 ENV PYTHONUNBUFFERED=1
 
+# pg_dump / pg_restore (postgresql-client-16) back the platform backup/restore
+# feature and MUST match the postgres:16 server major — Debian's default client
+# is too old to dump a v16 server — so we pull client 16 from the PGDG apt repo.
+# curl uses the system trust store, which already carries any corp CA injected
+# above, so this works behind a TLS-inspecting proxy.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         netcat-openbsd \
         tar \
         git \
         libpq5 \
+        curl \
+        ca-certificates \
+        gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
 # ruff is shelled out from PythonFormatter to canonicalize generated server.py.
