@@ -28,6 +28,11 @@ const BASE = args.base ?? "http://localhost:3080";
 const EMAIL = args.email ?? "admin@mcp.local";
 const PASSWORD = args.password ?? "admin";
 const THEME = args.theme ?? "both"; // "dark" | "light" | "both"
+// --only <prefix[,prefix...]> re-captures just the matching steps (by name
+// prefix), e.g. --only 02-dashboard,21-editor-usage. Useful for iterating on
+// a single shot without redriving all ~28 routes.
+const ONLY = args.only ? String(args.only).split(",").map((s) => s.trim()).filter(Boolean) : null;
+const stepMatchesOnly = (name) => !ONLY || ONLY.some((p) => name.startsWith(p));
 const VIEWPORT = { width: 1600, height: 1050 };
 // fullPage=true captures the entire scrollable height of each route so
 // content that runs past the viewport (charts, primitives list, audit log)
@@ -131,6 +136,7 @@ async function captureTheme({ theme, outDir, token }) {
   const page = await context.newPage();
 
   for (const step of STEPS) {
+    if (!stepMatchesOnly(step.name)) continue;
     try {
       const url = BASE + step.url;
       console.log(`  → ${step.name}: ${step.url}`);
@@ -153,7 +159,7 @@ async function captureTheme({ theme, outDir, token }) {
   // Anonymous pass for /login — fresh context with no token. Keeping it
   // separate sidesteps the trap where addInitScript() runs on every
   // navigation and silently wipes the token for the rest of the run.
-  await captureLogin(browser, theme, outDir);
+  if (stepMatchesOnly("01-login")) await captureLogin(browser, theme, outDir);
 
   await browser.close();
 }

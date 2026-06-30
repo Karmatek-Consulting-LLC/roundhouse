@@ -136,6 +136,26 @@ LEGACY_DEMO_USERS = [
 ]
 
 
+def wait_until_settled(base: str, token: str, name: str, timeout: float = 60.0) -> str | None:
+    """Block until a freshly-created server finishes its initial build.
+
+    Creating a server kicks off an async template/code build that writes the
+    built spec back to the DB. add_primitive() called in that window races the
+    build and gets silently clobbered when the build's spec-write lands — which
+    is why an earlier seed left every demo server with zero primitives and the
+    dashboard showed a 100% 'Unknown tool' error rate. Waiting for a terminal
+    status before mutating the spec closes that race."""
+    deadline = time.time() + timeout
+    terminal = {"running", "stopped", "exited", "error", "unhealthy", "failed"}
+    while time.time() < deadline:
+        info = http("GET", base, f"/api/servers/{name}", token) or {}
+        status = info.get("status")
+        if status in terminal:
+            return status
+        time.sleep(1.0)
+    return None
+
+
 def create_from_template(base: str, token: str, name: str, description: str) -> None:
     print(f"  + creating {name} (template)")
     http("POST", base, "/api/servers", token, {
@@ -145,6 +165,7 @@ def create_from_template(base: str, token: str, name: str, description: str) -> 
         "mode": "structured",
         "config": {},
     })
+    wait_until_settled(base, token, name)
 
 
 def create_from_code(base: str, token: str, name: str, description: str, source: str) -> None:
@@ -155,6 +176,7 @@ def create_from_code(base: str, token: str, name: str, description: str, source:
         "mode": "code",
         "source": source,
     })
+    wait_until_settled(base, token, name)
 
 
 def add_primitive(base: str, token: str, server: str, prim: dict) -> None:
