@@ -41,8 +41,10 @@ const FULL_PAGE = true;
 //
 // Server names match those seeded by docs/capture/seed_demo.py.
 const STEPS = [
-  // Dashboard
-  { name: "02-dashboard",        url: "/",                                                              wait: { selector: 'text=/dashboard|servers/i', delay: 1200 } },
+  // Dashboard — live charts + an SSE stream keep the network busy, so
+  // networkidle never fires (same as the logs tail below). Gate on DOM +
+  // the dashboard heading, then settle for the chart paint.
+  { name: "02-dashboard",        url: "/",                                                              waitUntil: "domcontentloaded", wait: { selector: 'text=/dashboard|servers/i', delay: 1800 } },
 
   // Servers list
   { name: "03-servers-list",     url: "/servers",                                                       wait: { selector: "table", delay: 600 } },

@@ -8,7 +8,13 @@ stack.
 > a reproducible build artifact, kept out of the repo so clones don't pull
 > ~22 MB of binaries. Regenerate it with the fast path below before building
 > the docs site. `website/build-docs.mjs` will refuse to run (with a pointer
-> back here) if the screenshots it references are missing.
+> back here) if the screenshots it references are missing — the published site
+> must never ship "screenshot pending" placeholders.
+
+> **Publishing? Just run `./website/deploy.sh`.** It runs this entire pipeline
+> for you — seed → capture (both themes) → restore → strict build → `wrangler
+> pages deploy` — and is fail-fast, so a broken capture never reaches
+> production. The manual steps below are for iterating on the capture itself.
 
 The fast path:
 
