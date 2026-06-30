@@ -420,7 +420,7 @@ docker compose logs -f platform-api   # watch for "Application startup complete"
 docker compose down -v     # wipe everything</code></pre></div>
 <h3 id="sign-in">Sign in<a class="anchor" href="#sign-in" aria-label="link to section">#</a></h3>
 <p>Roundhouse uses email/password sign-in. The first admin is created from the <code>ADMIN_EMAIL</code> and <code>ADMIN_PASSWORD</code> environment variables when the API boots (defaults: <code>admin@mcp.local</code> / <code>admin</code> — override them in your environment before first boot, or change them from the Users page after).</p>
-<figure><img src="screenshots/dark/01-login.png?v=9e7e9860" alt="Login" loading="lazy" decoding="async" /><figcaption>fig. 01 — login</figcaption></figure>
+<figure><img src="screenshots/dark/01-login.png?v=1dde9005" alt="Login" loading="lazy" decoding="async" /><figcaption>fig. 01 — login</figcaption></figure>
 <div class="rule" aria-hidden="true"></div>
 <h2 id="connecting-clients">Connecting clients<a class="anchor" href="#connecting-clients" aria-label="link to section">#</a></h2>
 <p>Every deployed server gets a stable URL like <code>http://localhost:3080/s/my-server/mcp</code>. Traefik routes MCP clients straight to the spawned container — the platform never proxies MCP traffic on the hot path.</p>

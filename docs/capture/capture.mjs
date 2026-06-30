@@ -165,8 +165,12 @@ async function captureTheme({ theme, outDir, token }) {
 }
 
 async function captureLogin(browser, theme, outDir) {
+  // The login page is a small centered card on a large empty canvas. At the
+  // full 1600x1050 viewport the card is lost in dark space and reads as a
+  // broken/empty image in the docs. Use a tighter viewport so the card is the
+  // subject while keeping a little breathing room around it.
   const ctx = await browser.newContext({
-    viewport: VIEWPORT,
+    viewport: { width: 1040, height: 720 },
     deviceScaleFactor: 2,
     colorScheme: theme,
   });
