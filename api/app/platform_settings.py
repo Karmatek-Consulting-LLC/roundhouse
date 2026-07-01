@@ -34,6 +34,14 @@ SETTING_DOCKER_REGISTRY_PASSWORD = "docker_registry_password"
 SETTING_CUSTOM_CA_CERT = "custom_ca_cert"
 SETTING_GLOBAL_ENV_VARS = "mcp_global_env_vars"
 
+# Self-managed TLS (see app.services.tls_cert). The cert chain is public and
+# stored plain; the private key is encrypted at rest with the app.crypto AES
+# envelope (keyed off APP_KEY), like the Entra client secret. These are the
+# source of truth; the live Docker secrets on the Traefik service are derived
+# from them and can be re-synced from here.
+SETTING_TLS_CERT = "tls_cert"
+SETTING_TLS_KEY = "tls_key"
+
 # Entra ID SSO (OIDC) connection — configured in the UI, stored here (not env).
 # The client secret is encrypted at rest with the app.crypto AES envelope. The
 # redirect URI is NOT stored: it's derived from the public base URL.

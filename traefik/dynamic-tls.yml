@@ -1,0 +1,17 @@
+# Traefik DYNAMIC config for self-managed TLS (docker-stack.tls.override.yml).
+#
+# This file is static and never changes: it declares the DEFAULT certificate
+# served on :443, pointing at two fixed paths. Roundhouse delivers the actual
+# cert + key to those paths as Swarm secrets when an operator uploads them in
+# Platform Settings, and swaps them on rotation — the paths stay put, so this
+# file is written once and left alone.
+#
+# Before any certificate is uploaded, these files don't exist yet; Traefik logs
+# a load error for them and serves its auto-generated self-signed certificate
+# instead (browsers warn until a real cert is installed). That is expected.
+tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /run/secrets/roundhouse_tls_cert
+        keyFile: /run/secrets/roundhouse_tls_key

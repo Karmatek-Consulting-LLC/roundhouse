@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     mcp_traefik_entrypoints: str = Field(
         default="web", alias="MCP_TRAEFIK_ENTRYPOINTS"
     )
+    # Self-managed TLS: when true, the Settings UI exposes an HTTPS cert/key
+    # upload that this app pushes to the embedded Traefik (Swarm) itself, so no
+    # upstream reverse proxy is needed. Turned on by docker-stack.tls.override.yml.
+    mcp_tls_self_managed: bool = Field(default=False, alias="MCP_TLS_SELF_MANAGED")
+    # The Swarm service running the embedded Traefik, updated to mount the
+    # uploaded cert/key as secrets. Stack name is fixed at `roundhouse`, so the
+    # service is `roundhouse_traefik`; override only if you rename the stack.
+    mcp_traefik_service: str = Field(
+        default="roundhouse_traefik", alias="MCP_TRAEFIK_SERVICE"
+    )
     mcp_default_server_replicas: int = Field(
         default=1, alias="MCP_DEFAULT_SERVER_REPLICAS"
     )

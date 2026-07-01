@@ -625,6 +625,78 @@ class DockerClient:
         self._http.delete(f"services/{svc['ID']}")
         return True
 
+    # ---- Swarm secrets + arbitrary-service update (self-managed TLS) ----
+
+    def create_secret(
+        self, name: str, data: bytes, labels: dict[str, str] | None = None
+    ) -> str:
+        """Create a Swarm secret and return its ID. Swarm secrets are immutable,
+        so callers use content-addressed names and swap references rather than
+        updating in place."""
+        spec = {
+            "Name": name,
+            "Data": base64.b64encode(data).decode("ascii"),
+            "Labels": labels or {},
+        }
+        resp = self._http.post("secrets/create", None, spec)
+        sid = resp.get("ID")
+        if not sid:
+            raise DockerError(f"Secret create for {name!r} returned no ID")
+        return sid
+
+    def find_secret(self, name: str) -> dict | None:
+        """Return the raw secret whose Spec.Name matches exactly, or None. The
+        `name` filter is a substring match, so we confirm the exact name."""
+        try:
+            secrets = self._http.get(
+                "secrets", {"filters": json.dumps({"name": [name]})}
+            )
+        except DockerError:
+            return None
+        for s in secrets or []:
+            if (s.get("Spec") or {}).get("Name") == name:
+                return s
+        return None
+
+    def list_secrets(self, label: str | None = None) -> list[dict]:
+        query = {"filters": json.dumps({"label": [label]})} if label else None
+        return self._http.get("secrets", query) or []
+
+    def remove_secret(self, secret_id: str) -> None:
+        """Remove a secret. A secret still referenced by a service can't be
+        removed (Docker 400); callers treat that as 'leave it, prune later'."""
+        try:
+            self._http.delete(f"secrets/{secret_id}")
+        except DockerNotFoundError:
+            return
+
+    def get_service_by_name(self, name: str) -> dict | None:
+        try:
+            services = self._http.get(
+                "services", {"filters": json.dumps({"name": [name]})}
+            )
+        except DockerError:
+            return None
+        for svc in services or []:
+            if (svc.get("Spec") or {}).get("Name") == name:
+                return svc
+        return None
+
+    def set_service_secrets(self, service_name: str, secret_refs: list[dict]) -> None:
+        """Read-modify-write a service's spec so its ContainerSpec.Secrets is
+        exactly `secret_refs`, preserving everything else. Triggers a rolling
+        task update, which is how Traefik picks up a swapped cert."""
+        svc = self.get_service_by_name(service_name)
+        if not svc:
+            raise DockerNotFoundError(f"Service '{service_name}' not found")
+        spec = svc.get("Spec") or {}
+        task_template = spec.get("TaskTemplate")
+        if not isinstance(task_template, dict) or "ContainerSpec" not in task_template:
+            raise DockerError(f"Service '{service_name}' has no ContainerSpec")
+        task_template["ContainerSpec"]["Secrets"] = secret_refs
+        version = (svc.get("Version") or {}).get("Index", 0)
+        self._http.post(f"services/{svc['ID']}/update", {"version": version}, spec)
+
     def _find_service_raw(self, server_name: str) -> dict | None:
         name = _container_name(server_name)
         try:
