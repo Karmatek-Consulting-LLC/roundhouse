@@ -145,20 +145,31 @@ def test_apply_creates_secrets_and_swaps_them_on_traefik(db, fake_docker):
     cert_pem, key_pem = _make_pair()
     tls_cert.apply_certificate(db, cert_pem, key_pem)
 
-    # Two secrets, content-addressed names, labelled for pruning.
+    # Three secrets — cert, key, and the file-provider config — content-
+    # addressed and labelled for pruning.
     names = sorted(fake_docker.secrets)
-    assert len(names) == 2
+    assert len(names) == 3
     assert any(n.startswith(tls_cert.CERT_TARGET + "_") for n in names)
     assert any(n.startswith(tls_cert.KEY_TARGET + "_") for n in names)
+    assert any(n.startswith(tls_cert.DYNAMIC_TARGET + "_") for n in names)
 
-    # Traefik service updated to mount them at the STABLE target paths that
-    # traefik/dynamic-tls.yml references.
+    # Traefik service updated to mount them at the STABLE target paths that the
+    # delivered dynamic config (mounted at DYNAMIC_TARGET) references.
     refs = fake_docker.service_secrets
     assert fake_docker.service_name == "roundhouse_traefik"
     targets = sorted(r["File"]["Name"] for r in refs)
-    assert targets == [tls_cert.CERT_TARGET, tls_cert.KEY_TARGET]
+    assert targets == [
+        tls_cert.CERT_TARGET,
+        tls_cert.DYNAMIC_TARGET,
+        tls_cert.KEY_TARGET,
+    ]
     key_ref = next(r for r in refs if r["File"]["Name"] == tls_cert.KEY_TARGET)
     assert key_ref["File"]["Mode"] == 0o400  # key is not world-readable
+    # The delivered config names the fixed cert/key secret paths.
+    dyn = fake_docker.secrets[
+        next(n for n in names if n.startswith(tls_cert.DYNAMIC_TARGET + "_"))
+    ]
+    assert f"/run/secrets/{tls_cert.CERT_TARGET}".encode() in dyn["_data"]
 
 
 def test_apply_persists_cert_plain_and_key_encrypted(db, fake_docker):
@@ -175,11 +186,12 @@ def test_apply_persists_cert_plain_and_key_encrypted(db, fake_docker):
 def test_reupload_prunes_previous_secrets(db, fake_docker):
     tls_cert.apply_certificate(db, *_make_pair(cn="one.test"))
     first = set(fake_docker.secrets)
+    dyn = {n for n in first if n.startswith(tls_cert.DYNAMIC_TARGET + "_")}
 
     tls_cert.apply_certificate(db, *_make_pair(cn="two.test"))
-    # Old pair gone, only the new content-addressed pair remains.
-    assert not (first & set(fake_docker.secrets))
-    assert len(fake_docker.secrets) == 2
+    # Old cert/key gone; the static dynamic-config secret is reused, not churned.
+    assert (first & set(fake_docker.secrets)) == dyn
+    assert len(fake_docker.secrets) == 3
 
 
 def test_clear_detaches_and_removes_secrets(db, fake_docker):
