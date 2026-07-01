@@ -9,8 +9,11 @@ Flow (see the conversation in docker-stack.tls.override.yml):
      rest with the app.crypto AES envelope (keyed off APP_KEY).
   3. We sync it to the Swarm: create content-addressed secrets and swap them
      onto the Traefik service at STABLE mount paths, then prune the old ones.
-     Traefik's static file-provider config (traefik/dynamic-tls.yml) points at
-     those fixed paths, so it never changes — only the secret objects churn.
+     We deliver Traefik's file-provider config as a third (static) secret too,
+     so nothing in the stack references a repo-relative file — the whole stack
+     deploys from the compose files alone, with no checkout on the host. The
+     dynamic config points at the fixed cert/key paths, so it never changes;
+     only the secret objects churn.
 
 Swarm secrets are immutable and cluster-distributed via Raft, so this needs no
 shared volume and Traefik stays freely schedulable. The cost is that a cert
@@ -44,9 +47,24 @@ logger = logging.getLogger(__name__)
 # without touching secrets created for other purposes.
 TLS_SECRET_LABEL = "roundhouse.tls"
 # Stable filenames the secrets mount to under /run/secrets/ on the Traefik
-# container. traefik/dynamic-tls.yml references exactly these paths.
+# container. The dynamic config below references exactly these paths, and
+# Traefik's file provider is pointed at DYNAMIC_TARGET.
 CERT_TARGET = "roundhouse_tls_cert"
 KEY_TARGET = "roundhouse_tls_key"
+DYNAMIC_TARGET = "roundhouse_tls_dynamic"
+
+# Traefik file-provider config declaring the default certificate. Static — it
+# only names the two fixed secret paths — so we ship it as a secret rather than
+# a repo file, and the operator needs no checkout on the host. Traefik reads it
+# via `--providers.file.filename=/run/secrets/roundhouse_tls_dynamic`.
+_DYNAMIC_YAML = (
+    "tls:\n"
+    "  stores:\n"
+    "    default:\n"
+    "      defaultCertificate:\n"
+    f"        certFile: /run/secrets/{CERT_TARGET}\n"
+    f"        keyFile: /run/secrets/{KEY_TARGET}\n"
+)
 
 
 class TlsCertError(ValueError):
@@ -191,11 +209,18 @@ def _sync_to_swarm(cert_pem: str, key_pem: str) -> None:
     h = hashlib.sha256(f"{cert_pem}\x00{key_pem}".encode()).hexdigest()[:12]
     cert_name = f"{CERT_TARGET}_{h}"
     key_name = f"{KEY_TARGET}_{h}"
+    # The dynamic config is static, so its content hash is fixed: created once
+    # and reused across every rotation.
+    dyn_h = hashlib.sha256(_DYNAMIC_YAML.encode()).hexdigest()[:12]
+    dyn_name = f"{DYNAMIC_TARGET}_{dyn_h}"
     cert_id = _ensure_secret(
         docker, cert_name, cert_pem.encode(), {TLS_SECRET_LABEL: "cert"}
     )
     key_id = _ensure_secret(
         docker, key_name, key_pem.encode(), {TLS_SECRET_LABEL: "key"}
+    )
+    dyn_id = _ensure_secret(
+        docker, dyn_name, _DYNAMIC_YAML.encode(), {TLS_SECRET_LABEL: "dynamic"}
     )
     refs = [
         {
@@ -208,9 +233,14 @@ def _sync_to_swarm(cert_pem: str, key_pem: str) -> None:
             "SecretName": key_name,
             "File": {"Name": KEY_TARGET, "UID": "0", "GID": "0", "Mode": 0o400},
         },
+        {
+            "SecretID": dyn_id,
+            "SecretName": dyn_name,
+            "File": {"Name": DYNAMIC_TARGET, "UID": "0", "GID": "0", "Mode": 0o444},
+        },
     ]
     docker.set_service_secrets(get_settings().mcp_traefik_service, refs)
-    _prune_old_secrets(docker, keep={cert_name, key_name})
+    _prune_old_secrets(docker, keep={cert_name, key_name, dyn_name})
     logger.info("Applied self-managed TLS cert to %s", get_settings().mcp_traefik_service)
 
 

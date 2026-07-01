@@ -45,9 +45,13 @@ services:
       # Force HTTP → HTTPS.
       - --entryPoints.web.http.redirections.entryPoint.to=websecure
       - --entryPoints.web.http.redirections.entryPoint.scheme=https
-      # Dynamic config supplying the default certificate. watch=true means a
-      # freshly-delivered cert is picked up on the next task start.
-      - --providers.file.directory=/etc/traefik/dynamic
+      # Dynamic config supplying the default certificate. Roundhouse delivers
+      # this file as a Swarm secret (like the cert and key), so there is no
+      # repo file to mount and nothing to check out on the host. Until an
+      # operator uploads a cert, the file is absent and Traefik serves its
+      # self-signed cert; watch=true picks up the real one on the next task
+      # start after upload.
+      - --providers.file.filename=/run/secrets/roundhouse_tls_dynamic
       - --providers.file.watch=true
     # host mode preserves the real client IP and skips the routing mesh; it puts
     # one Traefik per node, which is the right shape for a dedicated ingress.
@@ -60,9 +64,6 @@ services:
       - target: 80
         published: 80
         mode: host
-    configs:
-      - source: roundhouse_tls_dynamic
-        target: /etc/traefik/dynamic/tls.yml
 
   platform-api:
     environment:
@@ -78,9 +79,3 @@ services:
       labels:
         # Serve the SPA over TLS too (base binds it to `web` only).
         - "traefik.http.routers.platform-api.entrypoints=web,websecure"
-
-configs:
-  # Static default-certificate declaration. Relative path is resolved from where
-  # you run `docker stack deploy`.
-  roundhouse_tls_dynamic:
-    file: ./traefik/dynamic-tls.yml

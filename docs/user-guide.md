@@ -441,16 +441,19 @@ docker stack deploy \
 
 This overlay ([`docker-stack.tls.override.yml`](../docker-stack.tls.override.yml))
 publishes `:443`, adds a `websecure` entrypoint that redirects HTTP → HTTPS, and
-turns on the **Platform Settings → HTTPS certificate** panel. There is nothing to
-set up before first boot: Traefik serves a self-signed certificate on `:443`
-until you upload a real one.
+turns on the **Platform Settings → HTTPS certificate** panel. Like the base
+stack it references no repo file — download the two stack files and deploy; there
+is nothing to check out on the host. There is nothing to set up before first boot
+either: Traefik serves a self-signed certificate on `:443` until you upload a real
+one.
 
 **Installing your certificate is a UI step, not a deploy step.** In Platform
 Settings, paste your PEM certificate (leaf + intermediates, in chain order) and
 its unencrypted private key, and save. Roundhouse validates the pair, stores it
-(the key encrypted at rest with `APP_KEY`), and delivers it to Traefik as a
-Swarm secret — cluster-distributed via Raft, so no shared volume is needed and
-Traefik stays freely schedulable. Rotating the certificate is the same UI step
+(the key encrypted at rest with `APP_KEY`), and delivers it to Traefik as Swarm
+secrets — the cert, the key, and Traefik's default-certificate config, all
+cluster-distributed via Raft, so no shared volume is needed and Traefik stays
+freely schedulable. Rotating the certificate is the same UI step
 again; it triggers a zero-downtime rolling reload (run Traefik at `replicas: 2+`
 across nodes if you want the rollout to be gapless).
 
@@ -460,9 +463,9 @@ upstream proxy and its cert lifecycle. Servers created **before** switching to
 this mode keep their old HTTP-only routing labels until recreated — redeploy or
 restart them once after enabling it.
 
-> Prefer managing the certificate outside the app? You can instead create the
-> cert and key as Swarm secrets yourself and reference them from the overlay;
-> the UI panel is simply the zero-touch path.
+> Prefer managing the certificate outside the app? Point the base stack at a
+> front reverse proxy (the standard overlay) and terminate TLS there instead;
+> this self-managed overlay is the zero-touch, no-upstream path.
 
 ### Pinning a service to a node
 
