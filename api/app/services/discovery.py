@@ -163,6 +163,16 @@ def reconcile(existing: list[dict], discovered: list[dict]) -> list[dict]:
     return out
 
 
+def drop_archived(primitives: list[dict]) -> list[dict]:
+    """Return `primitives` with every archived (vanished-upstream) entry removed.
+
+    Archived primitives are already excluded from the generated proxy toolset;
+    this is the operator action that clears them from the management view for
+    good after a rediscovery marked them gone.
+    """
+    return [p for p in primitives if not p.get("archived")]
+
+
 def _safe(fn: Callable[[], list]) -> list:
     """Resources/prompts are optional MCP capabilities - a server that doesn't
     advertise them answers with a method-not-found error. Treat that as empty

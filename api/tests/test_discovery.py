@@ -128,3 +128,18 @@ def test_reconcile_leaves_authored_primitives_untouched():
     assert {p["name"] for p in out if p.get("discovered")} == {
         "platform_core_search", "platform_core_list_indices"
     }
+
+
+def test_drop_archived_removes_only_archived():
+    prims = [
+        {"kind": "tool", "name": "live", "discovered": True},
+        {"kind": "tool", "name": "gone", "discovered": True, "archived": True},
+        {"kind": "tool", "name": "hand_built", "code": "return 1"},
+    ]
+    out = discovery.drop_archived(prims)
+    assert [p["name"] for p in out] == ["live", "hand_built"]
+
+
+def test_drop_archived_noop_when_none_archived():
+    prims = [{"kind": "tool", "name": "live", "discovered": True}]
+    assert discovery.drop_archived(prims) == prims
