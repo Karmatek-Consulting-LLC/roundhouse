@@ -91,6 +91,11 @@ class KubernetesClient:
     def supports_scaling(self) -> bool:
         return True
 
+    def list_node_labels(self) -> list[dict]:
+        # Node-label placement is a Swarm feature; K8s node affinity is not
+        # wired up here, so expose no selectors (the UI hides the picker).
+        return []
+
     # ---- Workload lifecycle ----
 
     def build_and_start(
@@ -105,6 +110,8 @@ class KubernetesClient:
         cpu_limit: float | None = None,
         memory_limit_mb: int | None = None,
         route_port: int = 8000,
+        # Accepted for Orchestrator-protocol parity; K8s placement is not wired.
+        placement_constraints: list[dict] | None = None,
     ) -> dict:
         if not registry_prefix:
             raise DockerError(

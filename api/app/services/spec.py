@@ -101,6 +101,26 @@ def _remote_headers_list(items: Any) -> list[dict]:
     return out
 
 
+def _placement_constraints_list(items: Any) -> list[dict]:
+    """Swarm node-label placement selectors. Each entry is {"key","value"} and
+    is translated at deploy time into a Docker `node.labels.<key>==<value>`
+    service constraint. De-duplicated; blank keys/values are dropped."""
+    out: list[dict] = []
+    if not isinstance(items, list):
+        return out
+    seen: set[tuple[str, str]] = set()
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        key = str(it.get("key") or "").strip()
+        value = str(it.get("value") or "").strip()
+        if not key or not value or (key, value) in seen:
+            continue
+        seen.add((key, value))
+        out.append({"key": key, "value": value})
+    return out
+
+
 @dataclass(slots=True)
 class ServerSpec:
     """Persisted server definition. Primitives are dicts with a `kind`
@@ -121,6 +141,10 @@ class ServerSpec:
     # None = no cap (Docker default). cpu_limit is whole CPUs (0.5 = half).
     cpu_limit: float | None = None
     memory_limit_mb: int | None = None
+    # Swarm node-label placement selectors chosen at deploy time. Each entry is
+    # {"key","value"}, translated to a `node.labels.<key>==<value>` service
+    # constraint (all ANDed). Empty = schedule anywhere. Ignored off Swarm.
+    placement_constraints: list[dict] = field(default_factory=list)
     # Set for servers imported via "Deploy from Git" - lets the platform
     # re-clone the same source on "Update from Git". None for other servers.
     git_url: str | None = None
@@ -207,6 +231,7 @@ class ServerSpec:
             middleware_defaults=mw_defaults,
             cpu_limit=_opt_float(data.get("cpu_limit")),
             memory_limit_mb=_opt_int(data.get("memory_limit_mb")),
+            placement_constraints=_placement_constraints_list(data.get("placement_constraints", [])),
             git_url=data.get("git_url") if isinstance(data.get("git_url"), str) else None,
             git_ref=data.get("git_ref") if isinstance(data.get("git_ref"), str) else None,
             remote_url=remote_url,
@@ -230,6 +255,7 @@ class ServerSpec:
             "middleware_defaults": self.middleware_defaults,
             "cpu_limit": self.cpu_limit,
             "memory_limit_mb": self.memory_limit_mb,
+            "placement_constraints": self.placement_constraints,
             "git_url": self.git_url,
             "git_ref": self.git_ref,
             "remote_url": self.remote_url,

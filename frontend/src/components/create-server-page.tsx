@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import type { ServersOutletContext } from "@/App";
-import { api } from "@/lib/api";
+import { api, type PlacementConstraint } from "@/lib/api";
+import { PlacementSelector } from "@/components/placement-selector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -122,6 +123,8 @@ export function CreateServerPage() {
   // Import JSON
   const [importJson, setImportJson] = useState("");
 
+  const [placement, setPlacement] = useState<PlacementConstraint[]>([]);
+
   const [limits, setLimits] = useState<{
     default_mcp_server_replicas: number;
     max_mcp_server_replicas: number;
@@ -152,11 +155,13 @@ export function CreateServerPage() {
     setCreating(true);
     try {
       const rep = effectiveReplicas();
+      const place = placement.length > 0 ? { placement_constraints: placement } : {};
       if (method === "structured") {
         await api.createServer({
           name,
           description,
           ...(rep !== undefined ? { replicas: rep } : {}),
+          ...place,
         });
       } else if (method === "code") {
         await api.createServer({
@@ -165,6 +170,7 @@ export function CreateServerPage() {
           mode: "code",
           source,
           ...(rep !== undefined ? { replicas: rep } : {}),
+          ...place,
         });
       } else if (method === "remote") {
         await api.createServer({
@@ -176,6 +182,7 @@ export function CreateServerPage() {
             .filter((h) => h.header.trim() && h.value.trim())
             .map((h) => ({ header: h.header.trim(), value: h.value })),
           ...(rep !== undefined ? { replicas: rep } : {}),
+          ...place,
         });
       } else if (method === "git") {
         await api.deployFromGit({
@@ -184,6 +191,7 @@ export function CreateServerPage() {
           ...(gitRef ? { ref: gitRef } : {}),
           ...(description ? { description } : {}),
           ...(rep !== undefined ? { replicas: rep } : {}),
+          ...place,
         });
       } else if (method === "import") {
         const parsed = JSON.parse(importJson);
@@ -317,6 +325,10 @@ export function CreateServerPage() {
                 }}
               />
             </div>
+          )}
+
+          {method !== "import" && (
+            <PlacementSelector selected={placement} onChange={setPlacement} disabled={creating} />
           )}
 
           {(method === "structured" || method === "code" || method === "remote" || method === "git") && (

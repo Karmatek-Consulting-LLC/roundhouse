@@ -45,6 +45,11 @@ class Orchestrator(Protocol):
     def supports_scaling(self) -> bool:
         """True when the backend can run >1 replica of a server."""
 
+    def list_node_labels(self) -> list[dict]:
+        """Distinct node-label selectors available for placement, as
+        [{"key","value","nodes"}]. Empty on backends without node labels (e.g.
+        standalone Docker); populates the deploy-time placement selector."""
+
     # ---- Workload lifecycle ----
 
     def build_and_start(
@@ -59,6 +64,7 @@ class Orchestrator(Protocol):
         cpu_limit: float | None = None,
         memory_limit_mb: int | None = None,
         route_port: int = 8000,
+        placement_constraints: list[dict] | None = None,
     ) -> dict: ...
 
     def list_servers(self) -> list[dict]: ...

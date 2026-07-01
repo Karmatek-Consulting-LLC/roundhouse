@@ -245,6 +245,9 @@ def _to_response(
         # Back-compat: frontend reads docker_swarm_mode as a "supports scaling" flag.
         "docker_swarm_mode": get_docker().supports_scaling(),
         "placement": snap.get("placement") or [],
+        # Desired node-label placement selectors (input); distinct from
+        # `placement` above, which is where tasks currently run (output).
+        "placement_constraints": spec.placement_constraints if spec else [],
         "cpu_limit": spec.cpu_limit if spec else None,
         "memory_limit_mb": spec.memory_limit_mb if spec else None,
         "git_url": spec.git_url if spec else None,
@@ -297,6 +300,15 @@ def limits(_: User = Depends(current_user)):
         "supports_scaling": get_docker().supports_scaling(),
         "docker_swarm_mode": get_docker().supports_scaling(),
     }
+
+
+@router.get("/node-labels")
+def node_labels(_: User = Depends(current_user)):
+    """Node-label key=value pairs available for placement selection, derived
+    from the swarm's actual node labels (not free-form). `supported` is false
+    off Swarm, so the UI can hide the picker rather than offer an empty list."""
+    docker = get_docker()
+    return {"supported": docker.supports_scaling(), "labels": docker.list_node_labels()}
 
 
 @router.get("/{name}")
@@ -447,6 +459,41 @@ class RemoteHeaderIn(BaseModel):
     value: str
 
 
+class PlacementConstraintIn(BaseModel):
+    key: str
+    value: str
+
+
+def _validate_placement(constraints: list[PlacementConstraintIn]) -> list[dict]:
+    """Resolve submitted node-label selectors against the labels that actually
+    exist on the swarm, rejecting anything free-form. Returns the de-duplicated
+    [{"key","value"}] to persist on the spec; [] when nothing was submitted."""
+    if not constraints:
+        return []
+    available = {(lbl["key"], lbl["value"]) for lbl in get_docker().list_node_labels()}
+    if not available:
+        raise HTTPException(
+            status_code=422,
+            detail="Node-label placement requires a Docker Swarm with labeled nodes.",
+        )
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for c in constraints:
+        key = (c.key or "").strip()
+        value = (c.value or "").strip()
+        if not key or not value:
+            continue
+        if (key, value) not in available:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown node label {key}={value}; choose from existing node labels.",
+            )
+        if (key, value) not in seen:
+            seen.add((key, value))
+            out.append({"key": key, "value": value})
+    return out
+
+
 class CreateServerIn(BaseModel):
     name: str
     description: str | None = ""
@@ -458,6 +505,9 @@ class CreateServerIn(BaseModel):
     # Remote-proxy fields (mode == "remote").
     remote_url: str | None = None
     remote_headers: list[RemoteHeaderIn] = []
+    # Swarm node-label placement selectors (all ANDed). Validated against the
+    # labels that exist on the cluster; empty = schedule anywhere.
+    placement_constraints: list[PlacementConstraintIn] = []
 
 
 def _apply_remote_headers(spec: ServerSpec, headers: list[RemoteHeaderIn]) -> None:
@@ -511,6 +561,8 @@ def store(
                 status_code=422, detail="Cannot specify both a template and a remote URL"
             )
 
+    placement_constraints = _validate_placement(payload.placement_constraints)
+
     service = get_server_service()
     docker = get_docker()
     name = payload.name
@@ -535,6 +587,7 @@ def store(
             replicas=payload.replicas,
             mode=payload.mode,
             source=(payload.source if payload.mode == MODE_CODE else None),
+            placement_constraints=placement_constraints,
         )
 
         if payload.mode == MODE_REMOTE:
@@ -571,6 +624,7 @@ def store(
                     replicas=service.effective_replicas(spec),
                     registry_prefix=service.registry_prefix(db),
                     registry_auth=service.registry_auth(db),
+                    placement_constraints=spec.placement_constraints,
                 )
             finally:
                 shutil.rmtree(build_context, ignore_errors=True)
@@ -772,6 +826,8 @@ class GitDeployIn(BaseModel):
     # Optional branch/tag/commit ref. Falls back to the remote's default branch.
     ref: str | None = None
     replicas: int | None = None
+    # Swarm node-label placement selectors, validated against existing labels.
+    placement_constraints: list[PlacementConstraintIn] = []
 
 
 @router.post("/from-git", status_code=201)
@@ -798,6 +854,7 @@ def deploy_from_git(
             status_code=422,
             detail=f"replicas must be between 1 and {cfg.mcp_max_server_replicas}",
         )
+    placement_constraints = _validate_placement(payload.placement_constraints)
 
     docker = get_docker()
     service = get_server_service()
@@ -837,6 +894,7 @@ def deploy_from_git(
                 env_vars=manifest.env_vars,
                 git_url=payload.git_url,
                 git_ref=payload.ref,
+                placement_constraints=placement_constraints,
             )
             service.store.save(spec)
             service.store.set_build_files(name, buildctx.snapshot_dir(repo))
@@ -1080,6 +1138,29 @@ def update_resources(
     )
     # Resource changes don't take effect until next deploy - flag it so the
     # editor surfaces the redeploy banner like a spec change.
+    from app.services import server_auth as _sa
+    get_server_service().store.save(spec)
+    _sa.mark_redeploy_required(db, name)
+    snap = get_docker().get_server(name) or _missing_snapshot(name)
+    return _to_response(db, snap, spec)
+
+
+class PlacementIn(BaseModel):
+    placement_constraints: list[PlacementConstraintIn] = []
+
+
+@router.put("/{name}/placement")
+def update_placement(
+    name: str,
+    payload: PlacementIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    spec.placement_constraints = _validate_placement(payload.placement_constraints)
+    # Placement is baked into the service spec at create time, so a change only
+    # takes effect on the next deploy - flag it like other spec edits.
     from app.services import server_auth as _sa
     get_server_service().store.save(spec)
     _sa.mark_redeploy_required(db, name)

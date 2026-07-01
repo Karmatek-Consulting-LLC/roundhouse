@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, type Asset, type AssetListResponse, type Primitive, type Server, type UsageSnapshot } from "@/lib/api";
+import { api, type Asset, type AssetListResponse, type PlacementConstraint, type Primitive, type Server, type UsageSnapshot } from "@/lib/api";
+import { PlacementSelector } from "@/components/placement-selector";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { CopyButton } from "@/components/copy-button";
@@ -499,6 +500,8 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
   const [memoryLimit, setMemoryLimit] = useState<string>(server.memory_limit_mb != null ? String(server.memory_limit_mb) : "");
   const [savedCpuLimit, setSavedCpuLimit] = useState<string>(cpuLimit);
   const [savedMemoryLimit, setSavedMemoryLimit] = useState<string>(memoryLimit);
+  const [placement, setPlacement] = useState<PlacementConstraint[]>(server.placement_constraints ?? []);
+  const [savedPlacement, setSavedPlacement] = useState<PlacementConstraint[]>(server.placement_constraints ?? []);
   const [replicaLimits, setReplicaLimits] = useState<{
     max_mcp_server_replicas: number;
     docker_swarm_mode: boolean;
@@ -511,10 +514,14 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
     api.getServerReplicaLimits().then(setReplicaLimits).catch(() => setReplicaLimits(null));
   }, []);
 
+  // Order-independent compare of node-label selectors.
+  const placementKey = (cs: PlacementConstraint[]) =>
+    cs.map((c) => `${c.key}=${c.value}`).sort().join(",");
   const descDirty = description !== savedDescription;
   const replicasDirty = replicas !== savedReplicas;
   const resourcesDirty = cpuLimit !== savedCpuLimit || memoryLimit !== savedMemoryLimit;
-  const dirty = descDirty || replicasDirty || resourcesDirty;
+  const placementDirty = placementKey(placement) !== placementKey(savedPlacement);
+  const dirty = descDirty || replicasDirty || resourcesDirty || placementDirty;
 
   async function save() {
     setError(null);
@@ -531,11 +538,13 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
           memory_limit_mb: !Number.isNaN(mem) && mem > 0 ? mem : null,
         }));
       }
+      if (placementDirty) tasks.push(api.updateServerPlacement(serverName, placement));
       await Promise.all(tasks);
       setSavedDescription(description);
       setSavedReplicas(replicas);
       setSavedCpuLimit(cpuLimit);
       setSavedMemoryLimit(memoryLimit);
+      setSavedPlacement(placement);
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
@@ -549,6 +558,7 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
     setReplicas(savedReplicas);
     setCpuLimit(savedCpuLimit);
     setMemoryLimit(savedMemoryLimit);
+    setPlacement(savedPlacement);
     setError(null);
   }
 
@@ -691,9 +701,11 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
         </div>
       </div>
 
+      <PlacementSelector selected={placement} onChange={setPlacement} disabled={saving} />
+
       {(server.placement ?? []).length > 0 && (
         <div className="grid gap-2">
-          <Label>Placement</Label>
+          <Label>Current placement</Label>
           <p className="text-xs text-muted-foreground">
             Where this server's task(s) are currently scheduled.
           </p>
