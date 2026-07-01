@@ -321,6 +321,21 @@ export interface PlacementTask {
   error: string | null;
 }
 
+/** A node-label key=value selector chosen for Swarm placement. Translated
+ * server-side into a `node.labels.<key>==<value>` service constraint. */
+export interface PlacementConstraint {
+  key: string;
+  value: string;
+}
+
+/** A distinct node-label pair available for placement selection, with the
+ * count of swarm nodes currently carrying it. */
+export interface NodeLabel {
+  key: string;
+  value: string;
+  nodes: number;
+}
+
 export type ServerMode = "structured" | "code" | "remote";
 
 /** Outbound header sent to a remote upstream. The mapping (header -> env var
@@ -444,6 +459,9 @@ export interface Server {
   replicas_running: number;
   docker_swarm_mode: boolean;
   placement: PlacementTask[];
+  /** Desired Swarm node-label placement selectors (input; all ANDed). Distinct
+   * from `placement`, which is where tasks currently run (output). */
+  placement_constraints?: PlacementConstraint[];
   /** ISO-8601 timestamp set when scope/token changes need a redeploy; null otherwise. */
   redeploy_required_at?: string | null;
   /** Docker --cpus value (whole CPUs, fractional ok). null = no cap. */
@@ -554,6 +572,8 @@ export interface CreateServerRequest {
   remote_url?: string;
   /** Outbound headers for mode === "remote". Values are secret (write-only). */
   remote_headers?: { header: string; value: string }[];
+  /** Swarm node-label placement selectors. Validated against existing labels. */
+  placement_constraints?: PlacementConstraint[];
 }
 
 const BASE = "/api";
@@ -663,6 +683,10 @@ export const api = {
       max_mcp_server_replicas: number;
       docker_swarm_mode: boolean;
     }>("/servers/limits"),
+  /** Node-label pairs available for Swarm placement selection (derived from
+   * actual node labels, not free-form). `supported` is false off Swarm. */
+  listNodeLabels: () =>
+    request<{ supported: boolean; labels: NodeLabel[] }>("/servers/node-labels"),
   getServer: (name: string) => request<Server>(`/servers/${name}`),
   getServerLogs: (name: string, tail = 200) =>
     requestText(`/servers/${encodeURIComponent(name)}/logs?tail=${tail}`),
@@ -741,6 +765,7 @@ export const api = {
     ref?: string;
     description?: string;
     replicas?: number;
+    placement_constraints?: PlacementConstraint[];
   }) =>
     request<Server>("/servers/from-git", {
       method: "POST",
@@ -797,6 +822,11 @@ export const api = {
     request<Server>(`/servers/${serverName}/replicas`, {
       method: "PUT",
       body: JSON.stringify({ replicas }),
+    }),
+  updateServerPlacement: (serverName: string, placement_constraints: PlacementConstraint[]) =>
+    request<Server>(`/servers/${serverName}/placement`, {
+      method: "PUT",
+      body: JSON.stringify({ placement_constraints }),
     }),
 
   // Primitives

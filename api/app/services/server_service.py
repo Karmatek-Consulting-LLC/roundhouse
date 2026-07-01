@@ -285,6 +285,7 @@ class ServerService:
                 cpu_limit=spec.cpu_limit,
                 memory_limit_mb=spec.memory_limit_mb,
                 route_port=codegen.route_port_for(spec),
+                placement_constraints=spec.placement_constraints,
             )
         server_auth.clear_redeploy_required(db, spec.name)
         return result

@@ -87,6 +87,21 @@ def _all_labels(
     }
 
 
+def _placement_constraints_to_docker(constraints: list[dict] | None) -> list[str]:
+    """Translate [{"key","value"}, ...] node-label selectors into Docker Swarm
+    service constraint strings `node.labels.<key>==<value>`. Blank keys/values
+    are skipped so a malformed entry can't produce an unschedulable service."""
+    out: list[str] = []
+    for c in constraints or []:
+        if not isinstance(c, dict):
+            continue
+        key = str(c.get("key") or "").strip()
+        value = str(c.get("value") or "").strip()
+        if key and value:
+            out.append(f"node.labels.{key}=={value}")
+    return out
+
+
 def _parse_health_from_summary(status_str: str) -> str | None:
     """Docker's `ps` Status column carries health in parens, e.g.
     'Up 2 minutes (healthy)'. Parse it out without a full inspect."""
@@ -215,6 +230,30 @@ class DockerClient:
         except DockerError:
             return 1
 
+    def list_node_labels(self) -> list[dict]:
+        """Distinct node-label key=value pairs across the swarm, for populating
+        the placement selector. Only swarm-assigned node labels (Spec.Labels,
+        i.e. `docker node update --label-add`) are returned — those are exactly
+        what a `node.labels.*` constraint matches. Returns [] off swarm. Each
+        entry is {"key","value","nodes"} where nodes counts matching hosts."""
+        if not self.swarm_mode():
+            return []
+        try:
+            nodes = self._http.get("nodes") or []
+        except DockerError:
+            return []
+        counts: dict[tuple[str, str], int] = {}
+        for n in nodes:
+            node_labels = (n.get("Spec") or {}).get("Labels") or {}
+            for key, value in node_labels.items():
+                if not isinstance(key, str) or not isinstance(value, str):
+                    continue
+                counts[(key, value)] = counts.get((key, value), 0) + 1
+        return [
+            {"key": k, "value": v, "nodes": c}
+            for (k, v), c in sorted(counts.items())
+        ]
+
     def _host_name(self) -> str:
         """The standalone Docker host's name (from /info). Cached per client so
         we can show 'where a server lives' even on a single host, mirroring the
@@ -299,6 +338,7 @@ class DockerClient:
         cpu_limit: float | None = None,
         memory_limit_mb: int | None = None,
         route_port: int = DEFAULT_ROUTE_PORT,
+        placement_constraints: list[dict] | None = None,
     ) -> dict:
         env_vars = env_vars or {}
         # Guardrail: a multi-node Swarm distributes images via a registry. Without
@@ -318,6 +358,7 @@ class DockerClient:
             return self._create_service(
                 server_name, tag, template_name, env_vars, replicas, registry_auth,
                 cpu_limit=cpu_limit, memory_limit_mb=memory_limit_mb, route_port=route_port,
+                placement_constraints=placement_constraints,
             )
         return self._create_container(
             server_name, tag, template_name, env_vars,
@@ -560,6 +601,7 @@ class DockerClient:
         cpu_limit: float | None = None,
         memory_limit_mb: int | None = None,
         route_port: int = DEFAULT_ROUTE_PORT,
+        placement_constraints: list[dict] | None = None,
     ) -> dict:
         name = _container_name(server_name)
         labels = _all_labels(server_name, template_name, route_port)
@@ -569,6 +611,11 @@ class DockerClient:
             "ContainerSpec": {"Image": tag, "Env": env_list},
             "Networks": [{"Target": self._network}],
         }
+        constraints = _placement_constraints_to_docker(placement_constraints)
+        if constraints:
+            # Node-label selectors, ANDed by Swarm. A task only schedules onto a
+            # node whose labels satisfy every constraint.
+            task_template["Placement"] = {"Constraints": constraints}
         limits: dict[str, Any] = {}
         if isinstance(cpu_limit, (int, float)) and cpu_limit > 0:
             limits["NanoCPUs"] = int(cpu_limit * 1_000_000_000)
