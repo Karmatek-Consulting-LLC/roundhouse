@@ -350,6 +350,19 @@ export interface BackupCounts {
   server_tokens: number;
 }
 
+/** Status of the self-managed HTTPS certificate (Traefik terminates TLS here).
+ * PEM contents never come back over the wire — only presence + leaf metadata. */
+export interface TlsCertStatus {
+  /** Deployment opted into self-managed TLS (MCP_TLS_SELF_MANAGED); gates the UI. */
+  supported: boolean;
+  configured: boolean;
+  subject_cn?: string;
+  issuer_cn?: string;
+  sans?: string[];
+  not_before?: string;
+  not_after?: string;
+}
+
 /** Live deployment summary shown before an export / compared against on restore. */
 export interface DeploymentInfo {
   postgres: boolean;
@@ -999,6 +1012,8 @@ export const api = {
     custom_ca_cert_configured: boolean;
     /** How many certificate blocks the stored bundle contains. */
     custom_ca_cert_count: number;
+    /** Self-managed HTTPS cert status (terminate TLS on the embedded Traefik). */
+    tls_cert: TlsCertStatus;
   }>("/settings"),
   updateCustomCa: (cert: string) =>
     request<{ custom_ca_cert_configured: boolean; cert_count: number }>("/settings/custom-ca", {
@@ -1007,6 +1022,15 @@ export const api = {
     }),
   deleteCustomCa: () =>
     request<{ custom_ca_cert_configured: boolean }>("/settings/custom-ca", {
+      method: "DELETE",
+    }),
+  updateTlsCert: (cert: string, key: string) =>
+    request<{ tls_cert: TlsCertStatus }>("/settings/tls-cert", {
+      method: "PUT",
+      body: JSON.stringify({ cert, key }),
+    }),
+  deleteTlsCert: () =>
+    request<{ tls_cert: TlsCertStatus }>("/settings/tls-cert", {
       method: "DELETE",
     }),
   updateDockerRegistry: (body: {

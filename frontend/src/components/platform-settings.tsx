@@ -14,8 +14,8 @@ import {
 } from "@/components/ui/card";
 import { EnvVarsEditor } from "@/components/env-vars-editor";
 import { SsoSettingsCard } from "@/components/sso-settings";
-import type { EnvVar } from "@/lib/api";
-import { ArrowLeft, Boxes, Container, Globe, KeyRound, Save, Shield, Trash2, Variable } from "lucide-react";
+import type { EnvVar, TlsCertStatus } from "@/lib/api";
+import { ArrowLeft, Boxes, Container, Globe, KeyRound, Lock, Save, Shield, Trash2, Variable } from "lucide-react";
 
 interface PlatformSettingsProps {
   onBack: () => void;
@@ -39,6 +39,11 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
   const [customCaInput, setCustomCaInput] = useState("");
   const [savingCustomCa, setSavingCustomCa] = useState(false);
   const [customCaError, setCustomCaError] = useState<string | null>(null);
+  const [tlsCert, setTlsCert] = useState<TlsCertStatus | null>(null);
+  const [tlsCertInput, setTlsCertInput] = useState("");
+  const [tlsKeyInput, setTlsKeyInput] = useState("");
+  const [savingTls, setSavingTls] = useState(false);
+  const [tlsError, setTlsError] = useState<string | null>(null);
   const [globalEnvVars, setGlobalEnvVars] = useState<EnvVar[]>([]);
   const [savedGlobalEnvVars, setSavedGlobalEnvVars] = useState<EnvVar[]>([]);
   const [savingGlobalEnv, setSavingGlobalEnv] = useState(false);
@@ -63,6 +68,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       setPasswordClearRequested(false);
       setCustomCaConfigured(data.custom_ca_cert_configured);
       setCustomCaCount(data.custom_ca_cert_count ?? 0);
+      setTlsCert(data.tls_cert ?? null);
       try {
         const envData = await api.getMcpEnvSettings();
         setGlobalEnvVars(envData.env_vars);
@@ -143,6 +149,39 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       setCustomCaError(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSavingCustomCa(false);
+    }
+  }
+
+  async function handleSaveTls() {
+    setTlsError(null);
+    setSavingTls(true);
+    try {
+      const r = await api.updateTlsCert(tlsCertInput, tlsKeyInput);
+      setTlsCert(r.tls_cert);
+      setTlsCertInput("");
+      setTlsKeyInput("");
+    } catch (e) {
+      setTlsError(e instanceof Error ? e.message : "Failed to save certificate");
+    } finally {
+      setSavingTls(false);
+    }
+  }
+
+  async function handleDeleteTls() {
+    if (
+      !confirm(
+        "Remove the HTTPS certificate? Traefik falls back to a self-signed " +
+          "certificate, so browsers will warn until you upload a new one.",
+      )
+    ) {
+      return;
+    }
+    setTlsError(null);
+    try {
+      const r = await api.deleteTlsCert();
+      setTlsCert(r.tls_cert);
+    } catch (e) {
+      setTlsError(e instanceof Error ? e.message : "Failed to remove certificate");
     }
   }
 
@@ -428,6 +467,84 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
           </div>
         </CardContent>
       </Card>
+
+      {tlsCert?.supported && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5" />
+              HTTPS certificate
+            </CardTitle>
+            <CardDescription>
+              This deployment terminates TLS on its own ingress — no upstream
+              reverse proxy needed. Upload your PEM certificate (leaf +
+              intermediates, in chain order) and its unencrypted private key.
+              The key is stored encrypted and delivered to the ingress as a
+              Swarm secret; replacing it triggers a zero-downtime reload. Until a
+              certificate is uploaded, the ingress serves a self-signed one and
+              browsers will warn.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge variant={tlsCert.configured ? "default" : "secondary"}>
+                <Shield className="mr-1 h-3 w-3" />
+                {tlsCert.configured
+                  ? `${tlsCert.subject_cn || "certificate"} installed`
+                  : "Self-signed (no certificate uploaded)"}
+              </Badge>
+              {tlsCert.configured && tlsCert.not_after && (
+                <span className="text-sm text-muted-foreground">
+                  Expires {new Date(tlsCert.not_after).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Certificate (PEM)</Label>
+              <Textarea
+                className="min-h-[120px] font-mono text-xs"
+                placeholder={"-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----"}
+                value={tlsCertInput}
+                onChange={(e) => setTlsCertInput(e.target.value)}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Private key (PEM)</Label>
+              <Textarea
+                className="min-h-[120px] font-mono text-xs"
+                placeholder={"-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----"}
+                value={tlsKeyInput}
+                onChange={(e) => setTlsKeyInput(e.target.value)}
+              />
+            </div>
+
+            {tlsError && <p className="text-sm text-destructive">{tlsError}</p>}
+
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={handleSaveTls}
+                disabled={savingTls || !tlsCertInput.trim() || !tlsKeyInput.trim()}
+                size="sm"
+              >
+                <Save className="mr-1 h-4 w-4" />
+                {savingTls
+                  ? "Applying..."
+                  : tlsCert.configured
+                    ? "Replace certificate"
+                    : "Install certificate"}
+              </Button>
+              {tlsCert.configured && (
+                <Button variant="destructive" size="sm" onClick={handleDeleteTls}>
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  Remove certificate
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

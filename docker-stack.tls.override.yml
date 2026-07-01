@@ -1,0 +1,86 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Self-managed TLS overlay: terminate HTTPS on Roundhouse's OWN Traefik, with no
+# upstream reverse proxy. For dedicated Swarm clusters where Roundhouse owns the
+# hostname. The operator uploads the cert + key from Platform Settings (no
+# Docker secrets to create by hand, no redeploy to rotate); the app delivers
+# them to Traefik as Swarm secrets and reloads it.
+#
+# Deploy (use this INSTEAD of the front-proxy override):
+#   docker stack deploy \
+#     -c docker-stack.yml \
+#     -c docker-stack.tls.override.yml \
+#     roundhouse
+#
+# There is nothing to set up before first boot: Traefik serves a self-signed
+# certificate on :443 until you upload a real one under Platform Settings →
+# HTTPS certificate, at which point it hot-swaps with a zero-downtime rollout.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # Widen the API socket-proxy just enough for the app to manage the cert:
+  # create/remove Swarm secrets. POST + SERVICES (for the service update that
+  # swaps them onto Traefik) are already granted by the base stack.
+  docker-socket-proxy-api:
+    environment:
+      SECRETS: 1
+
+  traefik:
+    # Compose REPLACES `command` (lists are not merged), so the base flags are
+    # repeated here alongside the TLS additions. Keep in sync if the base's
+    # Traefik flags change.
+    command:
+      # ── carried over verbatim from docker-stack.yml ─────────────────────
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --entryPoints.web.address=:80
+      - --providers.swarm.endpoint=tcp://docker-socket-proxy-traefik:2375
+      - --providers.swarm.exposedByDefault=false
+      - --providers.swarm.network=roundhouse_roundhouse-network
+      # ── TLS edge additions ──────────────────────────────────────────────
+      - --entryPoints.websecure.address=:443
+      # TLS on by default for every :443 router, so neither the SPA router nor
+      # the app's dynamically-spawned /s/{server} routers need a per-router tls
+      # label. The default certificate comes from the file provider below.
+      - --entryPoints.websecure.http.tls=true
+      # Force HTTP → HTTPS.
+      - --entryPoints.web.http.redirections.entryPoint.to=websecure
+      - --entryPoints.web.http.redirections.entryPoint.scheme=https
+      # Dynamic config supplying the default certificate. watch=true means a
+      # freshly-delivered cert is picked up on the next task start.
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+    # host mode preserves the real client IP and skips the routing mesh; it puts
+    # one Traefik per node, which is the right shape for a dedicated ingress.
+    # For VIP-style replica scaling instead, drop `mode: host` (default ingress)
+    # and add PROXY protocol if you still need client IPs.
+    ports:
+      - target: 443
+        published: 443
+        mode: host
+      - target: 80
+        published: 80
+        mode: host
+    configs:
+      - source: roundhouse_tls_dynamic
+        target: /etc/traefik/dynamic/tls.yml
+
+  platform-api:
+    environment:
+      # Turn on the Platform Settings → HTTPS certificate upload, and tell the
+      # app which Swarm service to push the cert onto.
+      - MCP_TLS_SELF_MANAGED=true
+      - MCP_TRAEFIK_SERVICE=roundhouse_traefik
+      # New MCP servers route over both entrypoints; :80 redirects to :443.
+      # (Servers created before enabling this keep their old `web`-only labels
+      # until recreated — redeploy or restart them once after switching.)
+      - MCP_TRAEFIK_ENTRYPOINTS=web,websecure
+    deploy:
+      labels:
+        # Serve the SPA over TLS too (base binds it to `web` only).
+        - "traefik.http.routers.platform-api.entrypoints=web,websecure"
+
+configs:
+  # Static default-certificate declaration. Relative path is resolved from where
+  # you run `docker stack deploy`.
+  roundhouse_tls_dynamic:
+    file: ./traefik/dynamic-tls.yml

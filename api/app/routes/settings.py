@@ -19,8 +19,9 @@ from app.platform_settings import (
     get_setting,
     put_setting,
 )
-from app.services import global_env, sso_config
+from app.services import global_env, sso_config, tls_cert
 from app.services.docker import get_docker
+from app.services.docker_http import DockerError
 from app.services.server_service import get_server_service
 from app.services.spec import EnvVar
 
@@ -64,7 +65,35 @@ def index(_: User = Depends(require_superadmin), db: Session = Depends(get_db)):
             (get_setting(db, SETTING_CUSTOM_CA_CERT, "") or "").strip()
         ),
         "custom_ca_cert_count": _count_certs(get_setting(db, SETTING_CUSTOM_CA_CERT, "") or ""),
+        "tls_cert": tls_cert.status(db),
     }
+
+
+class TlsCertIn(BaseModel):
+    cert: str = Field(min_length=1, max_length=262144)
+    key: str = Field(min_length=1, max_length=262144)
+
+
+@router.put("/tls-cert")
+def update_tls_cert(payload: TlsCertIn, db: Session = Depends(get_db)):
+    # Validate + persist + push to the ingress Traefik. A bad pair is a 422; a
+    # Swarm/Docker failure is a 502 (and get_db rolls the stored cert back).
+    try:
+        info = tls_cert.apply_certificate(db, payload.cert, payload.key)
+    except tls_cert.TlsCertError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except DockerError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Certificate is valid but applying it to Traefik failed: {e}",
+        ) from e
+    return {"tls_cert": {"supported": True, "configured": True, **info}}
+
+
+@router.delete("/tls-cert")
+def delete_tls_cert(db: Session = Depends(get_db)):
+    tls_cert.clear_certificate(db)
+    return {"tls_cert": tls_cert.status(db)}
 
 
 class RegistryIn(BaseModel):
