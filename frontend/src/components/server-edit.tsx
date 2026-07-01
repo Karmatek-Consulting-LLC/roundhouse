@@ -1550,6 +1550,47 @@ function RediscoverButton({ serverName, onDone }: { serverName: string; onDone: 
   );
 }
 
+/** Removes every archived (vanished-upstream) primitive from the server.
+ * Rendered only when at least one archived primitive is present. */
+function ClearArchivedButton({
+  serverName,
+  count,
+  onDone,
+}: {
+  serverName: string;
+  count: number;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <div className="px-3 mb-3">
+      <Button
+        size="sm"
+        variant="ghost"
+        className="w-full justify-start text-muted-foreground"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setErr(null);
+          try {
+            await api.clearArchivedPrimitives(serverName);
+            onDone();
+          } catch (e) {
+            setErr(e instanceof Error ? e.message : "Failed to clear archived");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <Trash2 className={`mr-1 h-3 w-3 ${busy ? "animate-pulse" : ""}`} />
+        {busy ? "Clearing…" : `Clear ${count} archived`}
+      </Button>
+      {err && <p className="mt-1 text-[11px] text-destructive">{err}</p>}
+    </div>
+  );
+}
+
 interface RemoteRailProps {
   serverName: string;
   server: Server;
@@ -1648,6 +1689,11 @@ function LeftNav({ server, selection, onSelect, onMutated }: LeftNavProps) {
     return out;
   }, [server.primitives]);
 
+  const archivedCount = useMemo(
+    () => (server.primitives ?? []).filter((p) => p.archived).length,
+    [server.primitives],
+  );
+
   // Primitive groups render identically for authored (structured) and
   // discovered (proxied) servers; archived (vanished-upstream) entries are
   // shown struck-through so an operator can see what disappeared.
@@ -1706,6 +1752,13 @@ function LeftNav({ server, selection, onSelect, onMutated }: LeftNavProps) {
             </div>
           )}
           <RediscoverButton serverName={server.name} onDone={onMutated} />
+          {archivedCount > 0 && (
+            <ClearArchivedButton
+              serverName={server.name}
+              count={archivedCount}
+              onDone={onMutated}
+            />
+          )}
           {isCodeMode && (
             <div className="mb-3 border-t pt-3">
               <NavHeading>Source</NavHeading>

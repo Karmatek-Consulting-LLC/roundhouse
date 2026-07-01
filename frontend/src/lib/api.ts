@@ -801,6 +801,13 @@ export const api = {
     request<Server>(`/servers/${serverName}/primitives/${primName}`, {
       method: "DELETE",
     }),
+  /** Permanently remove all archived (vanished-upstream) primitives from a
+   * server. Allowed on proxied servers; archived entries are already excluded
+   * from the live toolset, so this only clears the management view. */
+  clearArchivedPrimitives: (serverName: string) =>
+    request<Server>(`/servers/${encodeURIComponent(serverName)}/primitives-archived`, {
+      method: "DELETE",
+    }),
   updatePipPackages: (serverName: string, pip_packages: string[]) =>
     request<Server>(`/servers/${serverName}/packages`, {
       method: "PUT",

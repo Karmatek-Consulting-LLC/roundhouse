@@ -19,7 +19,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.deps import current_user
 from app.models import ServerOwner, ServerScope, User
-from app.services import global_env, permissions
+from app.services import discovery, global_env, permissions
 from app.services.docker import DockerError, DockerNotFoundError, RegistryRequiredError, get_docker
 from app.services.git_manifest import parse_manifest
 from app.services.server_service import get_server_service
@@ -1322,6 +1322,29 @@ def delete_primitive(
     spec.primitives = [p for p in spec.primitives if p.get("name") != prim_name]
     if len(spec.primitives) == before:
         raise HTTPException(status_code=404, detail=f"Primitive '{prim_name}' not found")
+    return _save_and_respond(db, spec)
+
+
+@router.delete("/{name}/primitives-archived")
+def clear_archived_primitives(
+    name: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently remove all primitives a prior rediscovery marked archived
+    (vanished upstream). Unlike delete_primitive this is allowed on proxied
+    servers - that's where archived primitives come from - and archived entries
+    are already excluded from the live toolset, so this only clears the
+    management view."""
+    _assert_access(db, user, name)
+    spec = _ensure_spec(db, name)
+    before = len(spec.primitives)
+    spec.primitives = discovery.drop_archived(spec.primitives)
+    removed = before - len(spec.primitives)
+    if removed:
+        audit_record(db, user, "server.clear_archived", "server", name, {
+            "removed": removed,
+        })
     return _save_and_respond(db, spec)
 
 
