@@ -10,7 +10,7 @@
 #   ./website/deploy.sh
 #
 # Requires a running Roundhouse stack (default http://localhost:3080; override
-# with ROUNDHOUSE_BASE) and an authenticated wrangler (npx wrangler login).
+# with ROUNDHOUSE_BASE) and push access to the GitHub repo.
 #
 set -euo pipefail
 
@@ -48,8 +48,14 @@ restore
 step "Building docs site (strict)"
 node website/build-docs.mjs
 
-# 5) Publish to Cloudflare Pages (production).
-step "Deploying to Cloudflare Pages"
-npx --yes wrangler pages deploy website --project-name roundhousemcp --branch main
+# 5) Publish to GitHub Pages (production) by pushing website/ to the gh-pages
+#    branch. GitHub Pages serves roundhousemcp.com with a Let's Encrypt cert —
+#    some customer networks don't trust the Google Trust CA that Cloudflare's
+#    free tier uses. -t includes dotfiles (.nojekyll); --no-history force-pushes
+#    a single commit so the ~22MB of regenerated screenshots don't pile up in
+#    branch history.
+step "Deploying to GitHub Pages"
+npx --yes gh-pages -d website -t --no-history \
+  -m "Publish roundhousemcp.com ($(git rev-parse --short HEAD))"
 
 step "Done — https://roundhousemcp.com"
