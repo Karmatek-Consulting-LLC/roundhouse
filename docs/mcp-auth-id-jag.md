@@ -217,7 +217,7 @@ sequenceDiagram
     participant S as MCP server /s/X
 
     U->>V: interacts (Slack / Teams / app UI)
-    V->>E: Entra SSO (one-time per user session;<br/>silent on Teams, one-time link on Slack)
+    V->>E: Entra SSO (one-time per user session —<br/>silent on Teams, one-time link on Slack)
     E-->>V: user's ID token (+ refresh token)
 
     Note over V,R: Per (user, server), cached until expiry
