@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Architecture — Roundhouse</title>
+<meta name="description" content="How Roundhouse works — the Docker Swarm control plane, embedded Traefik routing, and MCP server provisioning, fronted by your edge reverse proxy." />
+<meta property="og:title" content="Roundhouse Architecture" />
+<meta property="og:description" content="How Roundhouse works — Docker Swarm control plane, embedded Traefik routing, and MCP server provisioning." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://roundhousemcp.com/docs/architecture" />
+<meta property="og:image" content="https://roundhousemcp.com/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Roundhouse Architecture" />
+<meta name="twitter:description" content="How Roundhouse works — Docker Swarm control plane, embedded Traefik routing, and MCP server provisioning." />
+<meta name="twitter:image" content="https://roundhousemcp.com/og.png" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 68' fill='none' stroke-width='6' stroke-linecap='round'%3E%3Cg stroke='%23ece7dd'%3E%3Cpath d='M 20 50 A 40 40 0 0 1 100 50'/%3E%3C/g%3E%3Cg stroke='%23c2693a'%3E%3Cline x1='60' y1='63' x2='60' y2='28'/%3E%3Ccircle cx='60' cy='50' r='6' fill='%23c2693a'/%3E%3C/g%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;600;700;800;900&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --iron:#0d0e10; --iron-2:#131517; --iron-3:#1a1d20; --iron-4:#22262a;
+  --line:#2a2e33; --line-soft:#1f2226;
+  --cream:#ece7dd; --smoke:#9b968c; --ash:#6b675f;
+  --copper:#c2693a; --copper-hi:#e08a55; --copper-dim:#8a4a28;
+  --amber:#ffb454; --signal:#8fbf72; --teal:#4fb3ab;
+  --display:"Big Shoulders Display", sans-serif;
+  --serif:"Newsreader", Georgia, serif;
+  --mono:"JetBrains Mono", ui-monospace, monospace;
+  --sans:"Newsreader", Georgia, serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;overflow-x:clip;scroll-padding-top:84px}
+body{
+  background:var(--iron); color:var(--cream);
+  font-family:var(--serif); font-size:17.5px; line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--copper);color:var(--iron)}
+::-webkit-scrollbar{width:11px}
+::-webkit-scrollbar-track{background:var(--iron)}
+::-webkit-scrollbar-thumb{background:var(--iron-4);border:3px solid var(--iron);border-radius:8px}
+a{color:inherit}
+img,svg{display:block}
+code{
+  font-family:var(--mono); font-size:.82em; color:var(--amber);
+  background:var(--iron-3); border:1px solid var(--line-soft);
+  padding:1.5px 6px; border-radius:4px; overflow-wrap:break-word;
+}
+.grain{
+  position:fixed; inset:-100px; z-index:999; pointer-events:none;
+  opacity:.055; mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 32px}
+.wrap-wide{max-width:1480px;margin:0 auto;padding:0 32px}
+@media (max-width:560px){ .wrap,.wrap-wide{padding:0 22px} body{font-size:16.5px} }
+
+/* nav (shared with the marketing + docs pages) */
+nav.site{
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  border-bottom:1px solid var(--line-soft);
+  background:color-mix(in srgb, var(--iron) 82%, transparent);
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+}
+.nav-inner{display:flex;align-items:center;gap:28px;height:64px}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;margin-right:auto}
+.brand svg{width:40px;height:auto}
+.brand b{font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:.12em;text-transform:uppercase}
+.brand b i{font-style:normal;color:var(--copper-hi)}
+.nav-links{display:flex;gap:26px}
+.nav-links a{
+  font-family:var(--mono); font-size:12px; letter-spacing:.16em;
+  text-transform:uppercase; text-decoration:none; color:var(--smoke); transition:color .2s;
+}
+.nav-links a:hover{color:var(--cream)}
+.nav-links a.active{color:var(--copper-hi)}
+.nav-gh{
+  font-family:var(--mono); font-size:12px; letter-spacing:.1em;
+  text-decoration:none; color:var(--iron); background:var(--cream);
+  padding:9px 16px; border-radius:3px; transition:background .2s, transform .2s;
+}
+.nav-gh:hover{background:var(--copper-hi);transform:translateY(-1px)}
+@media (max-width:760px){ .nav-links{display:none} }
+@media (max-width:480px){
+  .nav-inner{gap:14px}
+  .brand{gap:9px} .brand svg{width:32px} .brand b{font-size:18px}
+  .nav-gh{padding:8px 12px;font-size:11px}
+}
+
+/* page header */
+.doc-head{padding:132px 0 14px}
+.tag{
+  font-family:var(--mono); font-size:11px; font-weight:500;
+  letter-spacing:.28em; text-transform:uppercase; color:var(--copper-hi);
+}
+.tag::before{content:"// ";color:var(--ash);letter-spacing:0}
+.doc-head h1{
+  font-family:var(--display); text-transform:uppercase;
+  font-size:clamp(44px,6vw,72px); font-weight:800; line-height:.98;
+  letter-spacing:.015em; margin-top:14px;
+}
+.doc-head .lede{
+  max-width:62ch; margin-top:16px; color:var(--smoke); font-size:18.5px; font-weight:300;
+}
+.doc-head .lede .em{color:var(--copper-hi);font-weight:600}
+.doc-head .lede em{color:var(--cream);font-style:italic}
+.back{
+  display:inline-block; margin-top:20px;
+  font-family:var(--mono); font-size:12px; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--smoke); text-decoration:none; border-bottom:1px solid var(--line);
+  padding-bottom:2px; transition:color .15s, border-color .15s;
+}
+.back:hover{color:var(--copper-hi);border-color:var(--copper-dim)}
+
+/* diagram frame */
+.frame{
+  background:var(--iron-2); border:1px solid var(--line); border-radius:16px;
+  box-shadow:0 1px 2px rgba(0,0,0,.3), 0 18px 50px -20px rgba(0,0,0,.6);
+  padding:14px; margin:28px 0 0;
+}
+.frame svg{display:block;width:100%;height:auto}
+
+/* legend */
+.legend{display:flex;flex-wrap:wrap;gap:18px 34px;margin-top:24px;font-size:14px;color:var(--smoke);font-family:var(--serif)}
+.legend b{color:var(--cream);font-weight:500}
+.swatch{display:inline-flex;align-items:center;gap:9px}
+.ln{width:34px;height:0;border-top-width:3px;border-top-style:solid;display:inline-block}
+
+/* numbered flow */
+.flow{margin-top:30px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.step{background:var(--iron-2);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.step .n{
+  display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;
+  background:var(--copper);color:var(--iron);font-family:var(--mono);font-weight:700;font-size:13px;margin-right:10px;
+}
+.step h3{margin:0 0 8px;font-family:var(--display);text-transform:uppercase;letter-spacing:.04em;font-size:16px;font-weight:700;display:flex;align-items:center}
+.step p{margin:0;color:color-mix(in srgb, var(--cream) 80%, var(--smoke));font-size:15px;line-height:1.55}
+.step b{color:var(--cream)}
+
+/* footer */
+footer{margin-top:64px}
+.hazard{height:8px;background:repeating-linear-gradient(-45deg, var(--copper) 0 14px, var(--iron) 14px 28px);opacity:.85}
+.foot-inner{padding-top:44px;padding-bottom:54px}
+.foot-mark{
+  font-family:var(--display);font-weight:900;text-transform:uppercase;
+  font-size:clamp(54px,9vw,130px);line-height:.9;letter-spacing:.01em;
+  color:var(--iron-3);user-select:none;
+}
+.foot-row{
+  display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:14px;
+  margin-top:26px;font-family:var(--mono);font-size:12px;color:var(--ash);
+}
+.foot-links{display:flex;gap:22px;flex-wrap:wrap}
+.foot-row a{color:var(--smoke);text-decoration:none}
+.foot-row a:hover{color:var(--copper-hi)}
+</style>
+</head>
+<body>
+
+<div class="grain" aria-hidden="true"></div>
+
+<nav class="site">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="Roundhouse home">
+      <svg viewBox="0 0 120 68" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <g stroke="#ece7dd">
+          <path d="M 20 50 A 40 40 0 0 1 100 50"/>
+          <path d="M 38 50 A 22 22 0 0 1 82 50"/>
+          <line x1="20" y1="50" x2="38" y2="50"/><line x1="82" y1="50" x2="100" y2="50"/>
+          <line x1="27.6" y1="26.5" x2="42.2" y2="37.1"/><line x1="47.6" y1="12" x2="53.2" y2="29.1"/>
+          <line x1="72.4" y1="12" x2="66.8" y2="29.1"/><line x1="92.4" y1="26.5" x2="77.8" y2="37.1"/>
+        </g>
+        <g stroke="#c2693a"><line x1="60" y1="63" x2="60" y2="28"/><circle cx="60" cy="50" r="5" fill="#c2693a"/></g>
+      </svg>
+      <b>Round<i>house</i></b>
+    </a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a href="/docs/">Docs</a>
+      <a class="active" href="/docs/architecture">Architecture</a>
+    </div>
+    <a class="nav-gh" href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</nav>
+
+<header class="doc-head">
+  <div class="wrap-wide">
+    <div class="tag">blueprint</div>
+    <h1>Architecture</h1>
+    <p class="lede">
+      Self-hosted MCP server hosting on <span class="em">Docker Swarm</span>, fronted by
+      your edge Traefik. TLS terminates at the edge; the embedded Traefik speaks
+      <em>HTTP only</em> inside the stack.
+    </p>
+    <a class="back" href="/docs/">← Back to the user guide</a>
+  </div>
+</header>
+
+<div class="wrap-wide">
+
+  <div class="frame">
+  <svg viewBox="0 0 1440 820" role="img" aria-label="Roundhouse Docker Swarm architecture diagram">
+    <defs>
+      <marker id="ah-copper" markerWidth="11" markerHeight="11" refX="8" refY="5" orient="auto">
+        <path d="M0,0 L9,5 L0,10 z" fill="#c2693a"/>
+      </marker>
+      <marker id="ah-steel" markerWidth="11" markerHeight="11" refX="8" refY="5" orient="auto">
+        <path d="M0,0 L9,5 L0,10 z" fill="#9b968c"/>
+      </marker>
+      <marker id="ah-db" markerWidth="11" markerHeight="11" refX="8" refY="5" orient="auto">
+        <path d="M0,0 L9,5 L0,10 z" fill="#4fb3ab"/>
+      </marker>
+      <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.45"/>
+      </filter>
+      <style>
+        .node{fill:#1b1e22;stroke:#2f343a;stroke-width:1.5;rx:12;filter:url(#soft)}
+        .nt{font-family:var(--sans);fill:#ece7dd;font-weight:600}
+        .ns{font-family:var(--sans);fill:#9b968c}
+        .nm{font-family:var(--mono)}
+        .zlabel{font-family:var(--mono);font-weight:700;letter-spacing:.4px}
+        .data{stroke:#c2693a;stroke-width:2.6;fill:none;marker-end:url(#ah-copper)}
+        .ctrl{stroke:#9b968c;stroke-width:1.8;fill:none;stroke-dasharray:6 5;marker-end:url(#ah-steel)}
+        .db{stroke:#4fb3ab;stroke-width:2;fill:none;marker-end:url(#ah-db)}
+        .albl{font-family:var(--mono);fill:#9b968c;font-size:11.5px}
+        .em{fill:#e08a55;font-weight:700}
+      </style>
+    </defs>
+
+    <!-- ===== Zones ===== -->
+    <!-- Customer edge -->
+    <rect x="210" y="78" width="222" height="664" rx="14" fill="#101214" stroke="#34281f" stroke-width="1.5"/>
+    <text x="321" y="104" text-anchor="middle" class="zlabel" font-size="12.5" fill="#e08a55">SWARM INGRESS</text>
+
+    <!-- Internet -->
+    <text x="105" y="104" text-anchor="middle" class="zlabel" font-size="11" fill="#9b968c">CUSTOMER NETWORK</text>
+
+    <!-- Roundhouse stack -->
+    <rect x="470" y="60" width="945" height="700" rx="18" fill="#121417" stroke="#c2693a" stroke-width="2" stroke-dasharray="8 6"/>
+    <rect x="486" y="44" width="430" height="30" rx="8" fill="#22262a"/>
+    <text x="500" y="64" class="zlabel" font-size="12.5" fill="#ece7dd">ROUNDHOUSE · DOCKER SWARM STACK
+      <tspan class="nm" font-weight="400" fill="#9b968c" font-size="11"> (stack: roundhouse)</tspan>
+    </text>
+    <text x="1400" y="748" text-anchor="end" class="nm" font-size="11" fill="#6b675f">overlay network: roundhouse_roundhouse-network</text>
+
+    <!-- ===== Nodes ===== -->
+    <!-- Clients -->
+    <rect class="node" x="30" y="330" width="150" height="120" rx="12"/>
+    <text x="105" y="378" text-anchor="middle" class="nt" font-size="14">MCP Clients</text>
+    <text x="105" y="398" text-anchor="middle" class="ns" font-size="12">&amp; Browsers</text>
+    <text x="105" y="426" text-anchor="middle" class="ns nm" font-size="10.5">https://roundhouse…</text>
+
+    <!-- Customer Traefik -->
+    <rect class="node" x="240" y="315" width="162" height="150" rx="12"/>
+    <text x="321" y="356" text-anchor="middle" class="nt" font-size="13.5">Upstream Traefik</text>
+    <text x="321" y="378" text-anchor="middle" class="ns" font-size="11.5">Reverse proxy</text>
+    <text x="321" y="396" text-anchor="middle" class="ns" font-size="11.5">TLS termination</text>
+    <text x="321" y="430" text-anchor="middle" class="ns nm" font-size="11">:443 → :80</text>
+
+    <!-- Embedded Traefik -->
+    <rect class="node" x="515" y="112" width="212" height="124" rx="12"/>
+    <text x="621" y="150" text-anchor="middle" class="nt" font-size="13.5">Traefik v3.6 (embedded)</text>
+    <text x="621" y="171" text-anchor="middle" class="ns" font-size="11.5">entrypoint <tspan class="nm">web :80</tspan></text>
+    <text x="621" y="189" text-anchor="middle" class="ns" font-size="11.5">swarm + file providers</text>
+    <text x="621" y="213" text-anchor="middle" class="ns" font-size="11">routes by Host / path</text>
+
+    <!-- platform-api -->
+    <rect class="node" x="800" y="250" width="224" height="132" rx="12" stroke="#c2693a" stroke-width="2"/>
+    <text x="912" y="290" text-anchor="middle" class="nt" font-size="14">platform-api</text>
+    <text x="912" y="311" text-anchor="middle" class="ns" font-size="11.5">FastAPI control plane + SPA</text>
+    <text x="912" y="329" text-anchor="middle" class="ns nm" font-size="11">:8000</text>
+    <text x="912" y="356" text-anchor="middle" class="ns" font-size="11">builds &amp; runs MCP servers</text>
+
+    <!-- Postgres -->
+    <rect class="node" x="800" y="470" width="224" height="106" rx="12" stroke="#4fb3ab" stroke-width="1.8"/>
+    <text x="912" y="508" text-anchor="middle" class="nt" font-size="13.5" fill="#4fb3ab">PostgreSQL 16</text>
+    <text x="912" y="529" text-anchor="middle" class="ns" font-size="11.5">platform metadata</text>
+    <text x="912" y="552" text-anchor="middle" class="ns nm" font-size="11">vol: pgdata</text>
+
+    <!-- socket proxy traefik -->
+    <rect class="node" x="515" y="300" width="212" height="78" rx="12"/>
+    <text x="621" y="332" text-anchor="middle" class="nt" font-size="12.5">docker-socket-proxy</text>
+    <text x="621" y="352" text-anchor="middle" class="ns" font-size="11">traefik · read-only</text>
+    <text x="621" y="369" text-anchor="middle" class="ns nm" font-size="10">discovery only</text>
+
+    <!-- socket proxy api -->
+    <rect class="node" x="515" y="406" width="212" height="78" rx="12"/>
+    <text x="621" y="438" text-anchor="middle" class="nt" font-size="12.5">docker-socket-proxy</text>
+    <text x="621" y="458" text-anchor="middle" class="ns" font-size="11">api · scoped</text>
+    <text x="621" y="475" text-anchor="middle" class="ns nm" font-size="10">POST + BUILD</text>
+
+    <!-- docker engine -->
+    <rect class="node" x="515" y="560" width="212" height="98" rx="12" fill="#15181b"/>
+    <text x="621" y="596" text-anchor="middle" class="nt" font-size="13">Docker Engine</text>
+    <text x="621" y="617" text-anchor="middle" class="ns" font-size="11">Swarm manager node</text>
+    <text x="621" y="638" text-anchor="middle" class="ns nm" font-size="10.5">/var/run/docker.sock</text>
+
+    <!-- MCP fan-out flow is drawn in the edges section so its arrowheads sit on top. -->
+
+    <!-- MCP server stalls -->
+    <rect class="node" x="1140" y="116" width="252" height="92" rx="12"/>
+    <text x="1266" y="150" text-anchor="middle" class="nt" font-size="13">MCP server · github</text>
+    <text x="1266" y="172" text-anchor="middle" class="ns" font-size="11">Swarm service (FastMCP)</text>
+    <text x="1266" y="192" text-anchor="middle" class="ns nm" font-size="10.5">/s/github/mcp</text>
+
+    <rect class="node" x="1140" y="243" width="252" height="92" rx="12"/>
+    <text x="1266" y="277" text-anchor="middle" class="nt" font-size="13">MCP server · jira</text>
+    <text x="1266" y="299" text-anchor="middle" class="ns" font-size="11">Swarm service (FastMCP)</text>
+    <text x="1266" y="319" text-anchor="middle" class="ns nm" font-size="10.5">/s/jira/mcp</text>
+
+    <rect class="node" x="1140" y="370" width="252" height="92" rx="12" stroke-dasharray="5 5"/>
+    <text x="1266" y="404" text-anchor="middle" class="nt" font-size="13">MCP server · …</text>
+    <text x="1266" y="426" text-anchor="middle" class="ns" font-size="11">spawned on demand</text>
+    <text x="1266" y="446" text-anchor="middle" class="ns nm" font-size="10.5">/s/{name}/mcp</text>
+
+    <!-- Secrets & volumes pills -->
+    <rect x="515" y="688" width="412" height="52" rx="10" fill="#15181b" stroke="#2f343a"/>
+    <text x="535" y="711" class="nt" font-size="11.5">Swarm secrets</text>
+    <text x="535" y="729" class="ns nm" font-size="10.5">mcp_app_key · mcp_admin_* · mcp_postgres_password</text>
+
+    <rect x="940" y="688" width="452" height="52" rx="10" fill="#15181b" stroke="#2f343a"/>
+    <text x="960" y="711" class="nt" font-size="11.5">Volumes</text>
+    <text x="960" y="729" class="ns nm" font-size="10.5">pgdata · server-data</text>
+
+    <!-- ===== Edges ===== -->
+    <!-- A clients -> customer traefik -->
+    <path class="data" d="M180,390 L238,390"/>
+    <text x="209" y="380" text-anchor="middle" class="albl"><tspan>HTTPS</tspan></text>
+
+    <!-- B customer traefik -> embedded traefik -->
+    <path class="data" d="M402,372 L452,372 L452,174 L513,174"/>
+    <text x="430" y="262" class="albl em">HTTP :80</text>
+    <text x="430" y="278" class="albl">shared public</text>
+    <text x="430" y="294" class="albl">overlay net</text>
+
+    <!-- C embedded traefik -> platform-api -->
+    <path class="data" d="M727,196 L765,196 L765,300 L798,300"/>
+    <text x="746" y="250" class="albl">Host() &amp;&amp;</text>
+    <text x="746" y="266" class="albl">!/s/ → :8000</text>
+
+    <!-- D embedded Traefik -> MCP servers: one flow that splits at a hub into all three stalls -->
+    <path class="data" style="marker-end:none" d="M727,150 L1050,150 L1050,284"/>
+    <circle cx="1050" cy="289" r="6" fill="#c2693a"/>
+    <path class="data" d="M1054,284 L1138,162"/>
+    <path class="data" d="M1056,289 L1138,289"/>
+    <path class="data" d="M1054,294 L1138,416"/>
+    <text x="763" y="142" class="albl"><tspan class="em">/s/{name}/mcp</tspan> → MCP services</text>
+
+    <!-- E embedded traefik -> socket proxy traefik (discovery) -->
+    <path class="ctrl" d="M621,236 L621,298"/>
+    <text x="632" y="272" class="albl">discovers route labels</text>
+
+    <!-- F platform-api -> socket proxy api (docker API) -->
+    <path class="ctrl" d="M798,338 L760,338 L760,445 L729,445"/>
+    <text x="744" y="392" text-anchor="end" class="albl">Docker API:</text>
+    <text x="744" y="408" text-anchor="end" class="albl">build / create / scale</text>
+
+    <!-- G socket proxy api -> engine -->
+    <path class="ctrl" d="M600,484 L600,558"/>
+    <!-- H socket proxy traefik -> engine: exit the LEFT edge (vertically centered) and route around the api proxy -->
+    <path class="ctrl" d="M515,339 L496,339 L496,605 L513,605"/>
+
+    <!-- I Docker Engine -> spawned MCP server (runs tasks); enters from below to clear the copper fan -->
+    <path class="ctrl" d="M727,600 L1266,600 L1266,464"/>
+    <text x="996" y="592" text-anchor="middle" class="albl">schedules &amp; runs server tasks</text>
+
+    <!-- J platform-api -> postgres -->
+    <path class="db" d="M912,382 L912,468"/>
+    <text x="922" y="430" class="albl">SQL</text>
+  </svg>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <span class="swatch"><span class="ln" style="border-color:#c2693a"></span> <b>Request / data-plane</b> traffic</span>
+    <span class="swatch"><span class="ln" style="border-color:#9b968c;border-top-style:dashed"></span> <b>Control-plane</b> (Docker API, service discovery)</span>
+    <span class="swatch"><span class="ln" style="border-color:#4fb3ab"></span> <b>Database</b> (SQL)</span>
+    <span class="swatch"><span style="display:inline-block;width:16px;height:14px;border:2px solid #c2693a;border-radius:4px"></span> request entry / app boundary</span>
+  </div>
+
+  <!-- Numbered flow -->
+  <div class="flow">
+    <div class="step"><h3><span class="n">1</span>Client → your edge</h3><p>A browser or MCP client hits <code>https://roundhouse.example.com</code>. Your <b>upstream Traefik</b> terminates TLS at <code>:443</code>.</p></div>
+    <div class="step"><h3><span class="n">2</span>Edge → embedded Traefik</h3><p>Your edge forwards plain HTTP to the stack's embedded <b>Traefik :80</b> across the shared <code>public</code> overlay network. No TLS inside the stack.</p></div>
+    <div class="step"><h3><span class="n">3</span>UI / API routing</h3><p>Embedded Traefik routes <code>Host(…) &amp;&amp; !PathPrefix(/s/)</code> to <b>platform-api:8000</b> — the SPA and control API.</p></div>
+    <div class="step"><h3><span class="n">4</span>MCP traffic routing</h3><p>Requests under <code>/s/{name}/mcp</code> route straight to the matching <b>MCP server service</b>, bypassing platform-api.</p></div>
+    <div class="step"><h3><span class="n">5</span>Provisioning (control plane)</h3><p>platform-api builds images and creates/scales MCP services through the <b>scoped socket-proxy</b> (POST+BUILD), never touching the raw socket.</p></div>
+    <div class="step"><h3><span class="n">6</span>Discovery &amp; state</h3><p>Embedded Traefik discovers each MCP server via the <b>read-only socket-proxy</b> from its Traefik service labels; platform-api stores metadata in <b>Postgres</b>.</p></div>
+  </div>
+
+</div>
+
+<footer>
+  <div class="hazard"></div>
+  <div class="wrap foot-inner">
+    <div class="foot-mark" aria-hidden="true">Roundhouse</div>
+    <div class="foot-row">
+      <span>© 2026 <a href="https://karmatek.io" target="_blank" rel="noopener">Karmatek</a> · forged with FastMCP</span>
+      <div class="foot-links">
+        <a href="/">Home</a>
+        <a href="/docs/">Docs</a>
+        <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP Spec</a>
+        <a href="#top">Back to the top ↑</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
