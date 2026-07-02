@@ -12,9 +12,9 @@ stack.
 > must never ship "screenshot pending" placeholders.
 
 > **Publishing? Just run `./website/deploy.sh`.** It runs this entire pipeline
-> for you — seed → capture (both themes) → restore → strict build → `wrangler
-> pages deploy` — and is fail-fast, so a broken capture never reaches
-> production. The manual steps below are for iterating on the capture itself.
+> for you — seed → capture (both themes) → restore → strict build → publish
+> to GitHub Pages (`gh-pages`) — and is fail-fast, so a broken capture never
+> reaches production. The manual steps below are for iterating on the capture itself.
 
 The fast path:
 
