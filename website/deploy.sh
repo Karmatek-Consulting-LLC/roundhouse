@@ -48,14 +48,21 @@ restore
 step "Building docs site (strict)"
 node website/build-docs.mjs
 
-# 5) Publish to GitHub Pages (production) by pushing website/ to the gh-pages
-#    branch. GitHub Pages serves roundhousemcp.com with a Let's Encrypt cert —
-#    some customer networks don't trust the Google Trust CA that Cloudflare's
-#    free tier uses. -t includes dotfiles (.nojekyll); --no-history force-pushes
-#    a single commit so the ~22MB of regenerated screenshots don't pile up in
-#    branch history.
+# 5) Publish to GitHub Pages (production): commit website/ as a parentless
+#    snapshot and force-push it to the gh-pages branch. GitHub Pages serves
+#    roundhousemcp.com with a Let's Encrypt cert — some customer networks
+#    don't trust the Google Trust CA that Cloudflare's free tier uses. A
+#    single parentless commit keeps the ~22MB of regenerated screenshots
+#    from piling up in branch history; `add -f` picks them up past
+#    .gitignore. Plain git, no npm publish tooling: the repo has no
+#    package.json and the website build is deliberately zero-dependency.
 step "Deploying to GitHub Pages"
-npx --yes gh-pages -d website -t --no-history \
-  -m "Publish roundhousemcp.com ($(git rev-parse --short HEAD))"
+GITDIR="$(git rev-parse --absolute-git-dir)"
+export GIT_INDEX_FILE="$(mktemp -d)/publish-index"
+(cd website && git --git-dir="$GITDIR" --work-tree=. add -Af .)
+TREE="$(git write-tree)"
+COMMIT="$(git commit-tree "$TREE" -m "Publish roundhousemcp.com ($(git rev-parse --short HEAD))")"
+unset GIT_INDEX_FILE
+git push -f origin "$COMMIT:refs/heads/gh-pages"
 
 step "Done — https://roundhousemcp.com"
