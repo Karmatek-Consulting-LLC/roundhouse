@@ -42,3 +42,4 @@ frontend/package-lock.json
 # never published to the public mirror (see docs: "Extending the Swarm stack").
 .github/workflows/roundhouse-ci.yml
 docker-stack.lab.yml
+docker-stack.override.yml
