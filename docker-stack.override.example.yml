@@ -1,4 +1,4 @@
-version: "3.8"
+#version: "3.8"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Example Swarm overlay for site-specific deployment tweaks.
