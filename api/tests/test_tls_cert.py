@@ -154,15 +154,18 @@ def test_apply_creates_secrets_and_swaps_them_on_traefik(db, fake_docker):
     assert any(n.startswith(tls_cert.DYNAMIC_TARGET + "_") for n in names)
 
     # Traefik service updated to mount them at the STABLE target paths that the
-    # delivered dynamic config (mounted at DYNAMIC_TARGET) references.
+    # delivered dynamic config (mounted at DYNAMIC_FILENAME) references. The
+    # dynamic config must mount with a .yml suffix — Traefik's file provider
+    # infers the format from the extension and rejects extensionless files.
     refs = fake_docker.service_secrets
     assert fake_docker.service_name == "roundhouse_traefik"
     targets = sorted(r["File"]["Name"] for r in refs)
     assert targets == [
         tls_cert.CERT_TARGET,
-        tls_cert.DYNAMIC_TARGET,
+        tls_cert.DYNAMIC_FILENAME,
         tls_cert.KEY_TARGET,
     ]
+    assert tls_cert.DYNAMIC_FILENAME.endswith(".yml")
     key_ref = next(r for r in refs if r["File"]["Name"] == tls_cert.KEY_TARGET)
     assert key_ref["File"]["Mode"] == 0o400  # key is not world-readable
     # The delivered config names the fixed cert/key secret paths.
