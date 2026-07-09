@@ -71,6 +71,18 @@ class TlsCertError(ValueError):
     """The uploaded cert/key pair is invalid or can't be applied."""
 
 
+def _normalize_pem(pem: str) -> str:
+    """Stripped + exactly one trailing newline.
+
+    Stripping alone drops the newline after the final END line, and Go's
+    encoding/pem (what Traefik parses the mounted secrets with) won't decode a
+    block whose END line isn't newline-terminated — Traefik then silently falls
+    back to its self-signed cert. Normalising (rather than not stripping) still
+    absorbs copy-paste padding and keeps the content-addressed secret names
+    stable across cosmetic whitespace differences."""
+    return pem.strip() + "\n"
+
+
 # ---- Validation + parsing -------------------------------------------------
 
 def _load_cert(cert_pem: str):
@@ -251,11 +263,13 @@ def apply_certificate(db: Session, cert_pem: str, key_pem: str) -> dict:
 
     Persist-then-sync inside one request: get_db rolls back on exception, so a
     failed Swarm sync also discards the stored cert — they can't diverge."""
+    cert_pem = _normalize_pem(cert_pem)
+    key_pem = _normalize_pem(key_pem)
     info = validate_pair(cert_pem, key_pem)
-    put_setting(db, SETTING_TLS_CERT, cert_pem.strip())
-    put_setting(db, SETTING_TLS_KEY, _encrypt_key(key_pem.strip()))
+    put_setting(db, SETTING_TLS_CERT, cert_pem)
+    put_setting(db, SETTING_TLS_KEY, _encrypt_key(key_pem))
     db.flush()
-    _sync_to_swarm(cert_pem.strip(), key_pem.strip())
+    _sync_to_swarm(cert_pem, key_pem)
     return info
 
 
