@@ -48,15 +48,21 @@ logger = logging.getLogger(__name__)
 TLS_SECRET_LABEL = "roundhouse.tls"
 # Stable filenames the secrets mount to under /run/secrets/ on the Traefik
 # container. The dynamic config below references exactly these paths, and
-# Traefik's file provider is pointed at DYNAMIC_TARGET.
+# Traefik's file provider is pointed at DYNAMIC_FILENAME.
 CERT_TARGET = "roundhouse_tls_cert"
 KEY_TARGET = "roundhouse_tls_key"
 DYNAMIC_TARGET = "roundhouse_tls_dynamic"
+# Traefik's file provider infers the config format from the file extension and
+# rejects extensionless files ("unsupported file extension"), so the dynamic
+# config must MOUNT with a .yml suffix. Only the in-container filename needs
+# it; the secret objects keep the plain DYNAMIC_TARGET name prefix. The cert
+# and key stay extensionless — certFile/keyFile are parsed as PEM regardless.
+DYNAMIC_FILENAME = f"{DYNAMIC_TARGET}.yml"
 
 # Traefik file-provider config declaring the default certificate. Static — it
 # only names the two fixed secret paths — so we ship it as a secret rather than
 # a repo file, and the operator needs no checkout on the host. Traefik reads it
-# via `--providers.file.filename=/run/secrets/roundhouse_tls_dynamic`.
+# via `--providers.file.filename=/run/secrets/roundhouse_tls_dynamic.yml`.
 _DYNAMIC_YAML = (
     "tls:\n"
     "  stores:\n"
@@ -248,7 +254,7 @@ def _sync_to_swarm(cert_pem: str, key_pem: str) -> None:
         {
             "SecretID": dyn_id,
             "SecretName": dyn_name,
-            "File": {"Name": DYNAMIC_TARGET, "UID": "0", "GID": "0", "Mode": 0o444},
+            "File": {"Name": DYNAMIC_FILENAME, "UID": "0", "GID": "0", "Mode": 0o444},
         },
     ]
     docker.set_service_secrets(get_settings().mcp_traefik_service, refs)

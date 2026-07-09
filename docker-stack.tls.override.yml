@@ -51,7 +51,7 @@ services:
       # operator uploads a cert, the file is absent and Traefik serves its
       # self-signed cert; watch=true picks up the real one on the next task
       # start after upload.
-      - --providers.file.filename=/run/secrets/roundhouse_tls_dynamic
+      - --providers.file.filename=/run/secrets/roundhouse_tls_dynamic.yml
       - --providers.file.watch=true
     # host mode preserves the real client IP and skips the routing mesh; it puts
     # one Traefik per node, which is the right shape for a dedicated ingress.
