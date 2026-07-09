@@ -19,6 +19,15 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# Queue overlapping builds of the same ref instead of racing them: registry
+# tags are last-write-wins, so two concurrent main builds could leave :latest
+# on whichever commit finished last, not the newest one. Serial-in-push-order
+# makes the final write the newest push. No cancel-in-progress — every commit
+# must still publish its immutable :sha-<full-sha> tag for rollbacks.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
