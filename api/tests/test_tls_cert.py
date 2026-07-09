@@ -183,6 +183,38 @@ def test_apply_persists_cert_plain_and_key_encrypted(db, fake_docker):
     assert "PRIVATE KEY" not in stored_key
 
 
+def test_apply_delivers_pem_with_trailing_newline(db, fake_docker):
+    # Uploads that lost the final newline (or gained padding) in copy-paste
+    # must still reach Traefik newline-terminated, or Go's PEM decoder rejects
+    # them and Traefik falls back to its self-signed cert.
+    cert_pem, key_pem = _make_pair()
+    tls_cert.apply_certificate(db, "\n  " + cert_pem.strip(), key_pem.strip())
+
+    cert_name = next(
+        n for n in fake_docker.secrets if n.startswith(tls_cert.CERT_TARGET + "_")
+    )
+    key_name = next(
+        n for n in fake_docker.secrets if n.startswith(tls_cert.KEY_TARGET + "_")
+    )
+    assert fake_docker.secrets[cert_name]["_data"].endswith(
+        b"-----END CERTIFICATE-----\n"
+    )
+    assert fake_docker.secrets[key_name]["_data"].endswith(b"PRIVATE KEY-----\n")
+    # The persisted source of truth is normalised the same way.
+    assert get_setting(db, SETTING_TLS_CERT).endswith("-----END CERTIFICATE-----\n")
+
+
+def test_apply_hash_is_stable_across_cosmetic_whitespace(db, fake_docker):
+    # Same pair, differing only in surrounding whitespace, must map to the
+    # same content-addressed secrets — no churn on re-upload.
+    cert_pem, key_pem = _make_pair()
+    tls_cert.apply_certificate(db, cert_pem, key_pem)
+    first = set(fake_docker.secrets)
+
+    tls_cert.apply_certificate(db, cert_pem.strip(), "  " + key_pem.strip() + "\n\n")
+    assert set(fake_docker.secrets) == first
+
+
 def test_reupload_prunes_previous_secrets(db, fake_docker):
     tls_cert.apply_certificate(db, *_make_pair(cn="one.test"))
     first = set(fake_docker.secrets)
