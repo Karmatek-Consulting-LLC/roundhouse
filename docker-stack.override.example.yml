@@ -25,9 +25,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
-  # 1) Attach the embedded Traefik to your front reverse-proxy network, so an
-  #    upstream proxy can terminate HTTPS and forward HTTP into this stack.
-  #    The base Traefik only listens on :80; TLS is terminated by your ingress.
+  # 1) FRONTED DEPLOYS ONLY — attach the embedded Traefik to your front
+  #    reverse-proxy network, so an upstream proxy can terminate HTTPS and
+  #    forward HTTP into this stack. The base Traefik only listens on :80;
+  #    TLS is terminated by your ingress.
+  #    If Roundhouse terminates TLS itself (docker-stack.tls.override.yml),
+  #    there is no upstream proxy: DELETE this block and the `networks:`
+  #    section at the bottom of this file — nothing replaces them.
   traefik:
     networks:
       - public
@@ -54,6 +58,7 @@ services:
     image: ghcr.io/karmatek-consulting-llc/roundhouse:v1.2.3   # ← use a real released tag
 
 networks:
+  # Goes with block 1 (fronted deploys only) — delete it together with that block.
   # Your reverse-proxy network. `external: true` means Docker will NOT create
   # it — it must already exist before `docker stack deploy`, owned by whatever
   # runs your ingress (e.g. a front Caddy / nginx / Traefik stack, or a one-time

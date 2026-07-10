@@ -362,6 +362,16 @@ file in this repository. **Deploying needs nothing but the stack file itself** �
 download `docker-stack.yml`, write a small overlay for your environment, and
 `docker stack deploy`. There's no clone, no local build, and no upstream to track.
 
+> **Letting Roundhouse terminate TLS itself?** Then you likely don't need to
+> write an overlay at all — the shipped
+> [`docker-stack.tls.override.yml`](../docker-stack.tls.override.yml) is the
+> complete second file, and the front-proxy network (`PUBLIC_INGRESS_NETWORK`)
+> does not apply: published ports reach Traefik directly, with no user-created
+> network in between. Skip straight to
+> [Terminating TLS on Roundhouse's own ingress](#terminating-tls-on-roundhouses-own-ingress-no-upstream-proxy).
+> The overlay mechanics below only matter if you're layering site-specific
+> config — a front proxy, node pins, a pinned image version.
+
 Anything specific to **your** environment — a front reverse-proxy network, node
 placement, a pinned image version, extra labels — belongs in a separate overlay
 file you own, layered on at deploy time rather than edited into the base. Keeping
@@ -405,6 +415,9 @@ docker stack config -c docker-stack.yml -c docker-stack.override.yml
 
 ### Front reverse-proxy network
 
+*Fronted deployments only — if Roundhouse terminates TLS itself, skip this
+section and leave the block out of your overlay.*
+
 When an upstream proxy terminates HTTPS and forwards HTTP into this stack, the
 embedded Traefik needs to share a network with it. Attach it in the overlay:
 
@@ -445,7 +458,9 @@ turns on the **Platform Settings → HTTPS certificate** panel. Like the base
 stack it references no repo file — download the two stack files and deploy; there
 is nothing to check out on the host. There is nothing to set up before first boot
 either: Traefik serves a self-signed certificate on `:443` until you upload a real
-one.
+one. This mode needs no authored overlay, no external network, and no
+`PUBLIC_INGRESS_NETWORK` — the two files above are the whole deployment (plus
+`PUBLIC_HOSTNAME` and the Swarm secrets the base stack documents).
 
 **Installing your certificate is a UI step, not a deploy step.** In Platform
 Settings, paste your PEM certificate (leaf + intermediates, in chain order) and
