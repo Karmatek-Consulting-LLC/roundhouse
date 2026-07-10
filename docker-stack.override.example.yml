@@ -38,8 +38,7 @@ services:
   #    node labelled `db == true`, co-locating it with its node-local volume:
   #      docker node update --label-add db=true <node>
   #    The SAME pattern works for ANY service — repeat the block under
-  #    platform-api, traefik, etc. if they need to be pinned or co-located
-  #    (e.g. platform-api alongside its node-local server-data volume).
+  #    platform-api, traefik, etc. if they need to be pinned or co-located.
   postgres:
     deploy:
       placement:

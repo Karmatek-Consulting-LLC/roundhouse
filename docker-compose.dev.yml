@@ -50,7 +50,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./api:/app
       - ./templates:/app/templates:ro
-      - server-data:/var/lib/roundhouse/servers
     environment:
       - PYTHONUNBUFFERED=1
       # APP_KEY (base64:<32-byte-key>) keys the at-rest encryption for
@@ -115,7 +114,5 @@ volumes:
   # `name:` once any host predating the roundhouse rebrand has migrated.
   pgdata:
     name: mcp-platform_pgdata
-  server-data:
-    name: mcp-platform_server-data
   frontend_node_modules:
   frontend_pnpm_store:
