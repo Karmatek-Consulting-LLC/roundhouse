@@ -565,12 +565,11 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
   async function exportSpec() {
     setError(null);
     try {
-      const dump = await api.exportServer(serverName);
-      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+      const blob = await api.exportServer(serverName);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${serverName}.spec.json`;
+      a.download = `${serverName}.rhserver.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

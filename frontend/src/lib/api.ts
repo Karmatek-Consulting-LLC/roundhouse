@@ -771,15 +771,47 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  exportServer: (name: string) =>
-    request<{ version: number; exported_at: string; spec: Record<string, unknown> }>(
-      `/servers/${encodeURIComponent(name)}/export`,
-    ),
+  /** Download the server's export bundle: a zip of manifest.json (the spec),
+   * assets/, and any git/template build files. */
+  exportServer: async (name: string): Promise<Blob> => {
+    const token = localStorage.getItem("token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${BASE}/servers/${encodeURIComponent(name)}/export`, { headers });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const d = (body as { detail?: unknown }).detail;
+      throw new Error(d != null ? formatApiErrorDetail(d) : `Export failed: ${res.status}`);
+    }
+    return res.blob();
+  },
+  /** Legacy JSON import — a bare spec or a v1 export envelope's `spec`. */
   importServer: (data: { spec: Record<string, unknown>; name_override?: string }) =>
     request<Server>("/servers/import", {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  /** Import a zip bundle produced by exportServer. */
+  importServerArchive: async (file: File, nameOverride?: string): Promise<Server> => {
+    const token = localStorage.getItem("token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    // No Content-Type: fetch auto-sets multipart/form-data with the right boundary.
+    const form = new FormData();
+    form.append("file", file, file.name);
+    if (nameOverride) form.append("name_override", nameOverride);
+    const res = await fetch(`${BASE}/servers/import-archive`, {
+      method: "POST",
+      headers,
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const d = (body as { detail?: unknown }).detail;
+      throw new Error(d != null ? formatApiErrorDetail(d) : `Import failed: ${res.status}`);
+    }
+    return res.json() as Promise<Server>;
+  },
 
   // Audit log (superadmin only)
   listAuditEvents: (params: { target_type?: string; target_id?: string; limit?: number } = {}) => {
