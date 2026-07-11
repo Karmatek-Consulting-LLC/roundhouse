@@ -157,7 +157,10 @@ export function TestPrimitiveDialog({ serverName, primitive, disabled }: Props) 
           <Play className="h-3 w-3" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[640px]">
+      {/* Near-fullscreen two-pane layout: params left, result right. Each pane
+          scrolls independently so a long response never pushes the form out of
+          reach — tweak args and re-run with the last result still visible. */}
+      <DialogContent className="flex h-[88vh] w-[min(1200px,96vw)] max-w-none flex-col sm:max-w-none">
         <DialogHeader>
           <DialogTitle className="font-mono text-base">{primitive.name}</DialogTitle>
           <DialogDescription>
@@ -165,35 +168,47 @@ export function TestPrimitiveDialog({ serverName, primitive, disabled }: Props) 
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 py-2">
-          {paramFields.length === 0 && primitive.kind !== "resource" && (
-            <p className="text-sm text-muted-foreground">No parameters.</p>
-          )}
-          {primitive.kind === "resource" && (
-            <div className="text-sm">
-              <span className="text-muted-foreground">URI: </span>
-              <code className="rounded bg-muted px-1">{primitive.uri}</code>
+        <div className="grid min-h-0 flex-1 grid-rows-[1fr_1fr] gap-4 md:grid-cols-2 md:grid-rows-1">
+          <div className="flex min-h-0 flex-col gap-1.5">
+            <Label className="text-xs text-muted-foreground">Parameters</Label>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded border p-3">
+              {paramFields.length === 0 && primitive.kind !== "resource" && (
+                <p className="text-sm text-muted-foreground">No parameters.</p>
+              )}
+              {primitive.kind === "resource" && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">URI: </span>
+                  <code className="rounded bg-muted px-1">{primitive.uri}</code>
+                </div>
+              )}
+              {paramFields.map((p) => (
+                <ParamInput
+                  key={p.name}
+                  param={p}
+                  value={values[p.name]}
+                  onChange={(v) => setField(p.name, v)}
+                />
+              ))}
             </div>
-          )}
-          {paramFields.map((p) => (
-            <ParamInput
-              key={p.name}
-              param={p}
-              value={values[p.name]}
-              onChange={(v) => setField(p.name, v)}
-            />
-          ))}
-        </div>
-
-        {error && (
-          <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
           </div>
-        )}
 
-        {result !== null && (
-          <ResultView kind={primitive.kind} result={result} />
-        )}
+          <div className="flex min-h-0 flex-col gap-1.5">
+            <Label className="text-xs text-muted-foreground">Result</Label>
+            <div className="min-h-0 flex-1 overflow-y-auto rounded border bg-muted/10 p-3">
+              {error && (
+                <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </div>
+              )}
+              {result !== null && <ResultView kind={primitive.kind} result={result} />}
+              {result === null && !error && (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  {running ? "Running…" : "Run to see the result here."}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -283,13 +298,13 @@ function ResultView({ kind, result }: { kind: Primitive["kind"]; result: unknown
 
   return (
     <div className="space-y-2">
-      <Label className="text-xs text-muted-foreground">Result</Label>
       {summary && (
-        <div className="rounded border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap">
+        <div className="rounded border bg-muted/30 px-3 py-2 text-sm whitespace-pre-wrap break-words">
           {summary}
         </div>
       )}
-      <details className="rounded border">
+      {/* No summary to show -> the raw payload IS the result; start it open. */}
+      <details className="rounded border" {...(summary == null ? { open: true } : {})}>
         <summary className="cursor-pointer px-3 py-1.5 text-xs text-muted-foreground">
           Raw response
         </summary>
