@@ -139,9 +139,13 @@ deploy.
 
 ### Import
 
-Paste an exported spec JSON (from another Roundhouse instance, or from
-`POST /api/servers/{name}/export`) to clone a server's configuration
-verbatim.
+Upload a `.rhserver.zip` bundle exported from another Roundhouse instance
+(the **Export** button in the server editor, or `GET /api/servers/{name}/export`)
+to clone a server verbatim — spec, uploaded assets, and git/template build
+files all transfer. Secret env values and runtime tokens are deliberately
+not included: re-enter secrets and mint new tokens after import. Legacy
+flat-JSON exports still import by pasting the JSON, but carry no assets or
+build files.
 
 ![Create — Import](screenshots/dark/07-create-import.png)
 

@@ -463,7 +463,7 @@ docker compose down -v     # wipe everything</code></pre></div>
 <p>Clone a repo that declares its dependencies in <code>roundhouse.json</code>. The imported server registers as <code>not_deployed</code> — Roundhouse seeds the environment variables declared by the manifest, populates pip and apt packages, and waits for an operator to fill in secrets before the first deploy.</p>
 <figure><img src="screenshots/dark/06-create-from-git.png?v=78a93323" alt="Create — From Git" loading="lazy" decoding="async" /><figcaption>fig. 06 — create — from git</figcaption></figure>
 <h3 id="import">Import<a class="anchor" href="#import" aria-label="link to section">#</a></h3>
-<p>Paste an exported spec JSON (from another Roundhouse instance, or from <code>POST /api/servers/{name}/export</code>) to clone a server's configuration verbatim.</p>
+<p>Upload a <code>.rhserver.zip</code> bundle exported from another Roundhouse instance (the <strong>Export</strong> button in the server editor, or <code>GET /api/servers/{name}/export</code>) to clone a server verbatim — spec, uploaded assets, and git/template build files all transfer. Secret env values and runtime tokens are deliberately not included: re-enter secrets and mint new tokens after import. Legacy flat-JSON exports still import by pasting the JSON, but carry no assets or build files.</p>
 <figure><img src="screenshots/dark/07-create-import.png?v=95fd7512" alt="Create — Import" loading="lazy" decoding="async" /><figcaption>fig. 07 — create — import</figcaption></figure>
 <div class="rule" aria-hidden="true"></div>
 <h2 id="the-server-editor">The server editor<a class="anchor" href="#the-server-editor" aria-label="link to section">#</a></h2>

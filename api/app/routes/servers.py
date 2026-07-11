@@ -8,7 +8,7 @@ import time
 from typing import Any, Literal
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi import File as FastApiFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -754,8 +754,7 @@ def rediscover(
 
 
 # ---- Export / Import ----
-
-EXPORT_VERSION = 1
+# (see app.services.bundle for the archive format and BUNDLE_VERSION)
 
 
 # ---- Deploy from a Git URL ----
@@ -974,11 +973,16 @@ def export_spec(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Return a portable JSON dump of the server's spec. No secrets - runtime
+    """Return a portable zip bundle of the server: manifest.json (the spec),
+    assets/, and the git/template build-files tarball. No secrets - runtime
     tokens and apt/pip env values for global imports are NOT included; the
     importer regenerates tokens and reads globals from its own platform."""
+    from app.services import bundle
+    from app.services.assets import AssetStore
+
     _assert_access(db, user, name)
-    spec = get_server_service().store.load(name)
+    service = get_server_service()
+    spec = service.store.load(name)
     if spec is None:
         raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
     exported = spec.to_dict()
@@ -988,11 +992,27 @@ def export_spec(
     exported["env_vars"] = [
         ({**ev, "value": ""} if ev.get("secret") else ev) for ev in exported.get("env_vars", [])
     ]
-    return {
-        "version": EXPORT_VERSION,
+    astore = AssetStore(name)
+    assets = [
+        (a["name"], content)
+        for a in astore.list()
+        if (content := astore.read_bytes(a["name"])) is not None
+    ]
+    build_files = service.store.get_build_files(name)
+    manifest = {
+        "version": bundle.BUNDLE_VERSION,
         "exported_at": _now_iso(),
         "spec": exported,
+        # Metadata only, for humans inspecting the zip; the entries are canonical.
+        "assets": [{"name": n, "size": len(c)} for n, c in assets],
+        "has_build_files": bool(build_files),
     }
+    content = bundle.build_bundle(manifest, assets, build_files)
+    return Response(
+        content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}.rhserver.zip"'},
+    )
 
 
 class ImportIn(BaseModel):
@@ -1002,15 +1022,22 @@ class ImportIn(BaseModel):
     name_override: str | None = None
 
 
-@router.post("/import", status_code=201)
-def import_spec(
-    payload: ImportIn,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
+def _do_import(
+    db: Session,
+    user: User,
+    raw_spec: dict,
+    name_override: str | None,
+    assets: list[tuple[str, bytes]] | None = None,
+    build_files: bytes | None = None,
 ):
-    raw_spec = dict(payload.spec)
-    if payload.name_override:
-        raw_spec["name"] = payload.name_override
+    """Shared import flow: register ownership, persist spec (+ assets and
+    build files when importing a bundle), then build and deploy. Rolls the
+    registration and stored state back on any failure."""
+    from app.services.assets import AssetError, AssetStore
+
+    raw_spec = dict(raw_spec)
+    if name_override:
+        raw_spec["name"] = name_override
     name = str(raw_spec.get("name") or "")
     if not _SERVER_NAME_RE.match(name):
         raise HTTPException(status_code=422, detail=f"Invalid or missing server name: {name!r}")
@@ -1027,23 +1054,82 @@ def import_spec(
 
     spec = ServerSpec.from_dict(raw_spec)
     service = get_server_service()
-    try:
-        result = service.build_and_deploy(db, spec)
-        audit_record(db, user, "server.import", "server", name)
-        return _to_response(db, result, spec)
-    except HTTPException:
+
+    def _rollback() -> None:
         db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
+        service.store.delete(name)  # also removes assets + build files
+
+    try:
+        # Assets and build files must be in the DB before build_and_deploy
+        # materializes the build context from it. save() first so the server
+        # row exists for set_build_files.
+        if assets or build_files:
+            service.store.save(spec)
+            astore = AssetStore(name)
+            for filename, content in assets or []:
+                astore.write(filename, content)  # re-enforces caps + charset
+            if build_files:
+                service.store.set_build_files(name, build_files)
+        result = service.build_and_deploy(db, spec)
+        audit_record(db, user, "server.import", "server", name, {
+            "assets": len(assets or []),
+            "build_files": bool(build_files),
+        })
+        return _to_response(db, result, spec)
+    except AssetError as e:
+        _rollback()
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except HTTPException:
+        _rollback()
         raise
     except Exception as e:  # noqa: BLE001
         logger.error("Import failed for '%s': %s", name, e)
-        db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
-        service.store.delete(name)
+        _rollback()
         try:
             docker.remove_server(name, service.registry_prefix(db))
         except Exception:  # noqa: BLE001
             pass
         status_code = 409 if isinstance(e, RegistryRequiredError) else 500
         raise HTTPException(status_code=status_code, detail=str(e)) from e
+
+
+@router.post("/import", status_code=201)
+def import_spec(
+    payload: ImportIn,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Legacy JSON import: a bare spec (or v1 export envelope's `spec`).
+    Bundles exported as zips go through /import-archive instead."""
+    return _do_import(db, user, payload.spec, payload.name_override)
+
+
+@router.post("/import-archive", status_code=201)
+async def import_archive(
+    file: UploadFile = FastApiFile(...),
+    name_override: str | None = Form(None),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Import a zip bundle produced by GET /{name}/export: spec + assets +
+    build files. Bounded read so an oversize upload can't exhaust memory
+    before the size check."""
+    from app.services import bundle
+
+    data = await file.read(bundle.MAX_BUNDLE_BYTES + 1)
+    if len(data) > bundle.MAX_BUNDLE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Bundle exceeds the {bundle.MAX_BUNDLE_BYTES}-byte limit",
+        )
+    try:
+        parsed = bundle.parse_bundle(data)
+    except bundle.BundleError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return _do_import(
+        db, user, parsed.manifest["spec"], name_override,
+        assets=parsed.assets, build_files=parsed.build_files,
+    )
 
 
 def _now_iso() -> str:

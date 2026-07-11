@@ -120,7 +120,9 @@ export function CreateServerPage() {
   const [gitUrl, setGitUrl] = useState("");
   const [gitRef, setGitRef] = useState("");
 
-  // Import JSON
+  // Import: a .rhserver.zip bundle (spec + assets + build files), or legacy
+  // pasted spec JSON.
+  const [importFile, setImportFile] = useState<File | null>(null);
   const [importJson, setImportJson] = useState("");
 
   const [placement, setPlacement] = useState<PlacementConstraint[]>([]);
@@ -194,16 +196,20 @@ export function CreateServerPage() {
           ...place,
         });
       } else if (method === "import") {
-        const parsed = JSON.parse(importJson);
-        // Accept either the full export envelope or a bare spec.
-        const spec =
-          parsed && typeof parsed === "object" && "spec" in parsed
-            ? (parsed as { spec: Record<string, unknown> }).spec
-            : (parsed as Record<string, unknown>);
-        await api.importServer({
-          spec,
-          ...(name ? { name_override: name } : {}),
-        });
+        if (importFile) {
+          await api.importServerArchive(importFile, name || undefined);
+        } else {
+          const parsed = JSON.parse(importJson);
+          // Accept either the full export envelope or a bare spec.
+          const spec =
+            parsed && typeof parsed === "object" && "spec" in parsed
+              ? (parsed as { spec: Record<string, unknown> }).spec
+              : (parsed as Record<string, unknown>);
+          await api.importServer({
+            spec,
+            ...(name ? { name_override: name } : {}),
+          });
+        }
       }
       // A git import lands as not_deployed; a remote server lands deployed with
       // its toolset discovered but every tool locked (default-deny). Either way,
@@ -227,7 +233,7 @@ export function CreateServerPage() {
     (method === "code" && (!name || !source.trim())) ||
     (method === "remote" && (!name || !remoteUrl.trim())) ||
     (method === "git" && (!name || !gitUrl.trim())) ||
-    (method === "import" && !importJson.trim());
+    (method === "import" && !importFile && !importJson.trim());
 
   const active = METHODS.find((m) => m.value === method)!;
 
@@ -474,21 +480,39 @@ export function CreateServerPage() {
           )}
 
           {method === "import" && (
-            <div className="grid gap-2">
-              <Label htmlFor="import-json">Exported spec JSON</Label>
-              <p className="text-xs text-muted-foreground">
-                Paste the JSON returned by <code>GET /api/servers/&lt;name&gt;/export</code> or
-                a bare spec object. Runtime tokens are not transferred — mint new ones
-                after import.
-              </p>
-              <Textarea
-                id="import-json"
-                className="min-h-[320px] font-mono text-xs"
-                placeholder='{"version": 1, "spec": { ... }}'
-                value={importJson}
-                onChange={(e) => setImportJson(e.target.value)}
-              />
-            </div>
+            <>
+              <div className="grid gap-2">
+                <Label htmlFor="import-file">Export bundle</Label>
+                <p className="text-xs text-muted-foreground">
+                  Upload a <code>.rhserver.zip</code> bundle exported from another
+                  Roundhouse — spec, assets, and build files all transfer. Runtime
+                  tokens and secret values are not included — re-enter secrets and
+                  mint new tokens after import.
+                </p>
+                <Input
+                  id="import-file"
+                  type="file"
+                  accept=".zip,application/zip"
+                  onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+              {!importFile && (
+                <div className="grid gap-2">
+                  <Label htmlFor="import-json">…or paste exported spec JSON</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Legacy flat-JSON exports (or a bare spec object) still import,
+                    but carry no assets or build files.
+                  </p>
+                  <Textarea
+                    id="import-json"
+                    className="min-h-[240px] font-mono text-xs"
+                    placeholder='{"version": 1, "spec": { ... }}'
+                    value={importJson}
+                    onChange={(e) => setImportJson(e.target.value)}
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
