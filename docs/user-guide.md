@@ -287,6 +287,15 @@ Host configuration: external hostname, Docker registry credentials, custom
 CA bundle for outbound TLS, and platform-wide env defaults that get
 imported into spec-based servers.
 
+If your registry is **Harbor**, enable *Vulnerability scanning* under the
+registry settings: Roundhouse then reads Harbor's Trivy scan results over
+its API (with the registry credentials — grant the robot account
+scan/artifact read permission) and shows a per-server vulnerability badge
+in the servers list, plus a severity breakdown with a deep link to the
+report on each server's Overview tab. Pairs well with Harbor's
+*prevent vulnerable images from running* policy: the badge tells you why
+a deploy was blocked before you go digging.
+
 ![Platform settings](screenshots/dark/50-settings.png)
 
 ### Users

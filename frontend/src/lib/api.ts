@@ -223,6 +223,27 @@ export interface Template {
   variables: TemplateVariable[];
 }
 
+// ---- Image vulnerability summaries (registry scanner, e.g. Harbor/Trivy) ----
+
+export interface VulnSummary {
+  status: "clean" | "vulnerable" | "scanning" | "unscanned" | "unsupported" | "error";
+  /** Registry's overall severity for the artifact, e.g. "Critical". */
+  severity: string | null;
+  total: number;
+  fixable: number;
+  by_severity: Record<string, number>;
+  scanned_at: string | null;
+  /** Deep link to the artifact in the registry's UI. */
+  report_url: string | null;
+  detail: string | null;
+}
+
+export interface VulnerabilityResponse {
+  /** False when no registry scanner is configured — hide the badges. */
+  available: boolean;
+  servers: Record<string, VulnSummary>;
+}
+
 /** When `secret` is true, the platform stores the value encrypted at rest
  * (laravel-crypto) and never echoes it back. The editor shows the row as
  * masked; sending `value: ""` on save preserves the stored ciphertext. */
@@ -1044,7 +1065,15 @@ export const api = {
     custom_ca_cert_count: number;
     /** Self-managed HTTPS cert status (terminate TLS on the embedded Traefik). */
     tls_cert: TlsCertStatus;
+    /** Registry vulnerability scanner: "" (off) or "harbor". */
+    registry_scanner: string;
+    registry_scanner_api_url: string;
   }>("/settings"),
+  updateRegistryScanner: (body: { scanner: string; api_url?: string }) =>
+    request<{ registry_scanner: string; registry_scanner_api_url: string }>(
+      "/settings/registry-scanner",
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
   updateCustomCa: (cert: string) =>
     request<{ custom_ca_cert_configured: boolean; cert_count: number }>("/settings/custom-ca", {
       method: "PUT",
@@ -1083,6 +1112,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ env_vars }),
     }),
+
+  // Image vulnerability summaries (from the registry's scanner, e.g. Harbor/Trivy)
+  getVulnerabilities: () =>
+    request<VulnerabilityResponse>("/vulnerabilities"),
 
   // Teams
   listTeams: () => request<Team[]>("/teams"),

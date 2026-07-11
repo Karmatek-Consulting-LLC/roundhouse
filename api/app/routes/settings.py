@@ -16,6 +16,8 @@ from app.platform_settings import (
     SETTING_DOCKER_REGISTRY,
     SETTING_DOCKER_REGISTRY_PASSWORD,
     SETTING_DOCKER_REGISTRY_USERNAME,
+    SETTING_REGISTRY_SCANNER,
+    SETTING_REGISTRY_SCANNER_API_URL,
     get_setting,
     put_setting,
 )
@@ -66,6 +68,8 @@ def index(_: User = Depends(require_superadmin), db: Session = Depends(get_db)):
         ),
         "custom_ca_cert_count": _count_certs(get_setting(db, SETTING_CUSTOM_CA_CERT, "") or ""),
         "tls_cert": tls_cert.status(db),
+        "registry_scanner": (get_setting(db, SETTING_REGISTRY_SCANNER, "") or "").strip(),
+        "registry_scanner_api_url": (get_setting(db, SETTING_REGISTRY_SCANNER_API_URL, "") or "").strip(),
     }
 
 
@@ -115,6 +119,28 @@ def update_docker_registry(payload: RegistryIn, db: Session = Depends(get_db)):
         "docker_registry_username": get_setting(db, SETTING_DOCKER_REGISTRY_USERNAME, "") or "",
         "docker_registry_password_configured": _password_configured(db),
     }
+
+
+class RegistryScannerIn(BaseModel):
+    # "" disables; "harbor" reads Trivy scan overviews from the Harbor API.
+    scanner: str = ""
+    api_url: str = ""
+
+
+@router.put("/registry-scanner")
+def update_registry_scanner(payload: RegistryScannerIn, db: Session = Depends(get_db)):
+    from app.services import registry_scan
+
+    scanner = (payload.scanner or "").strip().lower()
+    if scanner not in ("", registry_scan.SCANNER_HARBOR):
+        raise HTTPException(status_code=422, detail=f"Unknown scanner: {scanner!r}")
+    api_url = (payload.api_url or "").strip().rstrip("/")
+    if api_url and not api_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="API URL must start with http(s)://")
+    put_setting(db, SETTING_REGISTRY_SCANNER, scanner)
+    put_setting(db, SETTING_REGISTRY_SCANNER_API_URL, api_url)
+    registry_scan.get_scanner().invalidate()  # config changed - drop cached verdicts
+    return {"registry_scanner": scanner, "registry_scanner_api_url": api_url}
 
 
 class CustomCaIn(BaseModel):

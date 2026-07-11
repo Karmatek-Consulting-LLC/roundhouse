@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/status-badge";
+import { VulnBadge, useVulnerabilities } from "@/components/vuln-badge";
 import { TurntableEmpty } from "@/components/turntable-empty";
 import { CopyButton } from "@/components/copy-button";
 import { Search, X } from "lucide-react";
@@ -34,6 +35,9 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
   const [busy, setBusy] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [owner, setOwner] = useState<string>(ALL_OWNERS);
+  // Image vulnerability summaries from the registry scanner (Harbor). Null
+  // when no scanner is configured — the column is hidden entirely then.
+  const vulns = useVulnerabilities([servers.length]);
 
   // Distinct owners for the dropdown, sorted; only worth showing when >1.
   const owners = useMemo(() => {
@@ -126,6 +130,7 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
             <TableHead>Primitives</TableHead>
             <TableHead>Replicas</TableHead>
             <TableHead>Status</TableHead>
+            {vulns && <TableHead>Vulns</TableHead>}
             <TableHead className="min-w-[14rem]">Endpoint</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -133,7 +138,7 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
         <TableBody>
           {filtered.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+              <TableCell colSpan={vulns ? 8 : 7} className="py-10 text-center text-sm text-muted-foreground">
                 No servers match this filter.
               </TableCell>
             </TableRow>
@@ -166,6 +171,11 @@ export function ServerTable({ servers, onRefresh, onSelect }: ServerTableProps) 
               <TableCell>
                 <StatusBadge status={s.status} />
               </TableCell>
+              {vulns && (
+                <TableCell>
+                  {vulns[s.name] ? <VulnBadge summary={vulns[s.name]} /> : null}
+                </TableCell>
+              )}
               <TableCell className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <code className="font-mono text-xs text-muted-foreground whitespace-nowrap">
