@@ -123,8 +123,6 @@ services:
       - roundhouse_admin_email
       - roundhouse_admin_password
       - roundhouse_postgres_password
-    volumes:
-      - server-data:/var/lib/roundhouse/servers
     environment:
       # Secret files - entrypoint hydrates APP_KEY / ADMIN_* / DB_PASSWORD from these.
       - APP_KEY_FILE=/run/secrets/roundhouse_app_key
@@ -158,16 +156,9 @@ services:
     # Give the SIGTERM trap time to tear down every spawned MCP server before SIGKILL.
     stop_grace_period: 60s
     deploy:
-      # Single instance until specs/assets move off the per-node `server-data`
-      # volume into Postgres (Phase 2). Until then platform-api MUST stay on the
-      # one node that holds that volume, or a start-first rollout could schedule
-      # the new task on an empty node, pass /api/health, and replace the good
-      # task with a blank inventory. Pin by labelling that node:
-      #   docker node update --label-add roundhouse_data=true <node>
+      # All server specs/assets live in Postgres, so platform-api is stateless
+      # and can schedule on any node. One replica is the tested configuration.
       replicas: 1
-      placement:
-        constraints:
-          - node.labels.roundhouse_data == true
       # Start the replacement task and wait for its healthcheck to pass BEFORE
       # stopping the old one, so the UI never goes dark during a deploy. Roll
       # back automatically if the new task never becomes healthy.
@@ -207,4 +198,3 @@ networks:
 
 volumes:
   pgdata:
-  server-data:

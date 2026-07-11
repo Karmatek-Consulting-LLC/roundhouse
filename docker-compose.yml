@@ -60,7 +60,6 @@ services:
     volumes:
       # platform-api spawns and tears down MCP server containers on this daemon.
       - /var/run/docker.sock:/var/run/docker.sock
-      - server-data:/var/lib/roundhouse/servers
     environment:
       - PYTHONUNBUFFERED=1
       # APP_KEY (base64:<32-byte-key>) keys the at-rest encryption for
@@ -110,5 +109,3 @@ volumes:
   # build-based compose file keeps existing database + spec data.
   pgdata:
     name: mcp-platform_pgdata
-  server-data:
-    name: mcp-platform_server-data
