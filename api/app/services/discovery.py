@@ -188,12 +188,15 @@ def discover(
     spec: ServerSpec,
     *,
     remote_headers: dict[str, str] | None = None,
+    local_headers: dict[str, str] | None = None,
     verify: "ssl.SSLContext | None" = None,
 ) -> list[dict]:
     """Introspect the live proxied server and return reconciled overlay
     primitives (caller persists them). `tools/list` failures propagate (wrong
     URL, bad credential, server not up); resources/prompts degrade to empty.
     `verify` is the TLS context for the remote upstream (custom CA support).
+    `local_headers` authenticates code-mode introspection — once the server
+    has tokens, its generated middleware gates tools/list too.
     """
     if spec.is_remote_mode():
         url = (spec.remote_url or "").strip()
@@ -209,8 +212,8 @@ def discover(
         prompts = _safe(lambda: client.list_prompts_url(url, remote_headers, verify=verify))
     else:
         # Code-first: introspect the internal container (must be deployed/up).
-        tools = client.list_tools(spec.name)
-        resources = _safe(lambda: client.list_resources(spec.name))
-        prompts = _safe(lambda: client.list_prompts(spec.name))
+        tools = client.list_tools(spec.name, headers=local_headers)
+        resources = _safe(lambda: client.list_resources(spec.name, headers=local_headers))
+        prompts = _safe(lambda: client.list_prompts(spec.name, headers=local_headers))
 
     return reconcile(spec.primitives, to_overlay(tools, resources, prompts))

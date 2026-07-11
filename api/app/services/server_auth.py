@@ -116,6 +116,19 @@ def revoke_token(db: Session, server: str, token_id: int) -> bool:
     return bool(n)
 
 
+def token_plaintext(db: Session, server: str, name: str | None = None) -> str | None:
+    """Decrypted value of one token (by name), or the server's oldest token
+    when name is None. None when nothing matches. Lets the built-in tester
+    authenticate against the spawned server's StaticTokenVerifier with a real
+    token — same path as external clients, scopes included. The plaintext is
+    attached to the internal request server-side and never sent to the UI."""
+    q = db.query(ServerToken).filter(ServerToken.server_name == server)
+    if name is not None:
+        q = q.filter(ServerToken.name == name)
+    row = q.order_by(ServerToken.id).first()
+    return _decrypt_or_passthrough(row.token) if row else None
+
+
 def tokens_for_codegen(db: Session, server: str) -> list[dict]:
     rows = (
         db.query(ServerToken)

@@ -42,8 +42,18 @@ class McpClient:
         }
         self._client = httpx.Client(timeout=self._timeout, headers=self._default_headers)
 
-    def call(self, server_name: str, method: str, params: dict | None = None) -> dict:
-        return self._rpc(self._server_url(server_name), method, params, what=f"server {server_name!r}")
+    def call(
+        self,
+        server_name: str,
+        method: str,
+        params: dict | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> dict:
+        return self._rpc(
+            self._server_url(server_name), method, params,
+            extra_headers=headers, what=f"server {server_name!r}",
+        )
 
     def call_url(
         self,
@@ -135,27 +145,39 @@ class McpClient:
         except ValueError as e:
             raise McpError(f"MCP server returned non-JSON response: {resp.text[:200]}") from e
 
-    def list_tools(self, server_name: str) -> list[dict]:
-        return self.call(server_name, "tools/list").get("tools", [])
+    def list_tools(self, server_name: str, *, headers: dict[str, str] | None = None) -> list[dict]:
+        return self.call(server_name, "tools/list", headers=headers).get("tools", [])
 
-    def list_resources(self, server_name: str) -> list[dict]:
-        result = self.call(server_name, "resources/list")
+    def list_resources(self, server_name: str, *, headers: dict[str, str] | None = None) -> list[dict]:
+        result = self.call(server_name, "resources/list", headers=headers)
         out = list(result.get("resources", []))
         for t in result.get("resourceTemplates", []) or []:
             out.append({**t, "isTemplate": True})
         return out
 
-    def list_prompts(self, server_name: str) -> list[dict]:
-        return self.call(server_name, "prompts/list").get("prompts", [])
+    def list_prompts(self, server_name: str, *, headers: dict[str, str] | None = None) -> list[dict]:
+        return self.call(server_name, "prompts/list", headers=headers).get("prompts", [])
 
-    def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> dict:
-        return self.call(server_name, "tools/call", {"name": tool_name, "arguments": arguments or {}})
+    def call_tool(
+        self, server_name: str, tool_name: str, arguments: dict,
+        *, headers: dict[str, str] | None = None,
+    ) -> dict:
+        return self.call(
+            server_name, "tools/call",
+            {"name": tool_name, "arguments": arguments or {}}, headers=headers,
+        )
 
-    def read_resource(self, server_name: str, uri: str) -> dict:
-        return self.call(server_name, "resources/read", {"uri": uri})
+    def read_resource(self, server_name: str, uri: str, *, headers: dict[str, str] | None = None) -> dict:
+        return self.call(server_name, "resources/read", {"uri": uri}, headers=headers)
 
-    def get_prompt(self, server_name: str, prompt_name: str, arguments: dict) -> dict:
-        return self.call(server_name, "prompts/get", {"name": prompt_name, "arguments": arguments or {}})
+    def get_prompt(
+        self, server_name: str, prompt_name: str, arguments: dict,
+        *, headers: dict[str, str] | None = None,
+    ) -> dict:
+        return self.call(
+            server_name, "prompts/get",
+            {"name": prompt_name, "arguments": arguments or {}}, headers=headers,
+        )
 
     # ---- External (remote-proxy) introspection ----
 

@@ -932,21 +932,23 @@ export const api = {
   listLivePrompts: (serverName: string) =>
     request<{ prompts: McpLivePrompt[] }>(`/servers/${encodeURIComponent(serverName)}/prompts`),
 
-  // Live MCP invocation (pass-through to the deployed server's JSON-RPC endpoint)
-  invokeTool: (serverName: string, tool: string, args: Record<string, unknown>) =>
+  // Live MCP invocation (pass-through to the deployed server's JSON-RPC endpoint).
+  // tokenName picks which server token the backend attaches to the internal
+  // call (omitted -> the oldest token, if any); the plaintext never reaches the UI.
+  invokeTool: (serverName: string, tool: string, args: Record<string, unknown>, tokenName?: string) =>
     request<McpToolResult>(`/servers/${encodeURIComponent(serverName)}/tools/invoke`, {
       method: "POST",
-      body: JSON.stringify({ tool, arguments: args }),
+      body: JSON.stringify({ tool, arguments: args, ...(tokenName ? { token_name: tokenName } : {}) }),
     }),
-  readResource: (serverName: string, uri: string) =>
+  readResource: (serverName: string, uri: string, tokenName?: string) =>
     request<McpResourceResult>(`/servers/${encodeURIComponent(serverName)}/resources/read`, {
       method: "POST",
-      body: JSON.stringify({ uri }),
+      body: JSON.stringify({ uri, ...(tokenName ? { token_name: tokenName } : {}) }),
     }),
-  getPrompt: (serverName: string, prompt: string, args: Record<string, unknown>) =>
+  getPrompt: (serverName: string, prompt: string, args: Record<string, unknown>, tokenName?: string) =>
     request<McpPromptResult>(`/servers/${encodeURIComponent(serverName)}/prompts/get`, {
       method: "POST",
-      body: JSON.stringify({ prompt, arguments: args }),
+      body: JSON.stringify({ prompt, arguments: args, ...(tokenName ? { token_name: tokenName } : {}) }),
     }),
 
   // Per-server runtime auth (scopes + tokens for the FastMCP StaticTokenVerifier).
