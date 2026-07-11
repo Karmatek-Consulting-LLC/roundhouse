@@ -34,6 +34,14 @@ SETTING_DOCKER_REGISTRY_PASSWORD = "docker_registry_password"
 SETTING_CUSTOM_CA_CERT = "custom_ca_cert"
 SETTING_GLOBAL_ENV_VARS = "mcp_global_env_vars"
 
+# Registry vulnerability scanning. When set to "harbor", the platform reads
+# Trivy scan overviews from the registry's REST API (using the registry
+# credentials above) and surfaces per-server vulnerability badges in the UI.
+# The API base defaults to https://{registry-host}/api/v2.0; the override
+# exists for registries whose API is reached on a different URL.
+SETTING_REGISTRY_SCANNER = "registry_scanner"
+SETTING_REGISTRY_SCANNER_API_URL = "registry_scanner_api_url"
+
 # Self-managed TLS (see app.services.tls_cert). The cert chain is public and
 # stored plain; the private key is encrypted at rest with the app.crypto AES
 # envelope (keyed off APP_KEY), like the Entra client secret. These are the

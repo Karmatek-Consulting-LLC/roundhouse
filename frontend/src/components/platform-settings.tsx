@@ -49,6 +49,13 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
   const [savingGlobalEnv, setSavingGlobalEnv] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingRegistry, setSavingRegistry] = useState(false);
+
+  // Registry vulnerability scanning (Harbor/Trivy)
+  const [registryScanner, setRegistryScanner] = useState("");
+  const [savedRegistryScanner, setSavedRegistryScanner] = useState("");
+  const [scannerApiUrl, setScannerApiUrl] = useState("");
+  const [savedScannerApiUrl, setSavedScannerApiUrl] = useState("");
+  const [savingScanner, setSavingScanner] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -66,6 +73,10 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       setRegistryPasswordConfigured(data.docker_registry_password_configured);
       setRegistryPassword("");
       setPasswordClearRequested(false);
+      setRegistryScanner(data.registry_scanner ?? "");
+      setSavedRegistryScanner(data.registry_scanner ?? "");
+      setScannerApiUrl(data.registry_scanner_api_url ?? "");
+      setSavedScannerApiUrl(data.registry_scanner_api_url ?? "");
       setCustomCaConfigured(data.custom_ca_cert_configured);
       setCustomCaCount(data.custom_ca_cert_count ?? 0);
       setTlsCert(data.tls_cert ?? null);
@@ -118,6 +129,26 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
     dockerUsername !== savedDockerUsername ||
     registryPassword.length > 0 ||
     passwordClearRequested;
+
+  const scannerDirty =
+    registryScanner !== savedRegistryScanner || scannerApiUrl !== savedScannerApiUrl;
+
+  async function handleSaveScanner() {
+    setSavingScanner(true);
+    setError(null);
+    try {
+      const data = await api.updateRegistryScanner({
+        scanner: registryScanner,
+        api_url: scannerApiUrl,
+      });
+      setSavedRegistryScanner(data.registry_scanner);
+      setSavedScannerApiUrl(data.registry_scanner_api_url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save scanner settings");
+    } finally {
+      setSavingScanner(false);
+    }
+  }
 
   const globalEnvDirty =
     JSON.stringify(globalEnvVars) !== JSON.stringify(savedGlobalEnvVars);
@@ -310,6 +341,52 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
               {dockerRegistryEffective || "(none - local images only)"}
             </code>
           </p>
+
+          <div className="space-y-3 border-t pt-4">
+            <div>
+              <p className="text-sm font-medium">Vulnerability scanning</p>
+              <p className="text-xs text-muted-foreground">
+                Harbor scans pushed images with Trivy. When enabled, Roundhouse reads the
+                scan results over Harbor&apos;s API (using the registry credentials above —
+                the robot account needs scan/artifact read permission) and shows a
+                vulnerability badge per server.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={registryScanner === "harbor"}
+                onChange={(e) => setRegistryScanner(e.target.checked ? "harbor" : "")}
+                disabled={!dockerRegistryEffective}
+              />
+              Registry is Harbor — surface image vulnerabilities in the UI
+            </label>
+            {!dockerRegistryEffective && (
+              <p className="text-xs text-muted-foreground">
+                Configure a registry prefix first — scanning reads results for pushed images.
+              </p>
+            )}
+            {registryScanner === "harbor" && (
+              <div className="grid gap-2 min-w-0 max-w-md">
+                <Label htmlFor="scanner-api-url">Harbor API URL (optional)</Label>
+                <Input
+                  id="scanner-api-url"
+                  placeholder={`https://${(dockerRegistryEffective || "registry-host").split("/")[0]}/api/v2.0`}
+                  value={scannerApiUrl}
+                  onChange={(e) => setScannerApiUrl(e.target.value)}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave blank to derive it from the registry host. Set it only when the
+                  API is reached on a different URL than docker pulls.
+                </p>
+              </div>
+            )}
+            <Button onClick={handleSaveScanner} disabled={savingScanner || !scannerDirty} size="sm">
+              <Save className="mr-1 h-4 w-4" />
+              {savingScanner ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

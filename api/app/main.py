@@ -148,6 +148,7 @@ from app.routes import settings as settings_route  # noqa: E402
 from app.routes import teams as teams_route  # noqa: E402
 from app.routes import templates as templates_route  # noqa: E402
 from app.routes import users as users_route  # noqa: E402
+from app.routes import vulnerabilities as vulnerabilities_route  # noqa: E402
 
 app.include_router(audit_route.router)
 app.include_router(auth_route.router)
@@ -166,6 +167,7 @@ app.include_router(invoke_route.router)
 app.include_router(pypi_route.router)
 app.include_router(settings_route.router)
 app.include_router(backup_route.router)
+app.include_router(vulnerabilities_route.router)
 
 
 class SPAStaticFiles(StaticFiles):

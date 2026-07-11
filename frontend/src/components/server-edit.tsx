@@ -4,6 +4,7 @@ import { api, type Asset, type AssetListResponse, type PlacementConstraint, type
 import { PlacementSelector } from "@/components/placement-selector";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
+import { VulnPanel } from "@/components/vuln-badge";
 import { CopyButton } from "@/components/copy-button";
 import { PrimitiveForm } from "@/components/primitive-form";
 import { ImportsEditor } from "@/components/imports-editor";
@@ -635,6 +636,10 @@ function OverviewRail({ serverName, server, onSaved, onDeleted }: OverviewRailPr
           )}
         </div>
       )}
+
+      {/* Image vulnerabilities from the registry scanner (Harbor). Renders
+          nothing when no scanner is configured. */}
+      <VulnPanel serverName={serverName} />
 
       <div className="grid gap-2">
         <Label>Description</Label>
