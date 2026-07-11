@@ -211,7 +211,11 @@ class ServerToken(Base):
         Index("server_tokens_server_name_index", "server_name"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # BigInteger on Postgres; INTEGER on SQLite so it aliases rowid and
+    # autoincrements (BIGINT does not) — keeps the model usable in tests.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     server_name: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     # Encrypted at rest with the AES-256-CBC + HMAC envelope keyed off APP_KEY

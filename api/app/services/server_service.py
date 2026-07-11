@@ -169,9 +169,17 @@ class ServerService:
                 if verify is not None
                 else "no custom CA configured (system roots only)",
             )
+        # Code-mode servers with tokens gate their MCP endpoint; introspect
+        # with a real (decrypted) token like any other internal caller.
+        local_headers = None
+        if not spec.is_remote_mode():
+            token = server_auth.token_plaintext(db, spec.name)
+            if token:
+                local_headers = {"Authorization": f"Bearer {token}"}
         try:
             return discovery.discover(
-                get_mcp_client(), spec, remote_headers=headers, verify=verify
+                get_mcp_client(), spec,
+                remote_headers=headers, local_headers=local_headers, verify=verify,
             )
         except McpError as e:
             # If TLS verification failed, say whether the custom CA was even in

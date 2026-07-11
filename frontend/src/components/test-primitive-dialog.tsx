@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   api,
   type McpPromptResult,
   type McpResourceResult,
   type McpToolResult,
   type Primitive,
+  type ServerTokenSummary,
   type ToolParameter,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Play } from "lucide-react";
 
@@ -37,6 +45,28 @@ export function TestPrimitiveDialog({ serverName, primitive, disabled }: Props) 
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
+  // Server tokens: once any exist, the spawned server requires auth, so the
+  // backend runs the test as one of them ("Run as"). Default: oldest token.
+  const [tokens, setTokens] = useState<ServerTokenSummary[]>([]);
+  const [tokenName, setTokenName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api
+      .listTokens(serverName)
+      .then((t) => {
+        if (cancelled) return;
+        setTokens(t);
+        setTokenName((cur) => (cur && t.some((x) => x.name === cur) ? cur : t[0]?.name ?? null));
+      })
+      .catch(() => {
+        if (!cancelled) setTokens([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, serverName]);
 
   const paramFields = useMemo(() => {
     if (primitive.kind === "tool" || primitive.kind === "prompt") {
@@ -118,15 +148,16 @@ export function TestPrimitiveDialog({ serverName, primitive, disabled }: Props) 
     }
 
     setRunning(true);
+    const asToken = tokenName ?? undefined;
     try {
       if (primitive.kind === "tool") {
-        const r = await api.invokeTool(serverName, primitive.name, args);
+        const r = await api.invokeTool(serverName, primitive.name, args, asToken);
         setResult(r);
       } else if (primitive.kind === "prompt") {
-        const r = await api.getPrompt(serverName, primitive.name, args);
+        const r = await api.getPrompt(serverName, primitive.name, args, asToken);
         setResult(r);
       } else if (primitive.kind === "resource") {
-        const r = await api.readResource(serverName, primitive.uri);
+        const r = await api.readResource(serverName, primitive.uri, asToken);
         setResult(r);
       } else {
         // resource_template - substitute URI placeholders.
@@ -134,7 +165,7 @@ export function TestPrimitiveDialog({ serverName, primitive, disabled }: Props) 
         for (const [k, v] of Object.entries(args)) {
           uri = uri.replaceAll(`{${k}}`, String(v));
         }
-        const r = await api.readResource(serverName, uri);
+        const r = await api.readResource(serverName, uri, asToken);
         setResult(r);
       }
     } catch (e) {
@@ -196,6 +227,23 @@ export function TestPrimitiveDialog({ serverName, primitive, disabled }: Props) 
         )}
 
         <DialogFooter>
+          {tokens.length > 0 && (
+            <div className="flex items-center gap-2 sm:mr-auto" title="The token the platform authenticates this test with — scoped tokens are enforced exactly as for external clients.">
+              <Label className="whitespace-nowrap text-xs text-muted-foreground">Run as</Label>
+              <Select value={tokenName ?? undefined} onValueChange={setTokenName}>
+                <SelectTrigger className="h-8 w-[180px] font-mono text-xs">
+                  <SelectValue placeholder="token" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tokens.map((t) => (
+                    <SelectItem key={t.id} value={t.name} className="font-mono text-xs">
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <Button variant="outline" onClick={() => setOpen(false)}>
             Close
           </Button>
