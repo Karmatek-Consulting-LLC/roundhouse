@@ -356,6 +356,7 @@ footer { margin-top: 40px; }
       <a class="toc-h2" href="#extending-the-swarm-stack"><span class="toc-n">10</span>Extending the Swarm stack</a>
       <a class="toc-h3" href="#how-the-merge-behaves">How the merge behaves</a>
       <a class="toc-h3" href="#front-reverse-proxy-network">Front reverse-proxy network</a>
+      <a class="toc-h3" href="#terminating-tls-on-roundhouses-own-ingress">Terminating TLS on Roundhouse itself</a>
       <a class="toc-h3" href="#pinning-a-service-to-a-node">Pinning a service to a node</a>
       <a class="toc-h3" href="#pinning-the-image-version">Pinning the image version</a>
   </aside>
@@ -400,6 +401,7 @@ footer { margin-top: 40px; }
       <a class="toc-h2" href="#extending-the-swarm-stack"><span class="toc-n">10</span>Extending the Swarm stack</a>
       <a class="toc-h3" href="#how-the-merge-behaves">How the merge behaves</a>
       <a class="toc-h3" href="#front-reverse-proxy-network">Front reverse-proxy network</a>
+      <a class="toc-h3" href="#terminating-tls-on-roundhouses-own-ingress">Terminating TLS on Roundhouse itself</a>
       <a class="toc-h3" href="#pinning-a-service-to-a-node">Pinning a service to a node</a>
       <a class="toc-h3" href="#pinning-the-image-version">Pinning the image version</a>
       </div>
@@ -539,10 +541,11 @@ docker compose down -v     # wipe everything</code></pre></div>
 <p>The published image needs no build, so this only applies if you build from source (<code>docker-compose.dev.yml</code> or your own image). If your network MITMs outbound TLS during image builds, drop the proxy's CA bundle at <code>api/docker/corp-ca.crt</code> before building. The Dockerfiles pick it up automatically; the file is gitignored so it can't be committed by accident. In any other environment, leave it absent and the build skips that step.</p>
 <div class="rule" aria-hidden="true"></div>
 <h2 id="deployment-modes">Deployment modes<a class="anchor" href="#deployment-modes" aria-label="link to section">#</a></h2>
-<div class="tablewrap"><table><thead><tr><th>Mode</th><th>File</th><th>Best for</th></tr></thead><tbody><tr><td><strong>Local / single-host</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-compose.yml" target="_blank" rel="noopener"><code>docker-compose.yml</code></a></td><td>Trying it out, small teams, hosting on one box. Pulls the published image — no clone or build. Single Docker daemon, Traefik on the same socket.</td></tr><tr><td><strong>Docker Swarm</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.yml" target="_blank" rel="noopener"><code>docker-stack.yml</code></a></td><td>Multi-node, scoped socket proxies. Designed to sit behind a cluster ingress that terminates TLS.</td></tr></tbody></table></div>
+<div class="tablewrap"><table><thead><tr><th>Mode</th><th>File</th><th>Best for</th></tr></thead><tbody><tr><td><strong>Local / single-host</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-compose.yml" target="_blank" rel="noopener"><code>docker-compose.yml</code></a></td><td>Trying it out, small teams, hosting on one box. Pulls the published image — no clone or build. Single Docker daemon, Traefik on the same socket.</td></tr><tr><td><strong>Docker Swarm</strong></td><td><a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.yml" target="_blank" rel="noopener"><code>docker-stack.yml</code></a></td><td>Multi-node, scoped socket proxies. Sits behind a cluster ingress that terminates TLS — or terminates HTTPS itself with the <a href="#terminating-tls-on-roundhouses-own-ingress">self-managed TLS overlay</a> (upload the cert from the dashboard, no upstream proxy needed).</td></tr></tbody></table></div>
 <p>Both modes are fully self-contained — well suited to air-gapped and restricted networks where outbound connectivity and cloud integrations aren't an option.</p>
 <h2 id="extending-the-swarm-stack">Extending the Swarm stack<a class="anchor" href="#extending-the-swarm-stack" aria-label="link to section">#</a></h2>
 <p>The shipped <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.yml" target="_blank" rel="noopener"><code>docker-stack.yml</code></a> is fully self-contained: it references only public images (the Roundhouse platform-api image is published to GHCR), configures its embedded Traefik via CLI flags, and depends on no other file in this repository. <strong>Deploying needs nothing but the stack file itself</strong> — download <code>docker-stack.yml</code>, write a small overlay for your environment, and <code>docker stack deploy</code>. There's no clone, no local build, and no upstream to track.</p>
+<blockquote><p><strong>Letting Roundhouse terminate TLS itself?</strong> Then you likely don't need to write an overlay at all — the shipped <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.tls.override.yml" target="_blank" rel="noopener"><code>docker-stack.tls.override.yml</code></a> is the complete second file, and the front-proxy network (<code>PUBLIC_INGRESS_NETWORK</code>) does not apply. Skip straight to <a href="#terminating-tls-on-roundhouses-own-ingress">Terminating TLS on Roundhouse itself</a>. The overlay mechanics below only matter if you're layering site-specific config — a front proxy, node pins, a pinned image version.</p></blockquote>
 <p>Anything specific to <strong>your</strong> environment — a front reverse-proxy network, node placement, a pinned image version, extra labels — belongs in a separate overlay file you own, layered on at deploy time rather than edited into the base. Keeping site-specific changes out of the base is what lets you drop in a new release of <code>docker-stack.yml</code> without re-applying your edits.</p>
 <p>Docker Swarm merges multiple stack files left to right, so you point <code>docker stack deploy</code> at both:</p>
 <div class="codeblock"><div class="codebar">bash</div><pre><code>docker stack deploy \
@@ -559,6 +562,7 @@ docker compose down -v     # wipe everything</code></pre></div>
 <p>Render the merged result before deploying — this resolves both files and prints the final stack without deploying anything:</p>
 <div class="codeblock"><div class="codebar">bash</div><pre><code>docker stack config -c docker-stack.yml -c docker-stack.override.yml</code></pre></div>
 <h3 id="front-reverse-proxy-network">Front reverse-proxy network<a class="anchor" href="#front-reverse-proxy-network" aria-label="link to section">#</a></h3>
+<p><em>Fronted deployments only — if Roundhouse terminates TLS itself, skip this section and leave the block out of your overlay.</em></p>
 <p>When an upstream proxy terminates HTTPS and forwards HTTP into this stack, the embedded Traefik needs to share a network with it. Attach it in the overlay:</p>
 <div class="codeblock"><div class="codebar">yaml</div><pre><code>services:
   traefik:
@@ -570,6 +574,14 @@ networks:
     external: true
     name: ${PUBLIC_INGRESS_NETWORK:-public-ingress}</code></pre></div>
 <p><code>external: true</code> means Docker will <strong>not</strong> create the network — it must already exist before you deploy, owned by whatever runs your ingress. Create it once with <code>docker network create --driver overlay --attachable &lt;name&gt;</code> (or let your front proxy — Caddy, nginx, Traefik, … — create it), and set <code>PUBLIC_INGRESS_NETWORK</code> if the real name differs from the default.</p>
+<h3 id="terminating-tls-on-roundhouses-own-ingress">Terminating TLS on Roundhouse itself<a class="anchor" href="#terminating-tls-on-roundhouses-own-ingress" aria-label="link to section">#</a></h3>
+<p>For a dedicated Swarm cluster where Roundhouse owns the hostname, the upstream reverse proxy is unnecessary — the embedded Traefik can terminate HTTPS itself. Deploy with the self-managed TLS overlay <strong>instead of</strong> a front-proxy overlay:</p>
+<div class="codeblock"><div class="codebar">bash</div><pre><code>docker stack deploy \
+  -c docker-stack.yml \
+  -c docker-stack.tls.override.yml \
+  roundhouse</code></pre></div>
+<p>The overlay (<a href="https://github.com/Karmatek-Consulting-LLC/roundhouse/blob/main/docker-stack.tls.override.yml" target="_blank" rel="noopener"><code>docker-stack.tls.override.yml</code></a>) publishes <code>:443</code>, adds a <code>websecure</code> entrypoint that redirects HTTP → HTTPS, and turns on the <strong>Platform Settings → HTTPS certificate</strong> panel. This mode needs no overlay of your own, no external network, and no <code>PUBLIC_INGRESS_NETWORK</code> — the two files above are the whole deployment (plus <code>PUBLIC_HOSTNAME</code> and the Swarm secrets the base stack documents).</p>
+<p><strong>Installing your certificate is a UI step, not a deploy step.</strong> Traefik serves a self-signed certificate on <code>:443</code> until you paste your PEM certificate and key under Platform Settings; Roundhouse validates the pair, stores the key encrypted at rest, and delivers everything to Traefik as Swarm secrets with a zero-downtime rolling reload. Rotating the certificate is the same UI step again.</p>
 <h3 id="pinning-a-service-to-a-node">Pinning a service to a node<a class="anchor" href="#pinning-a-service-to-a-node" aria-label="link to section">#</a></h3>
 <p>To keep a stateful service on a particular node — say Postgres on the box with fast persistent storage — label the node and constrain the service:</p>
 <div class="codeblock"><div class="codebar">yaml</div><pre><code>services:
