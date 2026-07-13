@@ -59,3 +59,8 @@ SETTING_ENTRA_CLIENT_SECRET = "entra_client_secret"
 # When "true", a first SSO login whose email matches an existing LOCAL account
 # links to it (adopts the user) instead of refusing. Opt-in; default off.
 SETTING_SSO_LINK_LOCAL = "sso_link_local_by_email"
+
+# Per-context retention for the Logs console, days as a string (e.g.
+# "log_retention.auth" = "90"). "0" keeps forever. Unset falls back to the
+# RH_LOG_RETENTION_DAYS env var (default 90). See app.services.log_retention.
+SETTING_LOG_RETENTION_PREFIX = "log_retention."

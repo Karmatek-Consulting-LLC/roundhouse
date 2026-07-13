@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { api, type LogEvent } from "@/lib/api";
 import { useLogFeed } from "@/hooks/use-log-feed";
 import { ConnectionLamp } from "@/components/observe/connection-lamp";
+import { LogRetentionDialog } from "@/components/log-retention-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,25 +29,21 @@ import {
   Play,
   RefreshCw,
   Search,
+  Settings2,
 } from "lucide-react";
 
 interface LogConsolePageProps {
   onBack: () => void;
 }
 
-/** Log contexts the console can browse. Authentication ships first; future
- * datasets (deployments, registry scans, ...) append here once the backend
- * whitelists them in routes/logs.py. */
-const CONTEXTS = [{ value: "auth", label: "Authentication" }] as const;
-
-const AUTH_EVENT_TYPES = [
-  { value: "", label: "All events" },
-  { value: "login", label: "Login (password)" },
-  { value: "logout", label: "Logout" },
-  { value: "sso.start", label: "SSO start" },
-  { value: "sso.callback", label: "SSO callback" },
-  { value: "password.change", label: "Password change" },
-  { value: "user.register", label: "User registered" },
+/** Log contexts the console can browse (must match logbook.ALL_CONTEXTS). */
+const CONTEXTS = [
+  { value: "auth", label: "Authentication" },
+  { value: "deploy", label: "Deployments" },
+  { value: "scan", label: "Registry scans" },
+  { value: "backup", label: "Backup & restore" },
+  { value: "admin", label: "Administration" },
+  { value: "system", label: "System" },
 ] as const;
 
 const OUTCOMES = [
@@ -119,18 +116,35 @@ function DetailRow({ event }: { event: LogEvent }) {
 export function LogConsolePage({ onBack }: LogConsolePageProps) {
   const [context, setContext] = useState<string>("auth");
   const [eventType, setEventType] = useState<string>("");
+  const [eventTypes, setEventTypes] = useState<string[]>([]);
   const [outcome, setOutcome] = useState<string>("");
   const [search, setSearch] = useState<string>("");
   const [query, setQuery] = useState<string>("");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [retentionOpen, setRetentionOpen] = useState(false);
 
   // Debounce the free-text search so we don't restart the stream per keystroke.
   useEffect(() => {
     const t = setTimeout(() => setQuery(search.trim()), 400);
     return () => clearTimeout(t);
   }, [search]);
+
+  // The event filter offers whatever types this context has actually seen.
+  useEffect(() => {
+    setEventType("");
+    let cancelled = false;
+    api
+      .getLogEventTypes(context)
+      .then((res) => {
+        if (!cancelled) setEventTypes(res.event_types);
+      })
+      .catch(() => setEventTypes([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [context]);
 
   const filters = {
     context,
@@ -188,6 +202,10 @@ export function LogConsolePage({ onBack }: LogConsolePageProps) {
             <RefreshCw className="mr-1 h-3 w-3" />
             Reconnect
           </Button>
+          <Button size="sm" variant="outline" onClick={() => setRetentionOpen(true)}>
+            <Settings2 className="mr-1 h-3 w-3" />
+            Retention
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" disabled={exporting}>
@@ -233,13 +251,14 @@ export function LogConsolePage({ onBack }: LogConsolePageProps) {
             value={eventType || "all"}
             onValueChange={(v) => setEventType(v === "all" ? "" : v)}
           >
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-52">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {AUTH_EVENT_TYPES.map((t) => (
-                <SelectItem key={t.value || "all"} value={t.value || "all"}>
-                  {t.label}
+              <SelectItem value="all">All events</SelectItem>
+              {eventTypes.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -349,6 +368,8 @@ export function LogConsolePage({ onBack }: LogConsolePageProps) {
           </Button>
         </div>
       )}
+
+      <LogRetentionDialog open={retentionOpen} onOpenChange={setRetentionOpen} />
     </div>
   );
 }

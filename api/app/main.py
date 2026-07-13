@@ -32,8 +32,14 @@ async def lifespan(app: FastAPI):
         from app.services.spec_import import import_on_startup
 
         import_on_startup()
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         logging.getLogger(__name__).exception("Filesystem spec import failed")
+        from app import logbook
+
+        logbook.record(
+            logbook.CONTEXT_SYSTEM, "startup.spec_import", logbook.OUTCOME_FAILURE,
+            message=f"Filesystem spec import failed: {e}",
+        )
     _seed_admin_if_needed()
     _check_docker_reachable()
     # Prune expired request_events on a schedule. Runs in every worker but is
@@ -57,6 +63,14 @@ def _check_docker_reachable() -> None:
     try:
         DockerHttp(cfg.docker_host).get("info")
     except Exception as e:  # noqa: BLE001 - surface any connection failure clearly
+        # Leave a trace in the Logs console too: after the crash-loop the last
+        # thing a UI-only operator can still see is this event.
+        from app import logbook
+
+        logbook.record(
+            logbook.CONTEXT_SYSTEM, "startup.docker_check", logbook.OUTCOME_FAILURE,
+            message=f"Cannot reach Docker at {cfg.docker_host!r}: {e}",
+        )
         raise RuntimeError(
             f"Cannot reach Docker at {cfg.docker_host!r} (MCP_DOCKER_HOST/"
             f"MCP_DOCKER_SOCKET): {e}. Check the endpoint is correct and the "
@@ -96,11 +110,37 @@ def _seed_admin_if_needed() -> None:
             )
             db.add(admin)
             logger.info("Seeded initial admin user %s", cfg.admin_email)
+            from app import logbook
+
+            logbook.record(
+                logbook.CONTEXT_SYSTEM, "startup.admin_seed", logbook.OUTCOME_INFO,
+                email=cfg.admin_email, message="Seeded initial admin user", db=db,
+            )
     except IntegrityError:
         logger.info("Admin user already seeded by another worker; skipping.")
 
 
 app = FastAPI(title="MCP Platform API", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def log_unhandled_errors(request: Request, call_next):
+    """Any exception that escapes the routers (a true 500, not a handled
+    HTTPException) lands in the Logs console system context — the operator
+    troubleshooting through the UI sees the crash they just triggered."""
+    try:
+        return await call_next(request)
+    except Exception as e:
+        if request.url.path.startswith("/api/"):
+            from app import logbook
+
+            logbook.record(
+                logbook.CONTEXT_SYSTEM, "http.error", logbook.OUTCOME_FAILURE,
+                request=request,
+                message=f"{type(e).__name__}: {e}",
+                detail={"method": request.method, "path": request.url.path},
+            )
+        raise
 
 
 # Error envelope: `{"detail": "..."}` for HTTP errors, with `errors` added on

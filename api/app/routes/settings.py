@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.audit import record as audit_record
 from app.config import get_settings
 from app.db import get_db
 from app.deps import require_superadmin
@@ -79,7 +80,11 @@ class TlsCertIn(BaseModel):
 
 
 @router.put("/tls-cert")
-def update_tls_cert(payload: TlsCertIn, db: Session = Depends(get_db)):
+def update_tls_cert(
+    payload: TlsCertIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     # Validate + persist + push to the ingress Traefik. A bad pair is a 422; a
     # Swarm/Docker failure is a 502 (and get_db rolls the stored cert back).
     try:
@@ -91,12 +96,14 @@ def update_tls_cert(payload: TlsCertIn, db: Session = Depends(get_db)):
             status_code=502,
             detail=f"Certificate is valid but applying it to Traefik failed: {e}",
         ) from e
+    audit_record(db, me, "settings.tls_cert.update", "settings", "tls_cert", dict(info))
     return {"tls_cert": {"supported": True, "configured": True, **info}}
 
 
 @router.delete("/tls-cert")
-def delete_tls_cert(db: Session = Depends(get_db)):
+def delete_tls_cert(me: User = Depends(require_superadmin), db: Session = Depends(get_db)):
     tls_cert.clear_certificate(db)
+    audit_record(db, me, "settings.tls_cert.delete", "settings", "tls_cert")
     return {"tls_cert": tls_cert.status(db)}
 
 
@@ -107,12 +114,21 @@ class RegistryIn(BaseModel):
 
 
 @router.put("/docker-registry")
-def update_docker_registry(payload: RegistryIn, db: Session = Depends(get_db)):
+def update_docker_registry(
+    payload: RegistryIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     registry = (payload.registry or "").strip()
     put_setting(db, SETTING_DOCKER_REGISTRY, registry)
     put_setting(db, SETTING_DOCKER_REGISTRY_USERNAME, (payload.username or "").strip())
     if payload.password is not None:
         put_setting(db, SETTING_DOCKER_REGISTRY_PASSWORD, payload.password or "")
+    audit_record(db, me, "settings.docker_registry.update", "settings", "docker_registry", {
+        "registry": registry,
+        "username": (payload.username or "").strip(),
+        "password_changed": payload.password is not None,
+    })
     return {
         "docker_registry": registry,
         "docker_registry_effective": _registry_prefix(db),
@@ -128,7 +144,11 @@ class RegistryScannerIn(BaseModel):
 
 
 @router.put("/registry-scanner")
-def update_registry_scanner(payload: RegistryScannerIn, db: Session = Depends(get_db)):
+def update_registry_scanner(
+    payload: RegistryScannerIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     from app.services import registry_scan
 
     scanner = (payload.scanner or "").strip().lower()
@@ -140,6 +160,9 @@ def update_registry_scanner(payload: RegistryScannerIn, db: Session = Depends(ge
     put_setting(db, SETTING_REGISTRY_SCANNER, scanner)
     put_setting(db, SETTING_REGISTRY_SCANNER_API_URL, api_url)
     registry_scan.get_scanner().invalidate()  # config changed - drop cached verdicts
+    audit_record(db, me, "settings.registry_scanner.update", "settings", "registry_scanner", {
+        "scanner": scanner, "api_url": api_url,
+    })
     return {"registry_scanner": scanner, "registry_scanner_api_url": api_url}
 
 
@@ -154,7 +177,11 @@ def _count_certs(pem: str) -> int:
 
 
 @router.put("/custom-ca")
-def update_custom_ca(payload: CustomCaIn, db: Session = Depends(get_db)):
+def update_custom_ca(
+    payload: CustomCaIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     # The field is a trust bundle: validate it parses and count the certs so the
     # UI can confirm what was loaded (multiple CAs / full chains are supported).
     from app.services.mcp_client import verify_for_ca
@@ -173,12 +200,14 @@ def update_custom_ca(payload: CustomCaIn, db: Session = Depends(get_db)):
             "(-----BEGIN CERTIFICATE----- … -----END CERTIFICATE-----).",
         )
     put_setting(db, SETTING_CUSTOM_CA_CERT, payload.cert)
+    audit_record(db, me, "settings.custom_ca.update", "settings", "custom_ca", {"cert_count": count})
     return {"custom_ca_cert_configured": True, "cert_count": count}
 
 
 @router.delete("/custom-ca")
-def delete_custom_ca(db: Session = Depends(get_db)):
+def delete_custom_ca(me: User = Depends(require_superadmin), db: Session = Depends(get_db)):
     put_setting(db, SETTING_CUSTOM_CA_CERT, "")
+    audit_record(db, me, "settings.custom_ca.delete", "settings", "custom_ca")
     return {"custom_ca_cert_configured": False}
 
 
@@ -211,7 +240,11 @@ class SsoConfigIn(BaseModel):
 
 
 @router.put("/sso")
-def update_sso(payload: SsoConfigIn, db: Session = Depends(get_db)):
+def update_sso(
+    payload: SsoConfigIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     sso_config.save(
         db,
         tenant_id=payload.entra_tenant_id,
@@ -220,6 +253,14 @@ def update_sso(payload: SsoConfigIn, db: Session = Depends(get_db)):
         link_local_by_email=payload.link_local_by_email,
     )
     db.flush()
+    # SSO connection edits are the #1 thing to see when debugging a login
+    # incident, so make sure they land in both the audit trail and Logs.
+    audit_record(db, me, "settings.sso.update", "settings", "sso", {
+        "tenant_id": payload.entra_tenant_id,
+        "client_id": payload.entra_client_id,
+        "secret_changed": payload.entra_client_secret is not None,
+        "link_local_by_email": payload.link_local_by_email,
+    })
     return _sso_response(db)
 
 
@@ -238,7 +279,11 @@ class McpEnvIn(BaseModel):
 
 
 @router.put("/mcp-env")
-def put_mcp_env(payload: McpEnvIn, db: Session = Depends(get_db)):
+def put_mcp_env(
+    payload: McpEnvIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     vars_: list[EnvVar] = []
     for item in payload.env_vars:
         ev = EnvVar.from_dict(item.model_dump())
@@ -248,4 +293,7 @@ def put_mcp_env(payload: McpEnvIn, db: Session = Depends(get_db)):
     # Flush so reapply_runtime_env reads what we just wrote.
     db.flush()
     get_server_service().reapply_runtime_env_for_all_servers(db)
+    audit_record(db, me, "settings.mcp_env.update", "settings", "mcp_env", {
+        "names": [v.name for v in vars_],
+    })
     return {"env_vars": [v.to_dict() for v in global_env.list_globals(db)]}

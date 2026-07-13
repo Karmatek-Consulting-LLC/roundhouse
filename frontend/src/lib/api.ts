@@ -399,6 +399,21 @@ export interface LogFilters {
   outcome?: string;
 }
 
+export interface LogRetentionContext {
+  context: string;
+  /** Effective window in days; 0 = keep forever. */
+  days: number;
+  /** True when set in the UI; false = following the deployment default. */
+  custom: boolean;
+  count: number;
+  oldest_ts: string | null;
+}
+
+export interface LogRetentionResponse {
+  default_days: number;
+  contexts: LogRetentionContext[];
+}
+
 export interface AuditEvent {
   id: number;
   actor_id: string | null;
@@ -881,6 +896,22 @@ export const api = {
     const s = q.toString();
     return request<LogFeedPage>(`/logs${s ? `?${s}` : ""}`);
   },
+  /** Distinct event types recorded for a context (drives the event filter). */
+  getLogEventTypes: (context: string) =>
+    request<{ context: string; event_types: string[] }>(
+      `/logs/event-types?context=${encodeURIComponent(context)}`,
+    ),
+  getLogRetention: () => request<LogRetentionResponse>("/logs/retention"),
+  putLogRetention: (context: string, days: number) =>
+    request<LogRetentionResponse>("/logs/retention", {
+      method: "PUT",
+      body: JSON.stringify({ context, days }),
+    }),
+  pruneLogsNow: () =>
+    request<{ removed: Record<string, number>; contexts: LogRetentionContext[] }>(
+      "/logs/retention/prune",
+      { method: "POST" },
+    ),
   /** Download the filtered log slice as a file (CSV or JSON). */
   exportLogs: async (
     p: LogFilters & { format: "csv" | "json"; limit?: number },

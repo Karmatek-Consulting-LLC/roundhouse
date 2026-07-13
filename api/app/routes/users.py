@@ -84,9 +84,15 @@ def update(
 
 
 @router.put("/{user_id}/password", status_code=status.HTTP_204_NO_CONTENT)
-def set_password(user_id: str, payload: SetPasswordIn, db: Session = Depends(get_db)):
+def set_password(
+    user_id: str,
+    payload: SetPasswordIn,
+    me: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     user = _find_or_404(db, user_id)
     user.password_hash = hash_password(payload.new_password)
+    audit_record(db, me, "user.set_password", "user", user_id, {"email": user.email})
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -98,4 +104,5 @@ def destroy(
     if str(me.id) == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
     user = _find_or_404(db, user_id)
+    audit_record(db, me, "user.delete", "user", user_id, {"email": user.email})
     db.delete(user)

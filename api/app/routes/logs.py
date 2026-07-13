@@ -1,10 +1,14 @@
 """Read API for the superadmin Logs console (backed by log_events).
 
-Contexts partition the stream; "auth" ships first. Endpoints:
+Contexts partition the stream (see logbook.ALL_CONTEXTS). Endpoints:
 
-    GET /api/logs          list/search, newest-first, keyset-paginated
-    GET /api/logs/stream   SSE live tail (poll-based, multi-worker safe)
-    GET /api/logs/export   CSV / JSON download of the filtered slice
+    GET /api/logs                    list/search, newest-first, keyset-paginated
+    GET /api/logs/stream             SSE live tail (poll-based, multi-worker safe)
+    GET /api/logs/export             CSV / JSON download of the filtered slice
+    GET /api/logs/event-types        distinct event types seen per context
+    GET /api/logs/retention          per-context window + storage stats
+    PUT /api/logs/retention          set one context's window (0 = keep forever)
+    POST /api/logs/retention/prune   apply the windows right now
 
 Everything is superadmin-only. The SSE stream authenticates via ?token=
 (EventSource can't set headers) and re-checks the role explicitly.
@@ -21,19 +25,22 @@ from datetime import datetime, timezone
 import anyio
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, Query as OrmQuery
 
 from app import logbook
+from app.audit import record as audit_record
 from app.db import db_session, get_db
 from app.deps import require_superadmin
 from app.models import LogEvent, User
+from app.services import log_retention
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 logger = logging.getLogger(__name__)
 
 # Whitelist so a typo'd context is a 422, not a silently-empty result.
-KNOWN_CONTEXTS = (logbook.CONTEXT_AUTH,)
+KNOWN_CONTEXTS = logbook.ALL_CONTEXTS
 LIST_MAX_LIMIT = 500
 EXPORT_MAX_ROWS = 50_000
 EXPORT_COLUMNS = (
@@ -103,6 +110,74 @@ def list_events(
     events = [logbook.serialize(e) for e in rows]
     last_id = events[0]["id"] if events else since_id
     return {"events": events, "last_id": last_id, "has_more": len(events) == limit}
+
+
+@router.get("/event-types")
+def event_types(
+    context: str = Query(default=logbook.CONTEXT_AUTH),
+    _: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    """Distinct event types recorded for a context — drives the UI's event
+    filter without hardcoding a list per context."""
+    _validate_context(context)
+    rows = (
+        db.query(LogEvent.event_type)
+        .filter(LogEvent.context == context)
+        .distinct()
+        .order_by(LogEvent.event_type)
+        .all()
+    )
+    return {"context": context, "event_types": [r[0] for r in rows]}
+
+
+class RetentionIn(BaseModel):
+    context: str
+    # 0 keeps forever; anything else prunes rows older than N days.
+    days: int = Field(ge=0, le=log_retention.MAX_RETENTION_DAYS)
+
+
+@router.get("/retention")
+def get_retention(
+    _: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    return {
+        "default_days": log_retention.default_retention_days(),
+        "contexts": log_retention.stats(db),
+    }
+
+
+@router.put("/retention")
+def put_retention(
+    payload: RetentionIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    _validate_context(payload.context)
+    log_retention.set_retention_days(db, payload.context, payload.days)
+    audit_record(db, me, "logs.retention.update", "settings", f"log_retention.{payload.context}", {
+        "context": payload.context, "days": payload.days,
+    })
+    return {
+        "default_days": log_retention.default_retention_days(),
+        "contexts": log_retention.stats(db),
+    }
+
+
+@router.post("/retention/prune")
+def prune_now(
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    """Apply the retention windows immediately instead of waiting for the
+    hourly background pass."""
+    removed = log_retention.prune_log_events(db)
+    if removed:
+        audit_record(db, me, "logs.retention.prune", "settings", "log_retention", {
+            "removed": removed,
+        })
+    return {"removed": removed, "contexts": log_retention.stats(db)}
 
 
 @router.get("/stream")
