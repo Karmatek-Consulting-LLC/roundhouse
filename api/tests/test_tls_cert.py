@@ -74,10 +74,24 @@ class FakeDocker:
     def __init__(self):
         self.secrets: dict[str, dict] = {}  # name -> {ID, Spec}
         self.service_secrets: list[dict] | None = None
+        self.service_exists = True
+        self.update_calls = 0
         self._n = 0
 
     def swarm_mode(self) -> bool:
         return True
+
+    def get_service_by_name(self, name):
+        if not self.service_exists:
+            return None
+        return {
+            "ID": "svc1",
+            "Version": {"Index": 1},
+            "Spec": {
+                "Name": name,
+                "TaskTemplate": {"ContainerSpec": {"Secrets": self.service_secrets or []}},
+            },
+        }
 
     def find_secret(self, name):
         return self.secrets.get(name)
@@ -103,6 +117,7 @@ class FakeDocker:
     def set_service_secrets(self, service_name, refs):
         self.service_name = service_name
         self.service_secrets = refs
+        self.update_calls += 1
 
 
 @pytest.fixture
@@ -245,3 +260,75 @@ def test_status_reports_configured_after_apply(db, fake_docker):
     st = tls_cert.status(db)
     assert st["configured"] is True
     assert st["subject_cn"] == "status.test"
+
+
+# ---- Reconcile (drift healing) ---------------------------------------------
+
+def test_reconcile_unconfigured_when_no_cert_stored(db, fake_docker):
+    assert tls_cert.reconcile(db) == "unconfigured"
+    assert fake_docker.update_calls == 0
+
+
+def test_reconcile_in_sync_after_apply(db, fake_docker):
+    tls_cert.apply_certificate(db, *_make_pair())
+    calls = fake_docker.update_calls
+    assert tls_cert.reconcile(db) == "in_sync"
+    assert fake_docker.update_calls == calls  # no needless rolling update
+
+
+def test_reconcile_reattaches_after_stack_redeploy_wipes_refs(db, fake_docker):
+    # A `docker stack deploy` re-asserts the YAML spec: the secret OBJECTS
+    # survive but the service's references to them are dropped, and Traefik
+    # reverts to its self-signed default cert. Reconcile must re-attach.
+    tls_cert.apply_certificate(db, *_make_pair())
+    expected = {r["SecretName"] for r in fake_docker.service_secrets}
+    fake_docker.service_secrets = []  # the redeploy reset
+
+    assert tls_cert.reconcile(db) == "reapplied"
+    assert {r["SecretName"] for r in fake_docker.service_secrets} == expected
+    targets = sorted(r["File"]["Name"] for r in fake_docker.service_secrets)
+    assert targets == [
+        tls_cert.CERT_TARGET,
+        tls_cert.DYNAMIC_FILENAME,
+        tls_cert.KEY_TARGET,
+    ]
+
+
+def test_reconcile_recreates_deleted_secret_objects(db, fake_docker):
+    # Even if the secrets themselves were cleaned up (not just detached),
+    # everything is rebuilt from the Postgres source of truth.
+    tls_cert.apply_certificate(db, *_make_pair())
+    fake_docker.secrets = {}
+    fake_docker.service_secrets = []
+
+    assert tls_cert.reconcile(db) == "reapplied"
+    assert len(fake_docker.secrets) == 3
+    assert len(fake_docker.service_secrets) == 3
+
+
+def test_reconcile_ignores_unrelated_mounted_secrets(db, fake_docker):
+    tls_cert.apply_certificate(db, *_make_pair())
+    calls = fake_docker.update_calls
+    fake_docker.service_secrets = fake_docker.service_secrets + [
+        {"SecretName": "operator_extra", "File": {"Name": "extra"}}
+    ]
+    # Ours are all present -> in sync; the extra mount is not our business.
+    assert tls_cert.reconcile(db) == "in_sync"
+    assert fake_docker.update_calls == calls
+
+
+def test_reconcile_unconfigured_when_tls_mode_off(db, fake_docker, monkeypatch):
+    from app.config import get_settings
+
+    tls_cert.apply_certificate(db, *_make_pair())
+    fake_docker.service_secrets = []
+    monkeypatch.setenv("MCP_TLS_SELF_MANAGED", "false")
+    get_settings.cache_clear()
+    assert tls_cert.reconcile(db) == "unconfigured"
+
+
+def test_reconcile_raises_when_traefik_service_missing(db, fake_docker):
+    tls_cert.apply_certificate(db, *_make_pair())
+    fake_docker.service_exists = False
+    with pytest.raises(tls_cert.TlsCertError, match="not found"):
+        tls_cert.reconcile(db)

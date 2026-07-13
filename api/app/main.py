@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     import asyncio
 
     from app.services.event_retention import retention_loop
+    from app.services.tls_cert import reconcile_loop as tls_reconcile_loop
 
     init_db()
     # Migrate any legacy filesystem server state (the per-node `server-data`
@@ -45,10 +46,15 @@ async def lifespan(app: FastAPI):
     # Prune expired request_events on a schedule. Runs in every worker but is
     # single-flighted via a Postgres advisory lock (see event_retention).
     retention_task = asyncio.create_task(retention_loop())
+    # Heal TLS secret drift on the Traefik service: a stack redeploy resets
+    # the service spec and silently drops the cert/key secret mounts, leaving
+    # Traefik on its self-signed default. First pass runs immediately.
+    tls_task = asyncio.create_task(tls_reconcile_loop())
     try:
         yield
     finally:
         retention_task.cancel()
+        tls_task.cancel()
 
 
 def _check_docker_reachable() -> None:

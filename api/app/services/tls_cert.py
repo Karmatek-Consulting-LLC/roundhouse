@@ -20,17 +20,30 @@ shared volume and Traefik stays freely schedulable. The cost is that a cert
 change is a rolling task update (zero-downtime with >=2 replicas), not an
 in-place hot reload.
 
+Drift & reconciliation: the secret references live only in the Traefik
+service's runtime spec — the stack YAML knows nothing about them. Anything
+that re-asserts the YAML spec (most commonly `docker stack deploy` on an app
+update) silently drops the refs, and Traefik reverts to its self-signed
+default cert while the DB still says "configured". Postgres is the source of
+truth, so `reconcile()` compares the service's mounted secrets against what
+the stored cert demands and re-attaches on drift; `reconcile_loop()` runs it
+at startup and every RECONCILE_INTERVAL_S thereafter.
+
 Only meaningful in Swarm mode with MCP_TLS_SELF_MANAGED=true.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 
+import anyio
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.crypto import DecryptError, decrypt, encrypt, looks_encrypted
+from app.db import db_session
 from app.platform_settings import (
     SETTING_TLS_CERT,
     SETTING_TLS_KEY,
@@ -217,6 +230,14 @@ def _prune_old_secrets(docker, keep: set[str]) -> None:
             docker.remove_secret(sid)  # no-op if still referenced; pruned later
 
 
+def _secret_names(cert_pem: str, key_pem: str) -> tuple[str, str, str]:
+    """Content-addressed secret names for a pair. The dynamic config is
+    static, so its hash is fixed: created once and reused across rotations."""
+    h = hashlib.sha256(f"{cert_pem}\x00{key_pem}".encode()).hexdigest()[:12]
+    dyn_h = hashlib.sha256(_DYNAMIC_YAML.encode()).hexdigest()[:12]
+    return f"{CERT_TARGET}_{h}", f"{KEY_TARGET}_{h}", f"{DYNAMIC_TARGET}_{dyn_h}"
+
+
 def _sync_to_swarm(cert_pem: str, key_pem: str) -> None:
     docker = get_docker()
     if not getattr(docker, "swarm_mode", None) or not docker.swarm_mode():
@@ -224,13 +245,7 @@ def _sync_to_swarm(cert_pem: str, key_pem: str) -> None:
             "Self-managed TLS requires Docker Swarm mode (the cert is delivered "
             "to Traefik as a Swarm secret)."
         )
-    h = hashlib.sha256(f"{cert_pem}\x00{key_pem}".encode()).hexdigest()[:12]
-    cert_name = f"{CERT_TARGET}_{h}"
-    key_name = f"{KEY_TARGET}_{h}"
-    # The dynamic config is static, so its content hash is fixed: created once
-    # and reused across every rotation.
-    dyn_h = hashlib.sha256(_DYNAMIC_YAML.encode()).hexdigest()[:12]
-    dyn_name = f"{DYNAMIC_TARGET}_{dyn_h}"
+    cert_name, key_name, dyn_name = _secret_names(cert_pem, key_pem)
     cert_id = _ensure_secret(
         docker, cert_name, cert_pem.encode(), {TLS_SECRET_LABEL: "cert"}
     )
@@ -260,6 +275,118 @@ def _sync_to_swarm(cert_pem: str, key_pem: str) -> None:
     docker.set_service_secrets(get_settings().mcp_traefik_service, refs)
     _prune_old_secrets(docker, keep={cert_name, key_name, dyn_name})
     logger.info("Applied self-managed TLS cert to %s", get_settings().mcp_traefik_service)
+
+
+# ---- Reconciliation ---------------------------------------------------------
+
+# How often each worker checks the Traefik service for drift. A single service
+# inspect through the socket proxy — cheap enough to run frequently, and drift
+# means the edge is serving the WRONG certificate until someone notices.
+RECONCILE_INTERVAL_S = 120
+# Arbitrary stable 64-bit key so workers don't reconcile concurrently.
+RECONCILE_LOCK_KEY = 0x726F756E6436  # "round6"
+
+
+def stored_pair(db: Session) -> tuple[str, str] | None:
+    """The persisted cert/key, or None when unset (or the key can no longer be
+    decrypted, e.g. APP_KEY changed)."""
+    cert_pem = get_setting(db, SETTING_TLS_CERT, "") or ""
+    if not cert_pem.strip():
+        return None
+    key_pem = _decrypt_key(get_setting(db, SETTING_TLS_KEY, "") or "")
+    if not key_pem:
+        return None
+    return cert_pem, key_pem
+
+
+def reconcile(db: Session) -> str:
+    """Make the Traefik service match the stored cert. Returns what happened:
+
+      "unconfigured" — no cert stored / TLS mode off / not Swarm: nothing to do
+      "in_sync"      — service already mounts the expected secrets
+      "reapplied"    — refs were missing (stack redeploy reset the service
+                       spec); secrets re-created as needed and re-attached
+
+    Subset (not equality) check on the secret names, so anything else mounted
+    on the service by an operator is left alone."""
+    if not get_settings().mcp_tls_self_managed:
+        return "unconfigured"
+    pair = stored_pair(db)
+    if pair is None:
+        return "unconfigured"
+    docker = get_docker()
+    if not getattr(docker, "swarm_mode", None) or not docker.swarm_mode():
+        return "unconfigured"
+
+    service_name = get_settings().mcp_traefik_service
+    svc = docker.get_service_by_name(service_name)
+    if svc is None:
+        raise TlsCertError(f"Traefik service '{service_name}' not found")
+    container_spec = (
+        ((svc.get("Spec") or {}).get("TaskTemplate") or {}).get("ContainerSpec") or {}
+    )
+    current = {
+        ref.get("SecretName") for ref in (container_spec.get("Secrets") or [])
+    }
+    if set(_secret_names(*pair)) <= current:
+        return "in_sync"
+    _sync_to_swarm(*pair)
+    return "reapplied"
+
+
+# Last loop outcome, so the logbook gets state *transitions*, not a repeating
+# failure every RECONCILE_INTERVAL_S while e.g. the socket proxy is down.
+_last_loop_error: str | None = None
+
+
+def _reconcile_once() -> None:
+    from app import logbook
+
+    global _last_loop_error
+    with db_session() as db:
+        got = db.execute(
+            text("SELECT pg_try_advisory_lock(:k)"), {"k": RECONCILE_LOCK_KEY}
+        ).scalar()
+        if not got:
+            return  # another worker is on it
+        try:
+            outcome = reconcile(db)
+            if outcome == "reapplied":
+                logger.warning(
+                    "TLS secrets were missing from the Traefik service; re-attached "
+                    "(a stack redeploy resets the service spec)"
+                )
+                logbook.record(
+                    logbook.CONTEXT_SYSTEM, "tls.reconcile", logbook.OUTCOME_SUCCESS,
+                    message="Re-attached custom TLS cert to Traefik after drift "
+                    "(service spec was reset, e.g. by a stack redeploy)",
+                )
+            if _last_loop_error is not None:
+                _last_loop_error = None
+        except Exception as e:  # noqa: BLE001 - logged + loop keeps running
+            if str(e) != _last_loop_error:
+                _last_loop_error = str(e)
+                logger.exception("TLS reconcile failed")
+                logbook.record(
+                    logbook.CONTEXT_SYSTEM, "tls.reconcile", logbook.OUTCOME_FAILURE,
+                    message=f"TLS reconcile failed: {e}",
+                )
+        finally:
+            db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": RECONCILE_LOCK_KEY})
+
+
+async def reconcile_loop() -> None:
+    """Background task: heal TLS secret drift on the Traefik service. First
+    pass runs immediately (platform-api restarts alongside most stack
+    redeploys — the very event that wipes the refs). Cancelled on shutdown."""
+    while True:
+        try:
+            await anyio.to_thread.run_sync(_reconcile_once)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - never let the loop die
+            logger.exception("TLS reconcile pass failed")
+        await asyncio.sleep(RECONCILE_INTERVAL_S)
 
 
 # ---- Public API -----------------------------------------------------------
