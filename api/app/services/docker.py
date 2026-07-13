@@ -35,8 +35,15 @@ def _container_name(server_name: str) -> str:
     return CONTAINER_PREFIX + server_name
 
 
+def image_repo_name(server_name: str) -> str:
+    """Repository (image name without registry/tag) a server is pushed as.
+    Consumers that look images up in the registry (e.g. Harbor vulnerability
+    scans) must use this same name."""
+    return f"mcp-server-{server_name}"
+
+
 def image_tag(server_name: str, registry_prefix: str | None = None) -> str:
-    name = f"mcp-server-{server_name}"
+    name = image_repo_name(server_name)
     if registry_prefix:
         p = registry_prefix.strip().rstrip("/")
         return f"{p}/{name}:latest"

@@ -24,7 +24,7 @@ def test_coordinates_simple_prefix():
     assert c.api_base == "https://harbor.example.com/api/v2.0"
     assert c.ui_base == "https://harbor.example.com"
     assert c.project == "roundhouse"
-    assert c.repository == "mcp-crew"
+    assert c.repository == "mcp-server-crew"
 
 
 def test_coordinates_nested_prefix_and_port():
@@ -32,7 +32,17 @@ def test_coordinates_nested_prefix_and_port():
     assert c is not None
     assert c.api_base == "https://harbor.local:8443/api/v2.0"
     assert c.project == "team"
-    assert c.repository == "mcp/mcp-crew"
+    assert c.repository == "mcp/mcp-server-crew"
+
+
+def test_coordinates_match_pushed_image_name():
+    """The repository the scanner queries must be the one deploys push,
+    or every lookup 404s as 'Image not found in registry'."""
+    from app.services.docker import image_tag
+
+    prefix = "harbor.example.com/roundhouse"
+    c = harbor_coordinates(prefix, "crew")
+    assert image_tag("crew", prefix) == f"harbor.example.com/{c.project}/{c.repository}:latest"
 
 
 def test_coordinates_require_project_path():
@@ -125,7 +135,7 @@ def test_summaries_fetch_normalize_and_deep_link(scanner_with_mock):
     out = scanner.summaries(None, ["crew"])
     s = out["crew"]
     assert s["status"] == "vulnerable" and s["total"] == 7
-    assert s["report_url"] == "https://harbor.example.com/harbor/projects/42/repositories/mcp-crew"
+    assert s["report_url"] == "https://harbor.example.com/harbor/projects/42/repositories/mcp-server-crew"
     assert calls["artifact"] == 1
 
 
