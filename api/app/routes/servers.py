@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app import logbook
 from app.audit import record as audit_record
 from app.config import get_settings
 from app.db import get_db
@@ -46,6 +47,17 @@ _APT_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9+._:=~-]*$")
 def _assert_access(db: Session, user: User, name: str) -> None:
     if not permissions.can_access(db, user, name):
         raise HTTPException(status_code=403, detail="Access denied")
+
+
+def _log_deploy_failure(user: User | None, event_type: str, server: str, error: Exception) -> None:
+    """Failed lifecycle ops never reach audit_record (the request transaction
+    is about to roll back), so push them to the Logs console on the logbook's
+    own session — a build/orchestrator failure must be visible in the UI."""
+    logbook.record(
+        logbook.CONTEXT_DEPLOY, event_type, logbook.OUTCOME_FAILURE,
+        user=user, message=str(error),
+        detail={"server": server, "error_type": type(error).__name__},
+    )
 
 
 def _missing_snapshot(name: str) -> dict:
@@ -640,6 +652,7 @@ def store(
         raise
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to create server '%s': %s", name, e)
+        _log_deploy_failure(user, "server.create", name, e)
         db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
         service.store.delete(name)
         try:
@@ -721,6 +734,7 @@ def redeploy(
         raise
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to redeploy '%s': %s", name, e)
+        _log_deploy_failure(user, "server.redeploy", name, e)
         status_code = 409 if isinstance(e, RegistryRequiredError) else 500
         raise HTTPException(status_code=status_code, detail=str(e)) from e
 
@@ -745,6 +759,7 @@ def rediscover(
     try:
         spec.primitives = service.discover_primitives(db, spec)
     except Exception as e:  # noqa: BLE001
+        _log_deploy_failure(user, "server.rediscover", name, e)
         raise HTTPException(status_code=502, detail=f"Discovery failed: {e}") from e
     service.save_spec(db, spec)
     audit_record(db, user, "server.rediscover", "server", name, {
@@ -907,6 +922,7 @@ def deploy_from_git(
             raise
         except Exception as e:  # noqa: BLE001
             logger.error("Git import failed for '%s': %s", name, e)
+            _log_deploy_failure(user, "server.import_from_git", name, e)
             db.query(ServerOwner).filter(ServerOwner.server_name == name).delete()
             service.store.delete(name)
             raise HTTPException(status_code=500, detail=str(e)) from e
@@ -962,6 +978,7 @@ def update_from_git(
         raise
     except Exception as e:  # noqa: BLE001
         logger.error("Git update failed for '%s': %s", name, e)
+        _log_deploy_failure(user, "server.update_from_git", name, e)
         raise HTTPException(status_code=500, detail=str(e)) from e
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -1084,6 +1101,7 @@ def _do_import(
         raise
     except Exception as e:  # noqa: BLE001
         logger.error("Import failed for '%s': %s", name, e)
+        _log_deploy_failure(user, "server.import", name, e)
         _rollback()
         try:
             docker.remove_server(name, service.registry_prefix(db))

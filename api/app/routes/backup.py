@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app import audit
+from app import audit, logbook
 from app.db import db_session, get_db
 from app.deps import require_superadmin
 from app.models import User
@@ -40,6 +40,10 @@ def export_backup(
     try:
         archive, filename = backup_svc.create_backup()
     except backup_svc.BackupError as e:
+        logbook.record(
+            logbook.CONTEXT_BACKUP, "backup.export", logbook.OUTCOME_FAILURE,
+            user=me, message=str(e),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     audit.record(db, me, "backup.export", "backup", filename, {"size_bytes": len(archive)})
     return Response(
@@ -58,6 +62,10 @@ async def preview_restore(
     try:
         return backup_svc.restore_preview(blob)
     except backup_svc.BackupError as e:
+        logbook.record(
+            logbook.CONTEXT_BACKUP, "backup.restore_preview", logbook.OUTCOME_FAILURE,
+            message=str(e),
+        )
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 
@@ -78,6 +86,10 @@ async def restore_backup(
     try:
         result = backup_svc.restore_backup(blob, force=force)
     except backup_svc.BackupError as e:
+        logbook.record(
+            logbook.CONTEXT_BACKUP, "backup.restore", logbook.OUTCOME_FAILURE,
+            email=actor_email, message=str(e),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Fresh session: the engine pool was reset during the restore.

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.audit import record as audit_record
 from app.db import get_db
 from app.deps import current_user
 from app.models import ServerScope, User
@@ -71,6 +72,7 @@ def store(
     if exists:
         raise HTTPException(status_code=422, detail="Scope already exists")
     scope = server_auth.create_scope(db, name, payload.name, payload.description)
+    audit_record(db, user, "scope.create", "server_scope", f"{name}/{payload.name}")
     return _scope_to_api(scope)
 
 
@@ -116,6 +118,9 @@ def update(
     if payload.description is not None and scope is not None:
         scope.description = payload.description
         server_auth.mark_redeploy_required(db, name)
+    audit_record(db, user, "scope.update", "server_scope", f"{name}/{scope_name}", {
+        "renamed_to": payload.name if payload.name and payload.name != scope_name else None,
+    })
     return _scope_to_api(scope)
 
 
@@ -135,3 +140,4 @@ def destroy(
     if not exists:
         raise HTTPException(status_code=404, detail=f"Scope '{scope_name}' not found.")
     server_auth.delete_scope(db, ServerStore(), name, scope_name)
+    audit_record(db, user, "scope.delete", "server_scope", f"{name}/{scope_name}")

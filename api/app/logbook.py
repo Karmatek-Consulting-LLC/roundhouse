@@ -9,28 +9,61 @@ anything else here:
   2. It is strictly best-effort: a logging failure is logged to stderr and
      swallowed. Recording must never break authentication itself.
 
-The first context is "auth" (local login, SSO/OIDC flow, logout). Future
-contexts (deployments, registry scans, ...) reuse the same table/API by
-recording with a new context string and whitelisting it in routes/logs.py.
+Contexts partition the stream per subsystem (see ALL_CONTEXTS). Successful
+mutations mostly arrive via the audit bridge (app.audit.record); explicit
+record() calls cover failure paths and events with no audit trail.
 """
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import Request
+from sqlalchemy.orm import Session
 
-from app.audit import _redact
 from app.db import db_session
 from app.models import LogEvent, User
 
 logger = logging.getLogger(__name__)
 
-CONTEXT_AUTH = "auth"
+CONTEXT_AUTH = "auth"        # login / SSO flow / logout / password changes
+CONTEXT_DEPLOY = "deploy"    # server lifecycle: create/deploy/start/stop/tokens/scopes/assets
+CONTEXT_SCAN = "scan"        # registry vulnerability scanner lookups
+CONTEXT_BACKUP = "backup"    # backup export / restore
+CONTEXT_ADMIN = "admin"      # users / teams / role mappings / platform settings
+CONTEXT_SYSTEM = "system"    # startup, background loops, unhandled errors
+
+ALL_CONTEXTS = (
+    CONTEXT_AUTH,
+    CONTEXT_DEPLOY,
+    CONTEXT_SCAN,
+    CONTEXT_BACKUP,
+    CONTEXT_ADMIN,
+    CONTEXT_SYSTEM,
+)
 
 OUTCOME_SUCCESS = "success"
 OUTCOME_FAILURE = "failure"
 OUTCOME_DENIED = "denied"
 OUTCOME_INFO = "info"
+
+_REDACT_KEYS = {"password", "current_password", "new_password", "token", "cert", "secret"}
+
+
+def _redact(payload: Any) -> Any:
+    """Strip known sensitive keys from a structured payload before persistence.
+    Shared with app.audit (which imports it from here)."""
+    if isinstance(payload, dict):
+        out: dict = {}
+        for k, v in payload.items():
+            if k.lower() in _REDACT_KEYS:
+                out[k] = "[redacted]"
+            else:
+                out[k] = _redact(v)
+        return out
+    if isinstance(payload, list):
+        return [_redact(x) for x in payload]
+    return payload
 
 
 def client_ip(request: Request | None) -> str | None:
@@ -83,8 +116,16 @@ def record(
     email: str | None = None,
     message: str | None = None,
     detail: dict | None = None,
+    db: Session | None = None,
 ) -> None:
-    """Append one log event. Own session, commits immediately, never raises."""
+    """Append one log event; never raises.
+
+    With `db` the event joins the caller's transaction — use for success
+    events recorded alongside a mutation, so a later rollback takes the log
+    entry with it. Without `db` it commits in its own short-lived session —
+    use for failure paths, where the request transaction is about to roll
+    back and the entry must survive anyway.
+    """
     try:
         event = build_event(
             context,
@@ -96,8 +137,11 @@ def record(
             message=message,
             detail=detail,
         )
-        with db_session() as db:
+        if db is not None:
             db.add(event)
+        else:
+            with db_session() as s:
+                s.add(event)
     except Exception:  # noqa: BLE001 - logging must never break the caller
         logger.exception("failed to record %s/%s log event", context, event_type)
 

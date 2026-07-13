@@ -12,9 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.audit import record as audit_record
 from app.db import get_db
 from app.deps import require_superadmin
-from app.models import RoleMapping, Team
+from app.models import RoleMapping, Team, User
 
 router = APIRouter(
     prefix="/api/role-mappings",
@@ -59,7 +60,11 @@ def index(db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-def store(payload: RoleMappingIn, db: Session = Depends(get_db)):
+def store(
+    payload: RoleMappingIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     if db.query(RoleMapping).filter(RoleMapping.entra_app_role == payload.entra_app_role).first():
         raise HTTPException(status_code=409, detail="A mapping for this app role already exists")
     _validate_team(db, payload.team_id)
@@ -71,6 +76,7 @@ def store(payload: RoleMappingIn, db: Session = Depends(get_db)):
     )
     db.add(m)
     db.flush()
+    audit_record(db, me, "role_mapping.create", "role_mapping", str(m.id), _to_api(m))
     return _to_api(m)
 
 
@@ -92,7 +98,11 @@ def _norm(values: list[str]) -> list[str]:
 
 
 @router.put("/builtin")
-def update_builtin(payload: BuiltinMappingsIn, db: Session = Depends(get_db)):
+def update_builtin(
+    payload: BuiltinMappingsIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     """Reconcile the built-in role mappings (team_id NULL rows) to exactly match
     the given lists. Team mappings (team_id set) are left untouched."""
     desired: dict[str, str] = {}
@@ -134,12 +144,20 @@ def update_builtin(payload: BuiltinMappingsIn, db: Session = Depends(get_db)):
         elif m.roundhouse_role != rh_role:
             m.roundhouse_role = rh_role
     db.flush()
+    audit_record(db, me, "role_mapping.update_builtin", "role_mapping", "builtin", {
+        "superadmin": _norm(payload.superadmin), "user": _norm(payload.user),
+    })
     rows = db.query(RoleMapping).order_by(RoleMapping.entra_app_role).all()
     return [_to_api(m) for m in rows]
 
 
 @router.put("/{mapping_id}")
-def update(mapping_id: int, payload: RoleMappingIn, db: Session = Depends(get_db)):
+def update(
+    mapping_id: int,
+    payload: RoleMappingIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     m = _find(db, mapping_id)
     clash = (
         db.query(RoleMapping)
@@ -157,9 +175,16 @@ def update(mapping_id: int, payload: RoleMappingIn, db: Session = Depends(get_db
     m.team_id = payload.team_id
     m.team_role = payload.team_role
     db.flush()
+    audit_record(db, me, "role_mapping.update", "role_mapping", str(mapping_id), _to_api(m))
     return _to_api(m)
 
 
 @router.delete("/{mapping_id}", status_code=status.HTTP_204_NO_CONTENT)
-def destroy(mapping_id: int, db: Session = Depends(get_db)):
-    db.delete(_find(db, mapping_id))
+def destroy(
+    mapping_id: int,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    m = _find(db, mapping_id)
+    audit_record(db, me, "role_mapping.delete", "role_mapping", str(mapping_id), _to_api(m))
+    db.delete(m)

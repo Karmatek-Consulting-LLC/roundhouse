@@ -179,6 +179,20 @@ class HarborScanner:
         return prefix, api_override, auth, verify
 
     def _fetch_one(self, name, prefix, api_override, auth, verify) -> VulnSummary:
+        summary = self._fetch_one_inner(name, prefix, api_override, auth, verify)
+        if summary.status == "error":
+            # Surface scanner problems (unreachable Harbor, rejected creds,
+            # bad responses) in the Logs console. Error results are cached for
+            # _CACHE_TTL_ERR, so this fires per cache-miss, not per page load.
+            from app import logbook
+
+            logbook.record(
+                logbook.CONTEXT_SCAN, "scan.lookup", logbook.OUTCOME_FAILURE,
+                message=summary.detail, detail={"server": name},
+            )
+        return summary
+
+    def _fetch_one_inner(self, name, prefix, api_override, auth, verify) -> VulnSummary:
         coords = harbor_coordinates(prefix, name, api_override)
         if coords is None:
             return VulnSummary(

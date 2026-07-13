@@ -13,10 +13,19 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import app.models  # noqa: F401 - register tables on Base.metadata
-from app import logbook
+from app import audit, logbook
 from app.db import Base
-from app.models import LogEvent, User
-from app.routes.logs import export, list_events
+from app.models import AuditEvent, LogEvent, User
+from app.routes.logs import (
+    RetentionIn,
+    event_types,
+    export,
+    get_retention,
+    list_events,
+    prune_now,
+    put_retention,
+)
+from app.services import log_retention
 
 
 @pytest.fixture
@@ -174,6 +183,101 @@ def test_export_rejects_unknown_format(db, admin):
         export(context="auth", q=None, event_type=None, outcome=None,
                format="xml", limit=100, _=admin, db=db)
     assert exc.value.status_code == 422
+
+
+# ---- audit -> logbook bridge -----------------------------------------------
+
+def test_audit_record_bridges_into_log_events(db, admin):
+    audit.record(db, admin, "server.create", "server", "acme", {"template": "basic"})
+    db.flush()
+
+    assert db.query(AuditEvent).count() == 1  # audit trail unchanged
+    e = db.query(LogEvent).one()
+    assert e.context == "deploy"  # target_type "server" maps to deploy
+    assert e.event_type == "server.create"
+    assert e.outcome == "success"
+    assert e.actor_email == admin.email
+    assert e.detail == {"template": "basic"}
+
+
+def test_audit_bridge_context_mapping(db, admin):
+    audit.record(db, admin, "user.update", "user", "u1")
+    audit.record(db, admin, "backup.export", "backup", "b1")
+    audit.record(db, admin, "something.new", "unknown_type", "x")
+    db.flush()
+    contexts = {e.event_type: e.context for e in db.query(LogEvent).all()}
+    assert contexts["user.update"] == "admin"
+    assert contexts["backup.export"] == "backup"
+    assert contexts["something.new"] == "admin"  # unknown types default to admin
+
+
+# ---- retention ---------------------------------------------------------------
+
+def _aged(db, context, days_old):
+    from datetime import datetime, timedelta, timezone
+
+    e = _add(db, context=context)
+    e.ts = datetime.now(timezone.utc) - timedelta(days=days_old)
+    db.flush()
+    return e
+
+
+def test_retention_defaults_and_override(db):
+    assert log_retention.retention_days(db, "auth") == 90  # env default
+    log_retention.set_retention_days(db, "auth", 30)
+    assert log_retention.retention_days(db, "auth") == 30
+    assert log_retention.is_custom(db, "auth") is True
+    assert log_retention.is_custom(db, "deploy") is False
+
+
+def test_prune_respects_per_context_windows(db):
+    old_auth = _aged(db, "auth", days_old=40)
+    fresh_auth = _aged(db, "auth", days_old=5)
+    old_deploy = _aged(db, "deploy", days_old=40)
+
+    log_retention.set_retention_days(db, "auth", 30)
+    log_retention.set_retention_days(db, "deploy", 0)  # keep forever
+
+    removed = log_retention.prune_log_events(db)
+    assert removed == {"auth": 1}
+    remaining = {e.id for e in db.query(LogEvent).all()}
+    assert old_auth.id not in remaining
+    assert {fresh_auth.id, old_deploy.id} <= remaining
+
+
+def test_retention_endpoints(db, admin):
+    _add(db, context="auth")
+    out = get_retention(_=admin, db=db)
+    assert out["default_days"] == 90
+    by_ctx = {c["context"]: c for c in out["contexts"]}
+    assert by_ctx["auth"]["count"] == 1
+    assert by_ctx["auth"]["custom"] is False
+    assert set(by_ctx) == set(logbook.ALL_CONTEXTS)
+
+    out = put_retention(RetentionIn(context="auth", days=7), me=admin, db=db)
+    assert {c["context"]: c for c in out["contexts"]}["auth"]["days"] == 7
+
+    _aged(db, "auth", days_old=10)
+    out = prune_now(me=admin, db=db)
+    assert out["removed"] == {"auth": 1}
+
+
+def test_put_retention_rejects_unknown_context(db, admin):
+    with pytest.raises(HTTPException) as exc:
+        put_retention(RetentionIn(context="nope", days=7), me=admin, db=db)
+    assert exc.value.status_code == 422
+
+
+# ---- event types -------------------------------------------------------------
+
+def test_event_types_distinct_per_context(db, admin):
+    _add(db, context="auth", event_type="login")
+    _add(db, context="auth", event_type="login")
+    _add(db, context="auth", event_type="sso.callback")
+    _add(db, context="deploy", event_type="server.create")
+
+    out = event_types(context="auth", _=admin, db=db)
+    assert out["event_types"] == ["login", "sso.callback"]
 
 
 # ---- login instrumentation -------------------------------------------------

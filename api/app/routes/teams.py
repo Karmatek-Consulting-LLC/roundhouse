@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.audit import record as audit_record
 from app.db import get_db
 from app.deps import current_user, require_superadmin
 from app.models import Team, TeamMembership, User
@@ -79,13 +80,18 @@ def index(user: User = Depends(current_user), db: Session = Depends(get_db)):
     return [_team_to_api(db, t) for t in q.all()]
 
 
-@router.post("", status_code=201, dependencies=[Depends(require_superadmin)])
-def store(payload: TeamIn, db: Session = Depends(get_db)):
+@router.post("", status_code=201)
+def store(
+    payload: TeamIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     if db.query(Team).filter(Team.name == payload.name).first():
         raise HTTPException(status_code=409, detail="Team name already exists")
     team = Team(name=payload.name, description=payload.description or "")
     db.add(team)
     db.flush()
+    audit_record(db, me, "team.create", "team", str(team.id), {"name": team.name})
     return _team_to_api(db, team)
 
 
@@ -106,12 +112,18 @@ def update(
     team.name = payload.name
     team.description = payload.description or ""
     db.flush()
+    audit_record(db, user, "team.update", "team", team_id, {"name": team.name})
     return _team_to_api(db, team)
 
 
-@router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_superadmin)])
-def destroy(team_id: str, db: Session = Depends(get_db)):
+@router.delete("/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
+def destroy(
+    team_id: str,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
     team = _find_team(db, team_id)
+    audit_record(db, me, "team.delete", "team", team_id, {"name": team.name})
     db.delete(team)
 
 
@@ -136,6 +148,9 @@ def add_member(
         raise HTTPException(status_code=409, detail="User already in team")
     db.add(TeamMembership(team_id=team.id, user_id=target.id, role=payload.role))
     db.flush()
+    audit_record(db, user, "team.member_add", "team", team_id, {
+        "member_email": target.email, "role": payload.role,
+    })
     return _team_to_api(db, team)
 
 
@@ -158,6 +173,9 @@ def update_member(
         raise HTTPException(status_code=404, detail="Member not found")
     m.role = payload.role
     db.flush()
+    audit_record(db, user, "team.member_update", "team", team_id, {
+        "member_id": user_id, "role": payload.role,
+    })
     return _team_to_api(db, team)
 
 
@@ -179,4 +197,5 @@ def remove_member(
         raise HTTPException(status_code=404, detail="Member not found")
     db.delete(m)
     db.flush()
+    audit_record(db, user, "team.member_remove", "team", team_id, {"member_id": user_id})
     return _team_to_api(db, team)

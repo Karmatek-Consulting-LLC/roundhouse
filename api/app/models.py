@@ -242,7 +242,11 @@ class AuditEvent(Base):
         Index("audit_events_target_index", "target_type", "target_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # BigInteger on Postgres; INTEGER on SQLite so it aliases rowid and
+    # autoincrements (BIGINT does not) — keeps the model usable in tests.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     actor_id: Mapped[str | None] = mapped_column(PgUUID(as_uuid=False), nullable=True)
     actor_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
