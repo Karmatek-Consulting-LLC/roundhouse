@@ -66,6 +66,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Record the sign-out in the auth log before dropping the token. Fire and
+    // forget: logout must succeed locally even if the API is unreachable.
+    api.logout().catch(() => {});
     localStorage.removeItem("token");
     setToken(null);
     setUser(null);

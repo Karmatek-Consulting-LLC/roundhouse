@@ -367,6 +367,38 @@ export interface RemoteHeaderMapping {
   env: string;
 }
 
+// ---- Platform logs (superadmin Logs console; first context: auth) ----
+
+export type LogOutcome = "success" | "failure" | "denied" | "info";
+
+export interface LogEvent {
+  id: number;
+  /** ISO-8601 timestamp. */
+  ts: string | null;
+  context: string;
+  event_type: string;
+  outcome: LogOutcome;
+  actor_id: string | null;
+  actor_email: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  message: string | null;
+  detail: Record<string, unknown> | null;
+}
+
+export interface LogFeedPage {
+  events: LogEvent[];
+  last_id: number;
+  has_more: boolean;
+}
+
+export interface LogFilters {
+  context?: string;
+  q?: string;
+  event_type?: string;
+  outcome?: string;
+}
+
 export interface AuditEvent {
   id: number;
   actor_id: string | null;
@@ -834,6 +866,46 @@ export const api = {
     return res.json() as Promise<Server>;
   },
 
+  // Platform logs (superadmin only) — the Logs console
+  listLogEvents: (
+    p: LogFilters & { since_id?: number; before_id?: number; limit?: number } = {},
+  ) => {
+    const q = new URLSearchParams();
+    if (p.context) q.set("context", p.context);
+    if (p.q) q.set("q", p.q);
+    if (p.event_type) q.set("event_type", p.event_type);
+    if (p.outcome) q.set("outcome", p.outcome);
+    if (p.since_id != null) q.set("since_id", String(p.since_id));
+    if (p.before_id != null) q.set("before_id", String(p.before_id));
+    if (p.limit != null) q.set("limit", String(p.limit));
+    const s = q.toString();
+    return request<LogFeedPage>(`/logs${s ? `?${s}` : ""}`);
+  },
+  /** Download the filtered log slice as a file (CSV or JSON). */
+  exportLogs: async (
+    p: LogFilters & { format: "csv" | "json"; limit?: number },
+  ): Promise<{ blob: Blob; filename: string }> => {
+    const token = localStorage.getItem("token");
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const q = new URLSearchParams({ format: p.format });
+    if (p.context) q.set("context", p.context);
+    if (p.q) q.set("q", p.q);
+    if (p.event_type) q.set("event_type", p.event_type);
+    if (p.outcome) q.set("outcome", p.outcome);
+    if (p.limit != null) q.set("limit", String(p.limit));
+    const res = await fetch(`${BASE}/logs/export?${q.toString()}`, { headers });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const d = (body as { detail?: unknown }).detail;
+      throw new Error(d != null ? formatApiErrorDetail(d) : `Export failed: ${res.status}`);
+    }
+    const cd = res.headers.get("Content-Disposition") ?? "";
+    const m = /filename="?([^"]+)"?/.exec(cd);
+    const filename = m ? m[1] : `roundhouse-log.${p.format}`;
+    return { blob: await res.blob(), filename };
+  },
+
   // Audit log (superadmin only)
   listAuditEvents: (params: { target_type?: string; target_id?: string; limit?: number } = {}) => {
     const q = new URLSearchParams();
@@ -1017,6 +1089,8 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<AuthUser>("/auth/me"),
+  /** Best-effort logout marker so sign-outs land in the auth log. */
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
   oidcStatus: () => request<{ enabled: boolean }>("/auth/oidc/status"),
 
   // SSO connection config (superadmin only). Stored in platform settings, not env.
