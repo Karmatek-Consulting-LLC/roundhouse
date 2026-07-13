@@ -27,10 +27,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
+from app import logbook
 from app.auth import issue_token
 from app.config import get_settings
 from app.crypto import DecryptError, decrypt, encrypt
 from app.db import get_db
+from app.logbook import CONTEXT_AUTH
 from app.services import oidc as oidc_service
 from app.services import sso_config
 from app.services.claim_mapping import AccessDenied, resolve_grants
@@ -66,6 +68,26 @@ def _login_error_redirect(message: str) -> RedirectResponse:
     return resp
 
 
+def _fail(
+    request: Request,
+    event_type: str,
+    message: str,
+    *,
+    outcome: str = logbook.OUTCOME_FAILURE,
+    email: str | None = None,
+    detail: dict | None = None,
+) -> RedirectResponse:
+    """Log the failure to the auth log, then bounce back to the login page.
+    Every SSO error path funnels through here so an operator with only UI
+    access can see exactly where the flow died (the browser just shows the
+    generic sso_error banner)."""
+    logbook.record(
+        CONTEXT_AUTH, event_type, outcome,
+        request=request, email=email, message=message, detail=detail,
+    )
+    return _login_error_redirect(message)
+
+
 @router.get("/status")
 def oidc_status(db: Session = Depends(get_db)) -> dict:
     return {"enabled": sso_config.load(db).enabled}
@@ -75,13 +97,13 @@ def oidc_status(db: Session = Depends(get_db)) -> dict:
 def oidc_login(request: Request, db: Session = Depends(get_db)):
     cfg = sso_config.load(db)
     if not cfg.enabled:
-        return _login_error_redirect("SSO is not configured")
+        return _fail(request, "sso.start", "SSO is not configured")
     app_key = get_settings().app_key
     if not app_key:
         # We sign the transaction cookie with APP_KEY; refuse rather than fall
         # back to an unsigned (forgeable) state cookie.
         logger.error("OIDC login attempted but APP_KEY is not set")
-        return _login_error_redirect("SSO is misconfigured (no APP_KEY)")
+        return _fail(request, "sso.start", "SSO is misconfigured (no APP_KEY)")
 
     client = oidc_service.get_client(cfg)
     verifier = client.new_pkce_verifier()
@@ -93,7 +115,18 @@ def oidc_login(request: Request, db: Session = Depends(get_db)):
         )
     except OidcError as e:
         logger.error("Failed to build authorization URL: %s", e)
-        return _login_error_redirect("Could not reach the identity provider")
+        return _fail(
+            request, "sso.start", "Could not reach the identity provider",
+            detail={"error": str(e)},
+        )
+
+    # Attempts that never come back (user stuck at the IdP, wrong redirect
+    # URI, conditional-access block) show up as a `sso.start` with no
+    # matching `sso.callback` — that asymmetry is itself the diagnostic.
+    logbook.record(
+        CONTEXT_AUTH, "sso.start", logbook.OUTCOME_INFO,
+        request=request, message="Redirecting to identity provider",
+    )
 
     tx = encrypt(
         json.dumps({"state": state, "nonce": nonce, "verifier": verifier, "ts": int(time.time())}),
@@ -116,27 +149,39 @@ def oidc_login(request: Request, db: Session = Depends(get_db)):
 def oidc_callback(request: Request, db: Session = Depends(get_db)):
     cfg = sso_config.load(db)
     if not cfg.enabled:
-        return _login_error_redirect("SSO is not configured")
+        return _fail(request, "sso.callback", "SSO is not configured")
 
     params = request.query_params
     if params.get("error"):
         # Entra rejected the auth request (consent denied, etc.).
         desc = params.get("error_description") or params.get("error")
-        return _login_error_redirect(desc)
+        return _fail(
+            request, "sso.callback", desc,
+            detail={"idp_error": params.get("error"), "reason": "idp_rejected"},
+        )
 
     code = params.get("code")
     state = params.get("state")
     if not code or not state:
-        return _login_error_redirect("Malformed SSO response")
+        return _fail(
+            request, "sso.callback", "Malformed SSO response",
+            detail={"reason": "missing_code_or_state"},
+        )
 
     tx = _read_transaction(request, get_settings().app_key)
     if tx is None:
-        return _login_error_redirect("SSO session expired; please try again")
+        return _fail(
+            request, "sso.callback", "SSO session expired; please try again",
+            detail={"reason": "transaction_cookie_missing_or_stale"},
+        )
     # State must match the value minted in /login (CSRF defense).
     import secrets as _secrets
 
     if not _secrets.compare_digest(str(tx.get("state", "")), state):
-        return _login_error_redirect("SSO state mismatch; please try again")
+        return _fail(
+            request, "sso.callback", "SSO state mismatch; please try again",
+            detail={"reason": "state_mismatch"},
+        )
 
     client = oidc_service.get_client(cfg)
     try:
@@ -147,19 +192,28 @@ def oidc_callback(request: Request, db: Session = Depends(get_db)):
         claims = client.validate_id_token(id_token, nonce=tx["nonce"])
     except OidcError as e:
         logger.warning("OIDC callback validation failed: %s", e)
-        return _login_error_redirect("Sign-in could not be verified")
+        return _fail(
+            request, "sso.callback", "Sign-in could not be verified",
+            detail={"reason": "token_validation_failed", "error": str(e)},
+        )
 
     # Resolve grants *before* provisioning: Roundhouse access is mapping-gated,
     # so a user whose claims match no mapping row is turned away here — and,
     # crucially, never JIT-provisioned (get_db commits on this redirect, so an
     # account created before the check would leak as an orphan row).
+    claimed_email = claims.get("preferred_username") or claims.get("email")
     try:
         grants = resolve_grants(db, claims)
     except AccessDenied as e:
-        logger.info("SSO access denied for %s: %s", claims.get("preferred_username") or claims.get("email"), e)
-        return _login_error_redirect(
+        logger.info("SSO access denied for %s: %s", claimed_email, e)
+        return _fail(
+            request, "sso.callback",
             "Access denied: your account has not been granted a role in "
-            "Roundhouse. Contact your administrator."
+            "Roundhouse. Contact your administrator.",
+            outcome=logbook.OUTCOME_DENIED,
+            email=claimed_email,
+            detail={"reason": "no_role_mapping", "error": str(e),
+                    "roles_claim": claims.get("roles")},
         )
 
     try:
@@ -171,7 +225,18 @@ def oidc_callback(request: Request, db: Session = Depends(get_db)):
         token = issue_token(db, user, name="sso")
     except SsoError as e:
         logger.warning("SSO provisioning failed: %s", e)
-        return _login_error_redirect(str(e))
+        return _fail(
+            request, "sso.callback", str(e),
+            email=claimed_email,
+            detail={"reason": "provisioning_failed"},
+        )
+
+    logbook.record(
+        CONTEXT_AUTH, "sso.callback", logbook.OUTCOME_SUCCESS,
+        request=request, user=user,
+        message="Signed in with SSO",
+        detail={"method": "sso"},
+    )
 
     # Token rides back in the URL fragment: it is never sent to a server and
     # stays out of access logs / Referer headers. The SPA callback reads it.

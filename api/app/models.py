@@ -256,6 +256,47 @@ class AuditEvent(Base):
     )
 
 
+class LogEvent(Base):
+    """Append-only platform log stream, partitioned by `context`. The first
+    context is "auth" (login / SSO / logout activity); deployments, scans, etc.
+    slot in later without schema changes. Written via app.logbook.record(),
+    which commits in its own session so entries survive the request rollback
+    on failure paths (a failed login must still be logged). Read by the
+    superadmin /api/logs console (list/search/SSE stream/export). Pruned on a
+    retention window (see app.services.event_retention)."""
+
+    __tablename__ = "log_events"
+    __table_args__ = (
+        # The console always filters by context, then ranges/orders by time.
+        Index("log_events_context_ts_index", "context", "ts"),
+        # The retention DELETE scans ts alone.
+        Index("log_events_ts_index", "ts"),
+    )
+
+    # BigInteger on Postgres; INTEGER on SQLite so it aliases rowid and
+    # autoincrements (BIGINT does not) — keeps the model usable in tests.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    context: Mapped[str] = mapped_column(String(32), nullable=False)  # e.g. "auth"
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)  # e.g. "login", "sso.callback"
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)  # success | failure | denied | info
+    # Who the event is about. Nullable: a failed login has no resolved user,
+    # and the email is whatever was attempted (useful for troubleshooting).
+    actor_id: Mapped[str | None] = mapped_column(PgUUID(as_uuid=False), nullable=True)
+    actor_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Short human-readable summary, mirrors what the end user saw (e.g. the
+    # SSO error surfaced on the login page).
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Small structured payload. Recording helpers strip known sensitive keys.
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 class PersonalAccessToken(Base):
     """API bearer tokens. Plaintext form is `{id}|{rawText}`; the column
     stores sha256(rawText) — never the raw token."""
@@ -263,7 +304,11 @@ class PersonalAccessToken(Base):
     __tablename__ = "personal_access_tokens"
     __table_args__ = (Index("personal_access_tokens_expires_at_index", "expires_at"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # BigInteger on Postgres; INTEGER on SQLite so it aliases rowid and
+    # autoincrements (BIGINT does not) — keeps the model usable in tests.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
     tokenable_type: Mapped[str] = mapped_column(String(255), nullable=False)
     tokenable_id: Mapped[str] = mapped_column(PgUUID(as_uuid=False), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)

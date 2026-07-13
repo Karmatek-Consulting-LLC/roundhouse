@@ -23,6 +23,7 @@ import { UserManagement } from "@/components/user-management";
 import { TeamManagement } from "@/components/team-management";
 import { PlatformSettings } from "@/components/platform-settings";
 import { AuditLogPage } from "@/components/audit-log";
+import { LogConsolePage } from "@/components/log-console";
 import { BackupRestore } from "@/components/backup-restore";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Logo } from "@/components/logo";
@@ -35,7 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChangePasswordDialog } from "@/components/change-password-dialog";
-import { DatabaseBackup, History, KeyRound, LogOut, Settings, Shield, Users } from "lucide-react";
+import { DatabaseBackup, History, KeyRound, LogOut, ScrollText, Settings, Shield, Users } from "lucide-react";
 
 export type ServersOutletContext = ReturnType<typeof useServers>;
 
@@ -174,6 +175,14 @@ function AppShell() {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
+                        navigate("/logs");
+                      }}
+                    >
+                      <ScrollText className="mr-2 h-4 w-4" />
+                      Logs
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
                         navigate("/backup");
                       }}
                     >
@@ -288,6 +297,11 @@ function AuditLogRoute() {
   return <AuditLogPage onBack={() => navigate("/")} />;
 }
 
+function LogConsoleRoute() {
+  const navigate = useNavigate();
+  return <LogConsolePage onBack={() => navigate("/")} />;
+}
+
 function BackupRestoreRoute() {
   const navigate = useNavigate();
   return <BackupRestore onBack={() => navigate("/")} />;
@@ -333,6 +347,14 @@ export default function App() {
             element={
               <SuperAdminOnly>
                 <AuditLogRoute />
+              </SuperAdminOnly>
+            }
+          />
+          <Route
+            path="/logs"
+            element={
+              <SuperAdminOnly>
+                <LogConsoleRoute />
               </SuperAdminOnly>
             }
           />

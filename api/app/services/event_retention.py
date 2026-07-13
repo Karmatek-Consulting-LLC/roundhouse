@@ -1,7 +1,9 @@
-"""Retention prune for request_events.
+"""Retention prune for request_events and log_events.
 
-The console keeps a rolling window of call history; rows older than
-RH_EVENT_RETENTION_DAYS (default 14) are deleted. The loop runs in BOTH uvicorn
+The console keeps a rolling window of call history; request_events rows older
+than RH_EVENT_RETENTION_DAYS (default 14) are deleted, and log_events rows
+(the admin Logs console, auth events first) older than RH_LOG_RETENTION_DAYS
+(default 90; <= 0 disables pruning) likewise. The loop runs in BOTH uvicorn
 workers, so the actual DELETE is single-flighted with a Postgres session-level
 advisory lock — whichever worker grabs it prunes, the other no-ops. The DELETE
 is idempotent regardless, so the lock is an optimization, not a correctness
@@ -28,6 +30,16 @@ def _retention_days() -> int:
         return 14
 
 
+def _log_retention_days() -> int:
+    """Retention for log_events (auth log). Deliberately longer than the
+    request-event window — this is compliance/troubleshooting history, not a
+    metrics buffer. <= 0 disables pruning entirely."""
+    try:
+        return int(os.environ.get("RH_LOG_RETENTION_DAYS", "90"))
+    except ValueError:
+        return 90
+
+
 PRUNE_INTERVAL_S = 3600
 # Arbitrary stable 64-bit key so both workers contend for the same lock.
 PRUNE_LOCK_KEY = 0x726F756E6431  # "round1"
@@ -51,7 +63,18 @@ def _prune_once() -> int:
                 ),
                 {"d": days},
             )
-            return result.rowcount or 0
+            removed = result.rowcount or 0
+            log_days = _log_retention_days()
+            if log_days > 0:
+                log_result = db.execute(
+                    text(
+                        "DELETE FROM log_events "
+                        "WHERE ts < now() - make_interval(days => :d)"
+                    ),
+                    {"d": log_days},
+                )
+                removed += log_result.rowcount or 0
+            return removed
         finally:
             db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": PRUNE_LOCK_KEY})
 

@@ -137,6 +137,7 @@ from app.routes import backup as backup_route  # noqa: E402
 from app.routes import dashboard as dashboard_route  # noqa: E402
 from app.routes import ingest as ingest_route  # noqa: E402
 from app.routes import invoke as invoke_route  # noqa: E402
+from app.routes import logs as logs_route  # noqa: E402
 from app.routes import observability as observability_route  # noqa: E402
 from app.routes import oidc as oidc_route  # noqa: E402
 from app.routes import pypi as pypi_route  # noqa: E402
@@ -151,6 +152,7 @@ from app.routes import users as users_route  # noqa: E402
 from app.routes import vulnerabilities as vulnerabilities_route  # noqa: E402
 
 app.include_router(audit_route.router)
+app.include_router(logs_route.router)
 app.include_router(auth_route.router)
 app.include_router(oidc_route.router)
 app.include_router(role_mappings_route.router)
