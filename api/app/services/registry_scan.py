@@ -2,10 +2,11 @@
 
 Harbor scans pushed images with Trivy and exposes per-artifact scan overviews
 on its REST API. Roundhouse pushes every server image as
-`{registry_prefix}/mcp-{name}:latest`, so the configured registry prefix
-yields the API coordinates directly: the prefix host becomes the API base
-(`https://{host}/api/v2.0` unless overridden), the first path segment is the
-Harbor project, and the rest + `mcp-{name}` is the repository. The registry
+`{registry_prefix}/mcp-server-{name}:latest` (see `docker.image_repo_name`),
+so the configured registry prefix yields the API coordinates directly: the
+prefix host becomes the API base (`https://{host}/api/v2.0` unless
+overridden), the first path segment is the Harbor project, and the rest +
+`mcp-server-{name}` is the repository. The registry
 credentials already stored in Platform Settings (a Harbor robot account)
 authenticate the API call — grant the robot scan-read on the project.
 
@@ -33,6 +34,7 @@ from app.platform_settings import (
     SETTING_REGISTRY_SCANNER_API_URL,
     get_setting,
 )
+from app.services.docker import image_repo_name
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +93,8 @@ def harbor_coordinates(
     project, _, rest = path.partition("/")
     if not project:
         return None
-    repository = f"{rest}/mcp-{server_name}" if rest else f"mcp-{server_name}"
+    image = image_repo_name(server_name)
+    repository = f"{rest}/{image}" if rest else image
     override = (api_url_override or "").strip().rstrip("/")
     api_base = override or f"https://{host}/api/v2.0"
     # UI base tracks the API host (the override may route through a different
