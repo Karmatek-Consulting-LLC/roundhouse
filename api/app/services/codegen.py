@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from app.config import get_settings
 from app.services.formatter import format_python
 from app.services.spec import ServerSpec
 
@@ -906,40 +907,33 @@ def _has_custom_ca(ca: str | None) -> bool:
     return bool(ca and ca.strip())
 
 
-def generate_dockerfile(spec: ServerSpec, custom_ca: str | None = None) -> str:
-    lines: list[str] = [
-        "FROM python:3.12-slim",
-        "WORKDIR /app",
-    ]
-    if _has_custom_ca(custom_ca):
-        # Append the corp CA to the existing trust bundle before any network
-        # call. python:3.12-slim already has ca-certificates - we just edit it.
-        lines.append("COPY custom-ca.crt /usr/local/share/ca-certificates/custom-ca.crt")
-        lines.append(
-            "RUN cat /usr/local/share/ca-certificates/custom-ca.crt >> /etc/ssl/certs/ca-certificates.crt \\"
-        )
-        lines.append("    && update-ca-certificates")
-        lines.append("ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \\")
-        lines.append("    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \\")
-        lines.append("    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt")
+def generate_dockerfile(
+    spec: ServerSpec,
+    custom_ca: str | None = None,
+    *,
+    build_image: str | None = None,
+    runtime_image: str | None = None,
+) -> str:
+    """Emit a multi-stage Dockerfile for a spawned MCP server.
 
-    if spec.apt_packages:
-        apt = " ".join(spec.apt_packages)
-        lines.append(
-            f"RUN apt-get update && apt-get install -y --no-install-recommends {apt} "
-            "&& rm -rf /var/lib/apt/lists/*"
-        )
+    The runtime target is a non-root, distroless Docker Hardened Image, which
+    ships no shell, no package manager, and no pip. Everything that needs those
+    (pip install, apt packages, CA trust updates) therefore runs in a separate
+    root BUILD stage; the RUNTIME stage only receives the resulting venv and the
+    server source. Base images are configurable (MCP_SERVER_BUILD_IMAGE /
+    MCP_SERVER_RUNTIME_IMAGE); pass overrides for tests.
 
-    pip_install = f"fastmcp=={FASTMCP_VERSION}"
-    if spec.pip_packages:
-        pip_install += " " + " ".join(spec.pip_packages)
-    lines.append(f"RUN pip install --no-cache-dir {pip_install}")
-    # Copy the whole build context so multi-file servers work (helper modules,
-    # data files, git-imported repos). write_build_context always writes
-    # server.py plus an assets/ dir here, so ASSETS_DIR=/app/assets stays valid
-    # even when nothing was uploaded. Roundhouse owns the Dockerfile, so the
-    # context is small and self-contained.
-    lines.append("COPY . .")
+    Distroless caveat: apt packages are installed in the build stage so their
+    headers/tools are available while compiling wheels, but system shared
+    libraries they provide are NOT carried into the minimal runtime. Servers
+    that need a system library at run time must bring it via a pip wheel or a
+    custom runtime image.
+    """
+    cfg = get_settings()
+    build_image = build_image or cfg.mcp_server_build_image
+    runtime_image = runtime_image or cfg.mcp_server_runtime_image
+
+    has_ca = _has_custom_ca(custom_ca)
     # Proxied servers (code-first + remote) run proxy.py as the entrypoint:
     #   - code-first: proxy.py listens on PROXY_PORT and supervises the user's
     #     server.py on BACKEND_PORT.
@@ -948,17 +942,77 @@ def generate_dockerfile(spec: ServerSpec, custom_ca: str | None = None) -> str:
     proxied = spec.is_proxied()
     public_port = route_port_for(spec)
     entry = "proxy.py" if proxied else "server.py"
+
+    lines: list[str] = []
+
+    # ---- Build stage: root, has shell + pip + apt ----
+    lines.append(f"FROM {build_image} AS build")
+    lines.append("WORKDIR /app")
+    if has_ca:
+        # Append the corp CA to the trust bundle before any network call so pip
+        # (and any build-time fetch) trusts a TLS-inspecting proxy.
+        lines.append("COPY custom-ca.crt /usr/local/share/ca-certificates/custom-ca.crt")
+        lines.append(
+            "RUN cat /usr/local/share/ca-certificates/custom-ca.crt >> /etc/ssl/certs/ca-certificates.crt \\"
+        )
+        lines.append("    && update-ca-certificates")
+        lines.append("ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \\")
+        lines.append("    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \\")
+        lines.append("    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt")
+    if spec.apt_packages:
+        apt = " ".join(spec.apt_packages)
+        lines.append(
+            f"RUN apt-get update && apt-get install -y --no-install-recommends {apt} \\"
+        )
+        lines.append("    && rm -rf /var/lib/apt/lists/*")
+    # A relocatable venv is the artifact we hand to the runtime stage. --copies
+    # bundles the interpreter so it doesn't depend on symlinks back into the
+    # build image's Python home.
+    lines.append("RUN python -m venv --copies /opt/venv")
+    lines.append('ENV PATH="/opt/venv/bin:$PATH"')
+    pip_install = f"fastmcp=={FASTMCP_VERSION}"
+    if spec.pip_packages:
+        pip_install += " " + " ".join(spec.pip_packages)
+    lines.append(f"RUN pip install --no-cache-dir {pip_install}")
+    lines.append("")
+
+    # ---- Runtime stage: non-root, distroless (no shell / pip / apt) ----
+    lines.append(f"FROM {runtime_image} AS runtime")
+    lines.append("WORKDIR /app")
+    lines.append("COPY --from=build /opt/venv /opt/venv")
+    lines.append('ENV PATH="/opt/venv/bin:$PATH"')
+    if has_ca:
+        # No update-ca-certificates in distroless: carry the combined bundle
+        # built above so the server's outbound TLS (ingest/remote proxy) trusts
+        # the corp CA.
+        lines.append(
+            "COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt"
+        )
+        lines.append("ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \\")
+        lines.append("    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt")
+    # Copy the whole build context so multi-file servers work (helper modules,
+    # data files, git-imported repos). write_build_context always writes
+    # server.py plus an assets/ dir here, so ASSETS_DIR=/app/assets stays valid
+    # even when nothing was uploaded. Roundhouse owns the Dockerfile, so the
+    # context is small and self-contained.
+    lines.append("COPY . .")
     lines.append(f"EXPOSE {public_port}")
-    # python's urllib avoids needing curl in the base image. exit 0 on 200,
-    # non-zero otherwise; Docker flips the container to unhealthy after the
-    # configured retries. Probe the public port so health reflects whatever
-    # actually serves traffic (the proxy when proxied, the server otherwise).
-    lines.append(
-        'HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n'
-        '  CMD python -c "import urllib.request,sys; '
+    # Exec-form healthcheck (JSON array) so it needs no /bin/sh - the distroless
+    # runtime has none. python's urllib avoids needing curl in the image. Probe
+    # the public port so health reflects whatever actually serves traffic (the
+    # proxy when proxied, the server otherwise).
+    healthcheck_cmd = (
+        "import urllib.request,sys; "
         f"r=urllib.request.urlopen('http://127.0.0.1:{public_port}/healthz', timeout=2); "
-        'sys.exit(0 if r.status==200 else 1)" || exit 1'
+        "sys.exit(0 if r.status==200 else 1)"
     )
+    lines.append(
+        "HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \\\n"
+        "  CMD " + json.dumps(["python", "-c", healthcheck_cmd])
+    )
+    # Reset any interpreter ENTRYPOINT the DHI base may set, so the exec-form CMD
+    # runs `python <entry>` deterministically (not `python python <entry>`).
+    lines.append("ENTRYPOINT []")
     lines.append(f'CMD ["python", "{entry}"]')
     lines.append("")
     return "\n".join(lines)

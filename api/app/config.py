@@ -58,6 +58,20 @@ class Settings(BaseSettings):
     mcp_templates_dir: str = Field(
         default="/app/templates", alias="MCP_TEMPLATES_DIR"
     )
+    # Base images for generated MCP-server builds. Codegen emits a multi-stage
+    # Dockerfile: the BUILD image (root; ships a shell + pip + apt) compiles
+    # dependencies into a venv, and the RUNTIME image (non-root, distroless
+    # Docker Hardened Image) runs the server. Defaults target the TRM-authorized
+    # DHI Python 3.14 Debian 13 line; pulling them requires `docker login
+    # dhi.io` on every build node. Override to a mirrored registry reference
+    # (e.g. <org>/python:3.14-debian13[-dev]) when using a Select/Enterprise
+    # mirror.
+    mcp_server_build_image: str = Field(
+        default="dhi.io/python:3.14-debian13-dev", alias="MCP_SERVER_BUILD_IMAGE"
+    )
+    mcp_server_runtime_image: str = Field(
+        default="dhi.io/python:3.14-debian13", alias="MCP_SERVER_RUNTIME_IMAGE"
+    )
     mcp_traefik_entrypoints: str = Field(
         default="web", alias="MCP_TRAEFIK_ENTRYPOINTS"
     )

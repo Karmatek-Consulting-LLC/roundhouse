@@ -130,3 +130,65 @@ def test_code_proxy_without_tokens_has_no_auth():
     assert _compiles(src)
     assert "StaticTokenVerifier" not in src
     assert "_MW_AUTH_ENABLED = False" in src
+
+
+# ---- Multi-stage Dockerfile targeting a non-root distroless (DHI) runtime ----
+
+def test_dockerfile_is_multi_stage_build_then_runtime():
+    spec = ServerSpec(name="s", primitives=[{"kind": "tool", "name": "t", "code": "return 'ok'"}])
+    df = codegen.generate_dockerfile(
+        spec, build_image="dhi.io/python:3.14-debian13-dev",
+        runtime_image="dhi.io/python:3.14-debian13",
+    )
+    # Two stages: build compiles deps into a venv, runtime receives it.
+    assert "FROM dhi.io/python:3.14-debian13-dev AS build" in df
+    assert "FROM dhi.io/python:3.14-debian13 AS runtime" in df
+    assert "RUN python -m venv --copies /opt/venv" in df
+    assert "COPY --from=build /opt/venv /opt/venv" in df
+    assert f"RUN pip install --no-cache-dir fastmcp=={codegen.FASTMCP_VERSION}" in df
+    # No 3.12-slim anywhere (TRM-unauthorized).
+    assert "python:3.12-slim" not in df
+
+
+def test_dockerfile_healthcheck_is_exec_form_and_entrypoint_reset():
+    spec = ServerSpec(name="s", primitives=[{"kind": "tool", "name": "t", "code": "return 'ok'"}])
+    df = codegen.generate_dockerfile(spec)
+    # Exec-form healthcheck (JSON array) so it needs no /bin/sh in distroless.
+    assert 'CMD ["python", "-c"' in df
+    assert "|| exit 1" not in df
+    # Entrypoint reset so CMD runs `python server.py` deterministically.
+    assert "ENTRYPOINT []" in df
+    assert 'CMD ["python", "server.py"]' in df
+
+
+def test_dockerfile_defaults_come_from_settings():
+    spec = ServerSpec(name="s", primitives=[{"kind": "tool", "name": "t", "code": "return 'ok'"}])
+    df = codegen.generate_dockerfile(spec)
+    # Defaults target the TRM-authorized DHI 3.14 Debian 13 line.
+    assert "FROM dhi.io/python:3.14-debian13-dev AS build" in df
+    assert "FROM dhi.io/python:3.14-debian13 AS runtime" in df
+
+
+def test_dockerfile_custom_ca_carried_into_runtime():
+    spec = ServerSpec(name="s", primitives=[{"kind": "tool", "name": "t", "code": "return 'ok'"}])
+    df = codegen.generate_dockerfile(spec, custom_ca="-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----")
+    # Trust bundle built in the build stage (has update-ca-certificates)...
+    assert "update-ca-certificates" in df
+    # ...then carried into the distroless runtime, which can't run it.
+    assert (
+        "COPY --from=build /etc/ssl/certs/ca-certificates.crt "
+        "/etc/ssl/certs/ca-certificates.crt" in df
+    )
+    assert "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" in df
+
+
+def test_dockerfile_apt_packages_install_in_build_stage_only():
+    spec = ServerSpec(
+        name="s",
+        primitives=[{"kind": "tool", "name": "t", "code": "return 'ok'"}],
+        apt_packages=["libxml2"],
+    )
+    df = codegen.generate_dockerfile(spec)
+    build_stage, runtime_stage = df.split("FROM ", 2)[1], df.split("FROM ", 2)[2]
+    assert "apt-get install" in build_stage
+    assert "apt-get" not in runtime_stage
