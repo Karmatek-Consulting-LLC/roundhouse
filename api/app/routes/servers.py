@@ -637,6 +637,7 @@ def store(
                     registry_prefix=service.registry_prefix(db),
                     registry_auth=service.registry_auth(db),
                     placement_constraints=spec.placement_constraints,
+                    base_registry_auth=service.base_registry_auth(db),
                 )
             finally:
                 shutil.rmtree(build_context, ignore_errors=True)

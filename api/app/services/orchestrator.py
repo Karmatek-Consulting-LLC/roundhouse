@@ -65,6 +65,7 @@ class Orchestrator(Protocol):
         memory_limit_mb: int | None = None,
         route_port: int = 8000,
         placement_constraints: list[dict] | None = None,
+        base_registry_auth: dict[str, dict[str, str]] | None = None,
     ) -> dict: ...
 
     def list_servers(self) -> list[dict]: ...

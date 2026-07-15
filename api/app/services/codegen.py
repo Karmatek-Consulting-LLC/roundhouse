@@ -1018,7 +1018,14 @@ def generate_dockerfile(
     return "\n".join(lines)
 
 
-def write_build_context(spec: ServerSpec, output_dir: Path | str, custom_ca: str | None = None) -> Path:
+def write_build_context(
+    spec: ServerSpec,
+    output_dir: Path | str,
+    custom_ca: str | None = None,
+    *,
+    build_image: str | None = None,
+    runtime_image: str | None = None,
+) -> Path:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     server_path = out / "server.py"
@@ -1030,7 +1037,12 @@ def write_build_context(spec: ServerSpec, output_dir: Path | str, custom_ca: str
     else:
         server_py = (spec.source or "") if spec.is_code_mode() else generate_server_py(spec)
         server_path.write_text(server_py, encoding="utf-8")
-    (out / "Dockerfile").write_text(generate_dockerfile(spec, custom_ca), encoding="utf-8")
+    (out / "Dockerfile").write_text(
+        generate_dockerfile(
+            spec, custom_ca, build_image=build_image, runtime_image=runtime_image
+        ),
+        encoding="utf-8",
+    )
     # Proxied servers (code-first + remote) get a platform proxy so their tool
     # calls pass through platform middleware. Structured servers bake middleware
     # into server.py and need no proxy - drop any stale one.
