@@ -913,6 +913,13 @@ def _is_alpine(image_ref: str | None) -> bool:
     return "alpine" in (image_ref or "").lower()
 
 
+def base_image_distro(image_ref: str | None) -> str:
+    """Package ecosystem of a base image ref: "alpine" (apk) or "debian"
+    (apt-get). Drives both the Dockerfile package steps and the UI hint that
+    tells users which distro's package names to use."""
+    return "alpine" if _is_alpine(image_ref) else "debian"
+
+
 def generate_dockerfile(
     spec: ServerSpec,
     custom_ca: str | None = None,

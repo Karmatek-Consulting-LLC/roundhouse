@@ -9,7 +9,7 @@ import { CopyButton } from "@/components/copy-button";
 import { PrimitiveForm } from "@/components/primitive-form";
 import { ImportsEditor } from "@/components/imports-editor";
 import { PackageManager } from "@/components/package-manager";
-import { AptPackageManager } from "@/components/apt-package-manager";
+import { AptPackageManager, type ServerBuildInfo } from "@/components/apt-package-manager";
 import {
   ServerEnvBindingsEditor,
   type ServerEnvBindings,
@@ -363,6 +363,13 @@ function AptPackagesRail({ serverName, server, onSaved }: RailProps) {
   const { value, setValue, dirty, reset, markSaved } = useDirty(server.apt_packages ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which base image (and thus package ecosystem, apt vs apk) builds run
+  // against — so the rail can tell users which distro's names to enter.
+  const [buildInfo, setBuildInfo] = useState<ServerBuildInfo | null>(null);
+
+  useEffect(() => {
+    api.getServerBuildInfo().then(setBuildInfo).catch(() => setBuildInfo(null));
+  }, []);
 
   async function save() {
     setError(null);
@@ -380,9 +387,9 @@ function AptPackagesRail({ serverName, server, onSaved }: RailProps) {
 
   return (
     <div className="flex flex-col">
-      <RailHeader>OS packages (apt)</RailHeader>
+      <RailHeader>OS packages ({buildInfo?.distro === "alpine" ? "apk" : "apt"})</RailHeader>
       <div>
-        <AptPackageManager packages={value} onChange={setValue} />
+        <AptPackageManager packages={value} onChange={setValue} buildInfo={buildInfo} />
       </div>
       <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} error={error} />
     </div>

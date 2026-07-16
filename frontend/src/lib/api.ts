@@ -751,6 +751,15 @@ export const api = {
       max_mcp_server_replicas: number;
       docker_swarm_mode: boolean;
     }>("/servers/limits"),
+  /** Effective base images for generated server builds and the build image's
+   * package ecosystem, so the OS-packages UI can say whether names must be
+   * Debian (apt-get) or Alpine (apk) packages. */
+  getServerBuildInfo: () =>
+    request<{
+      build_image: string;
+      runtime_image: string;
+      distro: "debian" | "alpine";
+    }>("/servers/build-info"),
   /** Node-label pairs available for Swarm placement selection (derived from
    * actual node labels, not free-form). `supported` is false off Swarm. */
   listNodeLabels: () =>
