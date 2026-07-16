@@ -300,6 +300,37 @@ report on each server's Overview tab. Pairs well with Harbor's
 *prevent vulnerable images from running* policy: the badge tells you why
 a deploy was blocked before you go digging.
 
+**MCP server base images.** Generated servers build from a multi-stage
+Dockerfile: a *build* image (root; ships pip + apt) compiles dependencies
+into a virtualenv, and a non-root, distroless *runtime* image runs the
+server. Both default to the TRM-authorized Docker Hardened Images
+(`dhi.io/python:3.14-debian13-dev` and `dhi.io/python:3.14-debian13`) and
+can be overridden under *MCP server base images* (or the
+`MCP_SERVER_BUILD_IMAGE` / `MCP_SERVER_RUNTIME_IMAGE` env vars). A blank
+field falls back to the env default.
+
+**Base image registry credentials.** When the base images live on a private
+registry, enter the pull credentials under *Base image registry
+credentials*. The password is encrypted at rest (AES envelope keyed off
+`APP_KEY`, like the SSO client secret) and delivered to the build daemon as
+an `X-Registry-Config` header for the `FROM` pull.
+
+> **Docker 29+ / BuildKit.** Docker Engine 29 builds exclusively with
+> BuildKit, which **ignores `X-Registry-Config`** — so on those engines the
+> platform cannot authenticate a private base-image pull over the build
+> API, and *Base image registry credentials* have no effect. Use a base
+> image that is **anonymously pullable** (public `python` images work as-is):
+> mirror the hardened base into an anonymous-pull project on your internal
+> registry and point *MCP server base images* at the mirror. This also
+> removes per-node egress to the public base registry. Example:
+>
+> ```bash
+> docker pull dhi.io/python:3.14-debian13-dev
+> docker tag  dhi.io/python:3.14-debian13-dev  registry.example/mcp_server_base/python:3.14-debian13-dev
+> docker push registry.example/mcp_server_base/python:3.14-debian13-dev
+> # (repeat for :3.14-debian13, then set both under MCP server base images)
+> ```
+
 ![Platform settings](screenshots/dark/50-settings.png)
 
 ### Users
@@ -341,6 +372,8 @@ actually touch:
 | `APP_KEY` | `base64:<32 random bytes>` — encrypts runtime tokens at rest. Generate with `printf 'base64:%s' "$(openssl rand -base64 32)"`. |
 | `MCP_BASE_URL` | The URL clients see for spawned servers. Set this when deploying past localhost. |
 | `MCP_DOCKER_HOST` | `/var/run/docker.sock` (default) or `tcp://socket-proxy:2375` for hardened Swarm setups. |
+| `MCP_SERVER_BUILD_IMAGE` | Base image for the build stage of generated servers (root; has pip/apt). Default `dhi.io/python:3.14-debian13-dev`. Overridable in *Platform settings → MCP server base images*. |
+| `MCP_SERVER_RUNTIME_IMAGE` | Base image for the runtime stage of generated servers (non-root, distroless). Default `dhi.io/python:3.14-debian13`. Overridable in *Platform settings*. |
 | `MAX_MCP_SERVER_REPLICAS` | Per-server replica cap (Swarm only). |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First-boot seed user. Ignored once a user exists. |
 
