@@ -6,6 +6,14 @@
 > Valkyrie deployment model (one trusted agent app, many users, many servers).
 > Written to be readable end-to-end by a non-identity audience — the ELI5 sections are
 > intentionally first.
+>
+> **Amended 2026-07-16** with deltas from the competitive/spec recon in
+> [`horizon-identity-recon.md`](horizon-identity-recon.md): three-path client registration
+> (DCR / CIMD / manual, §7), the OIDC discovery alias and lenient `resource=` handling (§7, §10),
+> an explicit legacy/OAuth endpoint split and dual-verifier migration (§9, §10), Horizon-style
+> capability-policy semantics for scope-aware grants (§9), EMA in the final MCP spec (2026-07-28)
+> as the standardized endgame (§6, §8), and an audit exporter in the build inventory (§10).
+> No locked decisions changed.
 
 ---
 
@@ -193,8 +201,11 @@ planning for DCR reasons) turns out to be exactly the right architecture for ID-
    profile and expose cross-app policy administration. Okta has shipped this (XAA); Microsoft
    has not made it generally available. We do not control that timeline.
 2. **It's still an IETF draft** (individual→WG draft, v-04). Wire details could shift before RFC.
-3. **MCP hasn't adopted it yet.** SEP-1299 proposes it for the MCP spec but it is not part of
-   the 2025-11-25 revision.
+3. ~~**MCP hasn't adopted it yet.**~~ *Resolved since this doc was authored:* SEP-1299 was not
+   part of the 2025-11-25 revision, but the **final MCP spec (2026-07-28) standardized
+   Enterprise-Managed Authorization (EMA)** on exactly the ID-JAG drafts this design cites.
+   The spec caught up to the design; see §8 for what EMA requires of our authorization server.
+   Okta ships EMA today — item 1 (Entra availability) is now the only real blocker.
 
 None of these block us, because the draft cleanly separates the two legs — and leg 2 is entirely
 ours to build.
@@ -273,10 +284,31 @@ mode" are two rows in this table, and both can be enabled simultaneously during 
 ### The interactive flow still exists — for a different audience
 
 Ad-hoc clients (VS Code, Claude Desktop, an engineer testing a server) still get the standard
-spec flow: 401 → Protected Resource Metadata → DCR/CIMD registration → browser → Entra → token.
+spec flow: 401 → Protected Resource Metadata → client registration → browser → Entra → token.
 Same Roundhouse authorization server, same issued-token format, different grant type in the
 front door. Token exchange is for **trusted, pre-registered app clients**; the interactive flow
 is for **humans with browsers**. They coexist.
+
+**Client registration must support three paths** — the recon found the major clients split
+three ways, so any one path alone strands somebody:
+
+| Path | How the client identifies itself | Who leads with it |
+|---|---|---|
+| Classic DCR (RFC 7591) | `POST /register`, policy-gated | VS Code |
+| CIMD (Client ID Metadata Documents) | `client_id` **is** an HTTPS URL to a metadata document the client vendor hosts | Claude clients |
+| Manual pre-registration | Admin creates the client record in Roundhouse | Cursor |
+
+FastMCP's `CIMDClientManager` is a reference implementation for the CIMD path.
+
+Two more client-compat rules for the same front door:
+
+- **Serve the OIDC discovery alias.** Publish `/.well-known/openid-configuration` alongside the
+  RFC 8414 authorization-server metadata (same document, both paths). The alias was added to the
+  MCP spec in the 2025-11-25 revision because it's what enterprise tooling actually probes.
+- **Don't hard-require `resource=` (RFC 8707) from clients.** Valkyrie always sends it, but many
+  ad-hoc clients omit it. The token endpoint binds the audience **server-side at mint** (from the
+  request context when `resource=` is absent), and the in-server verifier still validates the
+  audience strictly — lenient at intake, never at enforcement.
 
 ---
 
@@ -297,6 +329,22 @@ disable `entra-id-token` when Valkyrie has fully switched.
 
 If the IETF draft shifts details before RFC, the blast radius is the same as the migration
 itself: one profile's validation rules.
+
+### EMA: the migration target is now standardized
+
+The final MCP spec (2026-07-28) standardized **Enterprise-Managed Authorization (EMA)** on the
+same ID-JAG drafts cited throughout this doc — the target above is no longer a draft bet but
+the spec's named enterprise profile. For Roundhouse's authorization server to be
+EMA-conformant, the `id-jag` profile row grows a few concrete obligations:
+
+- advertise `urn:ietf:params:oauth:grant-profile:id-jag` in the AS metadata;
+- verify `typ: oauth-id-jag+jwt` on inbound assertions (already specified above);
+- keep a **per-tenant trusted-IdP allowlist** — which issuers may sign assertions for which
+  tenant;
+- **replay-protect `jti`** — track seen assertion IDs within their validity window.
+
+Okta ships EMA today; Entra remains the one we're waiting on. When it lands, "first
+self-hosted MCP platform with EMA support" is a headline available to us.
 
 ---
 
@@ -343,6 +391,16 @@ The token endpoint issues **the intersection of what the client requested and wh
 grants allow** — so Valkyrie can also *downscope*, requesting only the scopes a given agent task
 needs even when the user is entitled to more.
 
+The grants schema adopts **capability-policy semantics** (per the recon's Horizon analysis —
+cleaner than a bare `deny_unlisted` boolean, and it makes the safe behavior the emergent one):
+
+- **Unconfigured = unfiltered.** A server with no scope policies behaves exactly as today —
+  adopting the schema costs existing deployments nothing.
+- **Any policy present = opt-in default-deny.** The moment a server carries any scope policy,
+  primitives unmatched by policy are denied rather than allowed.
+- **The admin role is always retained.** Superadmin access can never be policy-blocked on a
+  server — the lockout-recovery guarantee.
+
 ### Answering the motivating question directly
 
 > *A user might need access to only some of an MCP server's primitives — does that still work?*
@@ -353,9 +411,22 @@ that does it now, and every allow/deny decision is attributable to a named user.
 
 ### Coexistence and revocation
 
-- **Static `mcps_` tokens keep working during migration.** Both verifier types can be active in
-  a generated server simultaneously (both feed the same scope middleware); retire static tokens
-  server-by-server once JWT clients are proven.
+- **Static `mcps_` tokens keep working during migration — via dual-verifier chaining, not
+  either/or codegen modes.** Generated servers run the existing `StaticTokenVerifier` *and* the
+  new `JWTVerifier` side by side (FastMCP's `MultiAuth` pattern), both feeding the same scope
+  middleware. No flag-day: nothing about a server's existing tokens changes when JWT support
+  ships; retire static tokens server-by-server once JWT clients are proven.
+- **But static-bearer clients must stay on a non-OAuth-advertising endpoint.** A known Claude
+  Code bug ([anthropics/claude-code#59467](https://github.com/anthropics/claude-code/issues/59467))
+  ignores a static `Authorization` header whenever the server advertises OAuth — mixing modes on
+  one path strands existing token users. So the split is explicit: during migration a server
+  exposes **two routes to the same container** (and the same chained verifiers). The existing
+  `/s/{name}/mcp` path stays exactly as it is today — no RFC 9728 metadata, no
+  `WWW-Authenticate: Bearer` challenge pointing at an AS — so static-token clients are never
+  disturbed. OAuth-capable clients use a parallel `/s/{name}/oauth/mcp` route, which is where the
+  Protected Resource Metadata and 401 challenges live. Only the discovery surface differs
+  between the routes. When a server's static tokens are retired, the OAuth advertisement moves
+  to the canonical path and the alias collapses.
 - **Revocation = short TTL.** Access tokens live ≤ 1 hour and servers validate statelessly (no
   per-call callback to the platform — deliberately, so the platform API stays off the data path
   and can't take tool-calling down with it). Disable a user in Entra or cut their grants in
@@ -369,17 +440,25 @@ that does it now, and every allow/deny decision is attributable to a named user.
 
 **Roundhouse (this repo):**
 
-1. Authorization-server core: RFC 8414 metadata + JWKS endpoint, `/oauth/token` with the
-   JWT-bearer/token-exchange grant and pluggable assertion profiles; signing keys managed via
-   the existing `app.crypto` envelope (`APP_KEY`).
+1. Authorization-server core: RFC 8414 metadata (plus the `/.well-known/openid-configuration`
+   alias, §7) + JWKS endpoint, `/oauth/token` with the JWT-bearer/token-exchange grant and
+   pluggable assertion profiles; audience bound server-side when clients omit `resource=` (§7);
+   signing keys managed via the existing `app.crypto` envelope (`APP_KEY`).
 2. Interactive flow for ad-hoc clients: `/oauth/authorize` (reusing the shipped Entra SSO flow
-   for the login leg), DCR (`/register`, policy-gated) and/or CIMD, RFC 9728 Protected Resource
-   Metadata per server + 401 `WWW-Authenticate` challenge.
+   for the login leg), all three registration paths (§7) — DCR (RFC 7591, `/register`,
+   policy-gated), CIMD (FastMCP `CIMDClientManager` as reference), manual pre-registration —
+   plus RFC 9728 Protected Resource Metadata per server + 401 `WWW-Authenticate` challenge, on
+   the OAuth route only (§9 endpoint split).
 3. Codegen: emit FastMCP JWT verification (issuer = Roundhouse, audience = `/s/{name}/mcp`,
-   JWKS URL) alongside — later instead of — `StaticTokenVerifier`.
+   JWKS URL) **chained with** `StaticTokenVerifier` (`MultiAuth` pattern, §9 — dual verifiers,
+   no flag-day), with the legacy/OAuth endpoint split.
 4. Grants: scope-aware role/team access (schema + the third column in the existing SSO
-   settings UI).
-5. Audit: record `sub` on tool-call logs.
+   settings UI), with capability-policy semantics (§9: unconfigured = unfiltered, any policy =
+   default-deny, admin always retained).
+5. Audit: per-user `sub` attribution on request events, plus a SIEM-friendly structured
+   **audit exporter** (JSONL / syslog / webhook) over the existing `audit_events` +
+   `request_events` tables. Cheap to build, and the sharpest competitive contrast available —
+   Horizon retains request logs 3–30 days with no export.
 
 **Valkyrie (separate repo/team):** Entra OIDC login (Teams SSO + Slack link flow), Roundhouse
 client registration, token exchange + per-(user, server) cache.
@@ -407,8 +486,9 @@ switch in Entra for which *applications* may reach Roundhouse at all.
 **"Is this standards-based or homegrown?"**
 Standards-based end to end: OAuth 2.1, RFC 7523 (JWT-bearer), RFC 8693 (token exchange),
 RFC 8707 (audience binding), RFC 9728 (resource metadata), per the MCP authorization spec
-(2025-11-25). The one forward-looking piece tracks an active IETF draft (ID-JAG) that we're
-positioned to adopt with a config-level change when Microsoft supports it.
+(2025-11-25). The one forward-looking piece (ID-JAG) is now standardized by the final MCP spec
+(2026-07-28) as Enterprise-Managed Authorization — we're positioned to adopt it with a
+config-level change when Microsoft supports it.
 
 **"Can one compromised MCP server endanger the others?"**
 No. Tokens are audience-bound to a single server; server Y rejects tokens minted for server X.
@@ -421,12 +501,16 @@ Today's static tokens can only say "someone with the key."
 
 ## 12. References
 
-- MCP Authorization spec (current): <https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization>
+- MCP Authorization spec (2025-11-25, the revision this design was authored against): <https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization>
+- MCP spec final release (2026-07-28) — standardizes Enterprise-Managed Authorization (EMA) on the ID-JAG drafts (see §6, §8)
 - MCP Security Best Practices: <https://modelcontextprotocol.io/specification/2025-11-25/basic/security_best_practices>
 - MCP authorization tutorial (conceptual walkthrough, Keycloak lab): <https://modelcontextprotocol.io/docs/tutorials/security/authorization>
 - ID-JAG draft: <https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/>
 - SEP-1299 (ID-JAG for MCP): <https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1299>
 - Okta Cross App Access (XAA) announcement: <https://www.okta.com/newsroom/press-releases/okta-introduces-cross-app-access-to-help-secure-ai-agents-in-the/>
 - RFC 8693 (Token Exchange), RFC 7523 (JWT-bearer), RFC 8707 (Resource Indicators), RFC 9728 (Protected Resource Metadata), RFC 8414 (AS Metadata), RFC 7591 (DCR)
-- In-repo: `entra-sso-plan.md` (dashboard SSO, Phase 1 — shipped), `api/app/services/codegen.py`
-  (current static-token enforcement), `api/app/services/permissions.py` (current access model)
+- Claude Code static-auth bug (why the §9 endpoint split exists): <https://github.com/anthropics/claude-code/issues/59467>
+- In-repo: `horizon-identity-recon.md` (competitive/spec recon, 2026-07-16 — source of the
+  amendments in this doc), `entra-sso-plan.md` (dashboard SSO, Phase 1 — shipped),
+  `api/app/services/codegen.py` (current static-token enforcement),
+  `api/app/services/permissions.py` (current access model)
