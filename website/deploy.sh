@@ -10,7 +10,7 @@
 #   ./website/deploy.sh
 #
 # Requires a running Roundhouse stack (default http://localhost:3080; override
-# with ROUNDHOUSE_BASE) and an authenticated wrangler (npx wrangler login).
+# with ROUNDHOUSE_BASE) and push access to the GitHub repo.
 #
 set -euo pipefail
 
@@ -48,8 +48,21 @@ restore
 step "Building docs site (strict)"
 node website/build-docs.mjs
 
-# 5) Publish to Cloudflare Pages (production).
-step "Deploying to Cloudflare Pages"
-npx --yes wrangler pages deploy website --project-name roundhousemcp --branch main
+# 5) Publish to GitHub Pages (production): commit website/ as a parentless
+#    snapshot and force-push it to the gh-pages branch. GitHub Pages serves
+#    roundhousemcp.com with a Let's Encrypt cert — some customer networks
+#    don't trust the Google Trust CA that Cloudflare's free tier uses. A
+#    single parentless commit keeps the ~22MB of regenerated screenshots
+#    from piling up in branch history; `add -f` picks them up past
+#    .gitignore. Plain git, no npm publish tooling: the repo has no
+#    package.json and the website build is deliberately zero-dependency.
+step "Deploying to GitHub Pages"
+GITDIR="$(git rev-parse --absolute-git-dir)"
+export GIT_INDEX_FILE="$(mktemp -d)/publish-index"
+(cd website && git --git-dir="$GITDIR" --work-tree=. add -Af .)
+TREE="$(git write-tree)"
+COMMIT="$(git commit-tree "$TREE" -m "Publish roundhousemcp.com ($(git rev-parse --short HEAD))")"
+unset GIT_INDEX_FILE
+git push -f origin "$COMMIT:refs/heads/gh-pages"
 
 step "Done — https://roundhousemcp.com"
