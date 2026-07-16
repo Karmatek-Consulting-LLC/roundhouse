@@ -71,9 +71,11 @@ def test_registry_host_none_for_docker_hub():
 # ---- Effective base images (DB override vs env default) ----
 
 def test_effective_base_images_defaults_to_env(db):
+    # Out-of-box default is the anonymously-pullable Docker Hub slim image for
+    # both stages; hardened bases are opt-in via env or platform settings.
     build, runtime = _service().effective_base_images(db)
-    assert build == "dhi.io/python:3.14-debian13-dev"
-    assert runtime == "dhi.io/python:3.14-debian13"
+    assert build == "python:3.14-slim"
+    assert runtime == "python:3.14-slim"
 
 
 def test_effective_base_images_uses_db_override(db):
@@ -93,10 +95,23 @@ def test_base_registry_auth_none_when_unconfigured(db):
 def test_base_registry_auth_derives_host_from_base_images(db):
     from app.config import get_settings
 
+    # Operator switched to a hardened base on a private registry.
+    put_setting(db, SETTING_MCP_BASE_BUILD_IMAGE, "dhi.io/python:3.14-debian13-dev")
+    put_setting(db, SETTING_MCP_BASE_RUNTIME_IMAGE, "dhi.io/python:3.14-debian13")
     put_setting(db, SETTING_BASE_REGISTRY_USERNAME, "robot")
     put_setting(db, SETTING_BASE_REGISTRY_PASSWORD, encrypt("s3cret", get_settings().app_key))
     auth = _service().base_registry_auth(db)
     assert auth == {"dhi.io": {"username": "robot", "password": "s3cret"}}
+
+
+def test_base_registry_auth_none_when_bases_are_docker_hub(db):
+    from app.config import get_settings
+
+    # Default slim bases pull anonymously from Docker Hub - no host to
+    # authenticate, so no X-Registry-Config is sent even with creds saved.
+    put_setting(db, SETTING_BASE_REGISTRY_USERNAME, "robot")
+    put_setting(db, SETTING_BASE_REGISTRY_PASSWORD, encrypt("s3cret", get_settings().app_key))
+    assert _service().base_registry_auth(db) is None
 
 
 def test_base_registry_auth_uses_explicit_host(db):

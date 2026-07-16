@@ -164,9 +164,18 @@ def test_dockerfile_healthcheck_is_exec_form_and_entrypoint_reset():
 def test_dockerfile_defaults_come_from_settings():
     spec = ServerSpec(name="s", primitives=[{"kind": "tool", "name": "t", "code": "return 'ok'"}])
     df = codegen.generate_dockerfile(spec)
-    # Defaults target the TRM-authorized DHI 3.14 Debian 13 line.
-    assert "FROM dhi.io/python:3.14-debian13-dev AS build" in df
-    assert "FROM dhi.io/python:3.14-debian13 AS runtime" in df
+    # Defaults are the anonymously-pullable Docker Hub slim image for both
+    # stages, so a fresh install builds with zero registry setup. Hardened
+    # bases (e.g. DHI) are opt-in via env or platform settings.
+    assert "FROM python:3.14-slim AS build" in df
+    assert "FROM python:3.14-slim AS runtime" in df
+
+
+def test_base_image_distro():
+    assert codegen.base_image_distro("python:3.14-slim") == "debian"
+    assert codegen.base_image_distro("dhi.io/python:3.14-debian13-dev") == "debian"
+    assert codegen.base_image_distro("dhi.io/python:3.14-alpine3.24") == "alpine"
+    assert codegen.base_image_distro(None) == "debian"
 
 
 def test_dockerfile_custom_ca_carried_into_runtime():

@@ -59,18 +59,20 @@ class Settings(BaseSettings):
         default="/app/templates", alias="MCP_TEMPLATES_DIR"
     )
     # Base images for generated MCP-server builds. Codegen emits a multi-stage
-    # Dockerfile: the BUILD image (root; ships a shell + pip + apt) compiles
-    # dependencies into a venv, and the RUNTIME image (non-root, distroless
-    # Docker Hardened Image) runs the server. Defaults target the TRM-authorized
-    # DHI Python 3.14 Debian 13 line; pulling them requires `docker login
-    # dhi.io` on every build node. Override to a mirrored registry reference
-    # (e.g. <org>/python:3.14-debian13[-dev]) when using a Select/Enterprise
-    # mirror.
+    # Dockerfile: the BUILD image (needs a shell + pip + apt/apk) compiles
+    # dependencies into a venv, and the RUNTIME image runs the server. Defaults
+    # to python:3.14-slim for both stages: anonymously pullable from Docker Hub,
+    # so a fresh install builds servers with zero registry setup. Deployments
+    # that require a hardened base (e.g. Docker Hardened Images:
+    # dhi.io/python:3.14-debian13[-dev], non-root + distroless runtime) override
+    # these — or the Platform Settings equivalents, which take precedence —
+    # with their image refs; the generated Dockerfile already handles shell-less
+    # runtimes (exec-form healthcheck, ENTRYPOINT reset, venv handoff).
     mcp_server_build_image: str = Field(
-        default="dhi.io/python:3.14-debian13-dev", alias="MCP_SERVER_BUILD_IMAGE"
+        default="python:3.14-slim", alias="MCP_SERVER_BUILD_IMAGE"
     )
     mcp_server_runtime_image: str = Field(
-        default="dhi.io/python:3.14-debian13", alias="MCP_SERVER_RUNTIME_IMAGE"
+        default="python:3.14-slim", alias="MCP_SERVER_RUNTIME_IMAGE"
     )
     mcp_traefik_entrypoints: str = Field(
         default="web", alias="MCP_TRAEFIK_ENTRYPOINTS"

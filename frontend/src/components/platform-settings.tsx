@@ -570,9 +570,11 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
           </CardTitle>
           <CardDescription>
             Base images for the generated servers&apos; multi-stage build. The{" "}
-            <strong>build</strong> image (root; ships pip + apt) compiles dependencies; the{" "}
-            <strong>runtime</strong> image (non-root, distroless) runs the server. Leave a
-            field blank to use the platform&apos;s environment default.
+            <strong>build</strong> image (needs pip + apt/apk) compiles dependencies; the{" "}
+            <strong>runtime</strong> image runs the server and may be a hardened,
+            distroless base (e.g.{" "}
+            <code className="text-xs">dhi.io/python:3.14-debian13</code>). Leave a field
+            blank to use the platform&apos;s environment default.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -580,7 +582,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
             <Label htmlFor="base-build-image">Build image</Label>
             <Input
               id="base-build-image"
-              placeholder={baseBuildEffective || "dhi.io/python:3.14-debian13-dev"}
+              placeholder={baseBuildEffective || "python:3.14-slim"}
               value={baseBuildImage}
               onChange={(e) => setBaseBuildImage(e.target.value)}
               className="font-mono text-sm"
@@ -590,7 +592,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
             <Label htmlFor="base-runtime-image">Runtime image</Label>
             <Input
               id="base-runtime-image"
-              placeholder={baseRuntimeEffective || "dhi.io/python:3.14-debian13"}
+              placeholder={baseRuntimeEffective || "python:3.14-slim"}
               value={baseRuntimeImage}
               onChange={(e) => setBaseRuntimeImage(e.target.value)}
               className="font-mono text-sm"

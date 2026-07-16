@@ -88,6 +88,12 @@ services:
       - MCP_TEMPLATES_DIR=/app/templates
       - MCP_DEFAULT_SERVER_REPLICAS=${DEFAULT_MCP_SERVER_REPLICAS:-1}
       - MCP_MAX_SERVER_REPLICAS=${MAX_MCP_SERVER_REPLICAS:-32}
+      # Base images for generated MCP servers (build + runtime stages). The
+      # slim default pulls anonymously from Docker Hub; hardened deployments
+      # point these at their hardened refs (also overridable in Platform
+      # settings, which takes precedence).
+      - MCP_SERVER_BUILD_IMAGE=${MCP_SERVER_BUILD_IMAGE:-python:3.14-slim}
+      - MCP_SERVER_RUNTIME_IMAGE=${MCP_SERVER_RUNTIME_IMAGE:-python:3.14-slim}
     networks:
       - roundhouse-network
     labels:

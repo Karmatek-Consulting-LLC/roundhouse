@@ -301,13 +301,18 @@ report on each server's Overview tab. Pairs well with Harbor's
 a deploy was blocked before you go digging.
 
 **MCP server base images.** Generated servers build from a multi-stage
-Dockerfile: a *build* image (root; ships pip + apt) compiles dependencies
-into a virtualenv, and a non-root, distroless *runtime* image runs the
-server. Both default to the TRM-authorized Docker Hardened Images
-(`dhi.io/python:3.14-debian13-dev` and `dhi.io/python:3.14-debian13`) and
-can be overridden under *MCP server base images* (or the
-`MCP_SERVER_BUILD_IMAGE` / `MCP_SERVER_RUNTIME_IMAGE` env vars). A blank
-field falls back to the env default.
+Dockerfile: a *build* image (needs pip + apt/apk) compiles dependencies
+into a virtualenv, and a *runtime* image runs the server. Both default to
+`python:3.14-slim`, which pulls anonymously from Docker Hub — a fresh
+install builds servers with zero registry setup. Deployments that require
+a hardened base override both under *MCP server base images* (or the
+`MCP_SERVER_BUILD_IMAGE` / `MCP_SERVER_RUNTIME_IMAGE` env vars) — e.g. the
+Docker Hardened Images `dhi.io/python:3.14-debian13-dev` (build) and
+`dhi.io/python:3.14-debian13` (runtime, non-root + distroless); the
+generated Dockerfile already handles shell-less runtimes. A blank field
+falls back to the env default. When you pick an Alpine base, codegen
+switches OS-package installs from `apt-get` to `apk`, and the server's
+*OS packages* editor tells users which distro's package names to use.
 
 **Base image registry credentials.** When the base images live on a private
 registry, enter the pull credentials under *Base image registry
@@ -390,8 +395,8 @@ actually touch:
 | `APP_KEY` | `base64:<32 random bytes>` — encrypts runtime tokens at rest. Generate with `printf 'base64:%s' "$(openssl rand -base64 32)"`. |
 | `MCP_BASE_URL` | The URL clients see for spawned servers. Set this when deploying past localhost. |
 | `MCP_DOCKER_HOST` | `/var/run/docker.sock` (default) or `tcp://socket-proxy:2375` for hardened Swarm setups. |
-| `MCP_SERVER_BUILD_IMAGE` | Base image for the build stage of generated servers (root; has pip/apt). Default `dhi.io/python:3.14-debian13-dev`. Overridable in *Platform settings → MCP server base images*. |
-| `MCP_SERVER_RUNTIME_IMAGE` | Base image for the runtime stage of generated servers (non-root, distroless). Default `dhi.io/python:3.14-debian13`. Overridable in *Platform settings*. |
+| `MCP_SERVER_BUILD_IMAGE` | Base image for the build stage of generated servers (needs pip + apt/apk). Default `python:3.14-slim`. Overridable in *Platform settings → MCP server base images*. |
+| `MCP_SERVER_RUNTIME_IMAGE` | Base image for the runtime stage of generated servers. Default `python:3.14-slim`; hardened deployments point it at a non-root, distroless base (e.g. `dhi.io/python:3.14-debian13`). Overridable in *Platform settings*. |
 | `MAX_MCP_SERVER_REPLICAS` | Per-server replica cap (Swarm only). |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First-boot seed user. Ignored once a user exists. |
 
