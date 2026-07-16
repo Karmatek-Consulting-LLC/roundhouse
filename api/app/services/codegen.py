@@ -907,6 +907,12 @@ def _has_custom_ca(ca: str | None) -> bool:
     return bool(ca and ca.strip())
 
 
+def _is_alpine(image_ref: str | None) -> bool:
+    """Whether a base image reference is Alpine (musl), so codegen emits `apk`
+    instead of `apt-get`. Detected from the tag (e.g. `...:3.14-alpine3.24`)."""
+    return "alpine" in (image_ref or "").lower()
+
+
 def generate_dockerfile(
     spec: ServerSpec,
     custom_ca: str | None = None,
@@ -923,15 +929,20 @@ def generate_dockerfile(
     server source. Base images are configurable (MCP_SERVER_BUILD_IMAGE /
     MCP_SERVER_RUNTIME_IMAGE); pass overrides for tests.
 
-    Distroless caveat: apt packages are installed in the build stage so their
-    headers/tools are available while compiling wheels, but system shared
+    Distroless caveat: apt/apk packages are installed in the build stage so
+    their headers/tools are available while compiling wheels, but system shared
     libraries they provide are NOT carried into the minimal runtime. Servers
     that need a system library at run time must bring it via a pip wheel or a
     custom runtime image.
+
+    Distro-aware: when the base image is Alpine (musl) the OS-package and CA
+    steps use `apk`; otherwise Debian's `apt-get`. `spec.apt_packages` names
+    must match the chosen distro's package names.
     """
     cfg = get_settings()
     build_image = build_image or cfg.mcp_server_build_image
     runtime_image = runtime_image or cfg.mcp_server_runtime_image
+    alpine = _is_alpine(build_image)
 
     has_ca = _has_custom_ca(custom_ca)
     # Proxied servers (code-first + remote) run proxy.py as the entrypoint:
@@ -950,21 +961,32 @@ def generate_dockerfile(
     lines.append("WORKDIR /app")
     if has_ca:
         # Append the corp CA to the trust bundle before any network call so pip
-        # (and any build-time fetch) trusts a TLS-inspecting proxy.
+        # (and any build-time fetch) trusts a TLS-inspecting proxy. Alpine needs
+        # the ca-certificates package for update-ca-certificates + the bundle.
         lines.append("COPY custom-ca.crt /usr/local/share/ca-certificates/custom-ca.crt")
-        lines.append(
-            "RUN cat /usr/local/share/ca-certificates/custom-ca.crt >> /etc/ssl/certs/ca-certificates.crt \\"
-        )
-        lines.append("    && update-ca-certificates")
+        if alpine:
+            lines.append("RUN apk add --no-cache ca-certificates \\")
+            lines.append(
+                "    && cat /usr/local/share/ca-certificates/custom-ca.crt >> /etc/ssl/certs/ca-certificates.crt \\"
+            )
+            lines.append("    && update-ca-certificates")
+        else:
+            lines.append(
+                "RUN cat /usr/local/share/ca-certificates/custom-ca.crt >> /etc/ssl/certs/ca-certificates.crt \\"
+            )
+            lines.append("    && update-ca-certificates")
         lines.append("ENV PIP_CERT=/etc/ssl/certs/ca-certificates.crt \\")
         lines.append("    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \\")
         lines.append("    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt")
     if spec.apt_packages:
-        apt = " ".join(spec.apt_packages)
-        lines.append(
-            f"RUN apt-get update && apt-get install -y --no-install-recommends {apt} \\"
-        )
-        lines.append("    && rm -rf /var/lib/apt/lists/*")
+        pkgs = " ".join(spec.apt_packages)
+        if alpine:
+            lines.append(f"RUN apk add --no-cache {pkgs}")
+        else:
+            lines.append(
+                f"RUN apt-get update && apt-get install -y --no-install-recommends {pkgs} \\"
+            )
+            lines.append("    && rm -rf /var/lib/apt/lists/*")
     # A relocatable venv is the artifact we hand to the runtime stage. --copies
     # bundles the interpreter so it doesn't depend on symlinks back into the
     # build image's Python home.

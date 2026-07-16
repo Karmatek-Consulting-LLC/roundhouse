@@ -192,3 +192,33 @@ def test_dockerfile_apt_packages_install_in_build_stage_only():
     build_stage, runtime_stage = df.split("FROM ", 2)[1], df.split("FROM ", 2)[2]
     assert "apt-get install" in build_stage
     assert "apt-get" not in runtime_stage
+
+
+def test_dockerfile_alpine_base_uses_apk_not_apt():
+    spec = ServerSpec(
+        name="s",
+        primitives=[{"kind": "tool", "name": "t", "code": "return 'ok'"}],
+        apt_packages=["libxml2"],
+    )
+    df = codegen.generate_dockerfile(
+        spec,
+        build_image="dhi.io/python:3.14-alpine3.24-dev",
+        runtime_image="dhi.io/python:3.14-alpine3.24",
+    )
+    assert "apk add --no-cache libxml2" in df
+    assert "apt-get" not in df
+
+
+def test_dockerfile_alpine_ca_uses_apk_ca_certificates():
+    spec = ServerSpec(name="s", primitives=[{"kind": "tool", "name": "t", "code": "return 'ok'"}])
+    df = codegen.generate_dockerfile(
+        spec,
+        custom_ca="-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----",
+        build_image="dhi.io/python:3.14-alpine3.24-dev",
+        runtime_image="dhi.io/python:3.14-alpine3.24",
+    )
+    assert "apk add --no-cache ca-certificates" in df
+    assert "update-ca-certificates" in df
+    # Runtime still carries the combined bundle + trust env.
+    assert "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" in df
+
