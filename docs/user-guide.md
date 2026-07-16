@@ -333,6 +333,24 @@ an `X-Registry-Config` header for the `FROM` pull.
 
 ![Platform settings](screenshots/dark/50-settings.png)
 
+**Understanding scan results.** Most findings on a generated server image
+come from the **base image's OS packages** — not your server code or its
+Python dependencies (the fastmcp dependency tree typically scans clean). On
+the Debian base the majority (~77%) are attributed to `linux-libc-dev`,
+which ships only Linux kernel *headers*: a container uses the host's kernel,
+so those kernel CVEs are not exploitable through the image, and none have a
+fix. Two ways to cut the noise:
+
+- **Use a minimal base.** The DHI **Alpine** variant ships no
+  `linux-libc-dev` and scans essentially clean — set it under *MCP server
+  base images*. Trade-off: musl-based, so a pip package without a
+  `musllinux` wheel would have to compile from source at build time.
+- **Suppress the non-applicable package.** For Roundhouse's own CI / local
+  Trivy runs, [`deploy/trivy/ignore-policy.rego`](../deploy/trivy/ignore-policy.rego)
+  drops `linux-libc-dev`. Harbor's built-in scanner only supports CVE-ID
+  allowlists per project (not per package), so on Harbor prefer the
+  minimal-base approach.
+
 ### Users
 
 User accounts with role assignment. The seeded demo includes a handful of
