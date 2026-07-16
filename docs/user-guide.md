@@ -300,7 +300,61 @@ report on each server's Overview tab. Pairs well with Harbor's
 *prevent vulnerable images from running* policy: the badge tells you why
 a deploy was blocked before you go digging.
 
+**MCP server base images.** Generated servers build from a multi-stage
+Dockerfile: a *build* image (needs pip + apt/apk) compiles dependencies
+into a virtualenv, and a *runtime* image runs the server. Both default to
+`python:3.14-slim`, which pulls anonymously from Docker Hub — a fresh
+install builds servers with zero registry setup. Deployments that require
+a hardened base override both under *MCP server base images* (or the
+`MCP_SERVER_BUILD_IMAGE` / `MCP_SERVER_RUNTIME_IMAGE` env vars) — e.g. the
+Docker Hardened Images `dhi.io/python:3.14-debian13-dev` (build) and
+`dhi.io/python:3.14-debian13` (runtime, non-root + distroless); the
+generated Dockerfile already handles shell-less runtimes. A blank field
+falls back to the env default. When you pick an Alpine base, codegen
+switches OS-package installs from `apt-get` to `apk`, and the server's
+*OS packages* editor tells users which distro's package names to use.
+
+**Base image registry credentials.** When the base images live on a private
+registry, enter the pull credentials under *Base image registry
+credentials*. The password is encrypted at rest (AES envelope keyed off
+`APP_KEY`, like the SSO client secret) and delivered to the build daemon as
+an `X-Registry-Config` header for the `FROM` pull.
+
+> **Docker 29+ / BuildKit.** Docker Engine 29 builds exclusively with
+> BuildKit, which **ignores `X-Registry-Config`** — so on those engines the
+> platform cannot authenticate a private base-image pull over the build
+> API, and *Base image registry credentials* have no effect. Use a base
+> image that is **anonymously pullable** (public `python` images work as-is):
+> mirror the hardened base into an anonymous-pull project on your internal
+> registry and point *MCP server base images* at the mirror. This also
+> removes per-node egress to the public base registry. Example:
+>
+> ```bash
+> docker pull dhi.io/python:3.14-debian13-dev
+> docker tag  dhi.io/python:3.14-debian13-dev  registry.example/mcp_server_base/python:3.14-debian13-dev
+> docker push registry.example/mcp_server_base/python:3.14-debian13-dev
+> # (repeat for :3.14-debian13, then set both under MCP server base images)
+> ```
+
 ![Platform settings](screenshots/dark/50-settings.png)
+
+**Understanding scan results.** Most findings on a generated server image
+come from the **base image's OS packages** — not your server code or its
+Python dependencies (the fastmcp dependency tree typically scans clean). On
+the Debian base the majority (~77%) are attributed to `linux-libc-dev`,
+which ships only Linux kernel *headers*: a container uses the host's kernel,
+so those kernel CVEs are not exploitable through the image, and none have a
+fix. Two ways to cut the noise:
+
+- **Use a minimal base.** The DHI **Alpine** variant ships no
+  `linux-libc-dev` and scans essentially clean — set it under *MCP server
+  base images*. Trade-off: musl-based, so a pip package without a
+  `musllinux` wheel would have to compile from source at build time.
+- **Suppress the non-applicable package.** For Roundhouse's own CI / local
+  Trivy runs, [`deploy/trivy/ignore-policy.rego`](../deploy/trivy/ignore-policy.rego)
+  drops `linux-libc-dev`. Harbor's built-in scanner only supports CVE-ID
+  allowlists per project (not per package), so on Harbor prefer the
+  minimal-base approach.
 
 ### Users
 
@@ -341,6 +395,8 @@ actually touch:
 | `APP_KEY` | `base64:<32 random bytes>` — encrypts runtime tokens at rest. Generate with `printf 'base64:%s' "$(openssl rand -base64 32)"`. |
 | `MCP_BASE_URL` | The URL clients see for spawned servers. Set this when deploying past localhost. |
 | `MCP_DOCKER_HOST` | `/var/run/docker.sock` (default) or `tcp://socket-proxy:2375` for hardened Swarm setups. |
+| `MCP_SERVER_BUILD_IMAGE` | Base image for the build stage of generated servers (needs pip + apt/apk). Default `python:3.14-slim`. Overridable in *Platform settings → MCP server base images*. |
+| `MCP_SERVER_RUNTIME_IMAGE` | Base image for the runtime stage of generated servers. Default `python:3.14-slim`; hardened deployments point it at a non-root, distroless base (e.g. `dhi.io/python:3.14-debian13`). Overridable in *Platform settings*. |
 | `MAX_MCP_SERVER_REPLICAS` | Per-server replica cap (Swarm only). |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First-boot seed user. Ignored once a user exists. |
 

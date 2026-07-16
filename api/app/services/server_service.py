@@ -8,10 +8,15 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import ServerOwner
 from app.platform_settings import (
+    SETTING_BASE_REGISTRY,
+    SETTING_BASE_REGISTRY_PASSWORD,
+    SETTING_BASE_REGISTRY_USERNAME,
     SETTING_CUSTOM_CA_CERT,
     SETTING_DOCKER_REGISTRY,
     SETTING_DOCKER_REGISTRY_PASSWORD,
     SETTING_DOCKER_REGISTRY_USERNAME,
+    SETTING_MCP_BASE_BUILD_IMAGE,
+    SETTING_MCP_BASE_RUNTIME_IMAGE,
     get_setting,
 )
 from app.services import codegen, global_env, server_auth
@@ -21,6 +26,20 @@ from app.services.store import ServerStore
 from app.services.template_engine import TemplateEngine
 
 logger = logging.getLogger(__name__)
+
+
+def _registry_host(image_ref: str) -> str | None:
+    """Registry hostname component of an image reference, or None for a bare
+    Docker Hub name. "dhi.io/python:3.14-debian13" -> "dhi.io"; "python:3.12-
+    slim" -> None (Hub, pulled anonymously). The first path segment is a
+    registry only when it looks like a host (has a dot/port, or is localhost)."""
+    ref = (image_ref or "").strip()
+    if "/" not in ref:
+        return None
+    first = ref.split("/", 1)[0]
+    if "." in first or ":" in first or first == "localhost":
+        return first
+    return None
 
 
 def _resolve_secret_env(name: str, value: str, app_key: str) -> str | None:
@@ -215,6 +234,47 @@ class ServerService:
             return None
         return {"username": username, "password": password}
 
+    def effective_base_images(self, db: Session) -> tuple[str, str]:
+        """(build_image, runtime_image) for generated servers: the UI-configured
+        platform settings when set, else the MCP_SERVER_*_IMAGE env defaults."""
+        cfg = get_settings()
+        build = (get_setting(db, SETTING_MCP_BASE_BUILD_IMAGE, "") or "").strip()
+        runtime = (get_setting(db, SETTING_MCP_BASE_RUNTIME_IMAGE, "") or "").strip()
+        return (
+            build or cfg.mcp_server_build_image,
+            runtime or cfg.mcp_server_runtime_image,
+        )
+
+    def base_registry_auth(self, db: Session) -> dict[str, dict[str, str]] | None:
+        """Credentials for PULLING the base images at build time, as a map of
+        {registry_host: {"username","password"}} suitable for the Docker build
+        endpoint's X-Registry-Config. Returns None when no base-registry
+        credential is configured. The host is the explicit SETTING_BASE_REGISTRY
+        when set, otherwise the registry component parsed from the effective base
+        images (e.g. "dhi.io"). The stored password is decrypted here."""
+        username = (get_setting(db, SETTING_BASE_REGISTRY_USERNAME, "") or "").strip()
+        stored_pw = get_setting(db, SETTING_BASE_REGISTRY_PASSWORD, "") or ""
+        if not username or not stored_pw:
+            return None
+        password = _resolve_secret_env(
+            SETTING_BASE_REGISTRY_PASSWORD, stored_pw, get_settings().app_key
+        )
+        if not password:
+            return None
+        hosts: set[str] = set()
+        explicit = (get_setting(db, SETTING_BASE_REGISTRY, "") or "").strip()
+        if explicit:
+            hosts.add(explicit)
+        else:
+            build_img, runtime_img = self.effective_base_images(db)
+            for ref in (build_img, runtime_img):
+                host = _registry_host(ref)
+                if host:
+                    hosts.add(host)
+        if not hosts:
+            return None
+        return {host: {"username": username, "password": password} for host in hosts}
+
     def base_url(self, db: Session) -> str:
         # Single source of truth: the public base URL is the deploy-time
         # MCP_BASE_URL (from PUBLIC_HOSTNAME), kept in lockstep with Traefik
@@ -281,7 +341,12 @@ class ServerService:
             len(declared_secrets),
             f"; NOT applied: {dropped}" if dropped else "",
         )
-        with buildctx.materialize(spec, self.store, self.custom_ca_cert(db)) as ctx:
+        with buildctx.materialize(
+            spec,
+            self.store,
+            self.custom_ca_cert(db),
+            *self.effective_base_images(db),
+        ) as ctx:
             result = self.docker.build_and_start(
                 server_name=spec.name,
                 build_context=ctx,
@@ -294,6 +359,7 @@ class ServerService:
                 memory_limit_mb=spec.memory_limit_mb,
                 route_port=codegen.route_port_for(spec),
                 placement_constraints=spec.placement_constraints,
+                base_registry_auth=self.base_registry_auth(db),
             )
         server_auth.clear_redeploy_required(db, spec.name)
         return result

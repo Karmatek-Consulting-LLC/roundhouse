@@ -5,19 +5,32 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Boxes, Plus, X } from "lucide-react";
 
+/** Effective base image + package ecosystem for generated server builds, from
+ * GET /servers/build-info. Null while loading (the hint is omitted rather than
+ * guessed). */
+export interface ServerBuildInfo {
+  build_image: string;
+  runtime_image: string;
+  distro: "debian" | "alpine";
+}
+
 interface AptPackageManagerProps {
   packages: string[];
   onChange: (packages: string[]) => void;
+  buildInfo?: ServerBuildInfo | null;
 }
 
 // Mirrors the backend regex on /servers/{name}/apt-packages.
 // Lets through versioned forms like libpq5=15.4-1 while keeping the apt CLI
-// argv injection surface tight.
+// argv injection surface tight. Alpine (apk) names fit the same shape.
 const APT_NAME = /^[a-zA-Z0-9][a-zA-Z0-9+._:=~-]*$/;
 
-export function AptPackageManager({ packages, onChange }: AptPackageManagerProps) {
+export function AptPackageManager({ packages, onChange, buildInfo }: AptPackageManagerProps) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const alpine = buildInfo?.distro === "alpine";
+  const tool = alpine ? "apk" : "apt";
 
   function add() {
     const v = value.trim();
@@ -43,8 +56,17 @@ export function AptPackageManager({ packages, onChange }: AptPackageManagerProps
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <Boxes className="h-4 w-4 text-muted-foreground" />
-        <Label className="text-sm font-medium">OS packages (apt)</Label>
+        <Label className="text-sm font-medium">OS packages ({tool})</Label>
       </div>
+      {buildInfo && (
+        <p className="text-xs text-muted-foreground">
+          Installed with <code className="rounded bg-muted px-1">{alpine ? "apk" : "apt-get"}</code>{" "}
+          into the{" "}
+          <code className="rounded bg-muted px-1 break-all">{buildInfo.build_image}</code> base
+          image — use {alpine ? "Alpine" : "Debian"} package names.
+          {alpine && " Alpine is musl-based, so Debian package names may not exist here."}
+        </p>
+      )}
       <p className="text-xs text-muted-foreground">
         Versioned names like{" "}
         <code className="rounded bg-muted px-1">libpq5=15.4-1</code> are allowed.
@@ -73,7 +95,7 @@ export function AptPackageManager({ packages, onChange }: AptPackageManagerProps
 
       {packages.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">
-          No apt packages.
+          No {tool} packages.
         </p>
       ) : (
         <div className="flex flex-wrap gap-2">

@@ -64,7 +64,13 @@ def extract_into(data: bytes, dest: Path | str) -> None:
 
 
 @contextmanager
-def materialize(spec, store, custom_ca: str | None) -> Generator[Path, None, None]:
+def materialize(
+    spec,
+    store,
+    custom_ca: str | None,
+    build_image: str | None = None,
+    runtime_image: str | None = None,
+) -> Generator[Path, None, None]:
     """Build a complete docker build context in a temp dir from DB state and
     yield its path; always cleaned up. Mirrors the old persistent server_dir
     layout: prior build files first, then codegen overwrites server.py /
@@ -77,7 +83,9 @@ def materialize(spec, store, custom_ca: str | None) -> Generator[Path, None, Non
         blob = store.get_build_files(spec.name)
         if blob:
             extract_into(blob, tmp)
-        codegen.write_build_context(spec, tmp, custom_ca)
+        codegen.write_build_context(
+            spec, tmp, custom_ca, build_image=build_image, runtime_image=runtime_image
+        )
         AssetStore(spec.name).copy_into_build_context(tmp)
         yield tmp
     finally:

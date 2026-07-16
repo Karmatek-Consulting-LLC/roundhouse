@@ -34,6 +34,23 @@ SETTING_DOCKER_REGISTRY_PASSWORD = "docker_registry_password"
 SETTING_CUSTOM_CA_CERT = "custom_ca_cert"
 SETTING_GLOBAL_ENV_VARS = "mcp_global_env_vars"
 
+# Base image registry used to PULL the generated MCP-server base images at build
+# time (e.g. dhi.io for Docker Hardened Images). Distinct from the docker
+# registry above, which is where BUILT server images are PUSHED. The password is
+# encrypted at rest with the app.crypto AES envelope (keyed off APP_KEY), like
+# the Entra client secret. Delivered to the build daemon as X-Registry-Config so
+# the authenticated `FROM` pull succeeds.
+SETTING_BASE_REGISTRY = "base_registry"
+SETTING_BASE_REGISTRY_USERNAME = "base_registry_username"
+SETTING_BASE_REGISTRY_PASSWORD = "base_registry_password"
+
+# Base images for generated MCP-server builds, overriding the MCP_SERVER_*_IMAGE
+# env defaults when set. Two stages: the build image (root; ships pip + apt) and
+# the runtime image (non-root, distroless). Stored plain — they're image refs,
+# not secrets.
+SETTING_MCP_BASE_BUILD_IMAGE = "mcp_base_build_image"
+SETTING_MCP_BASE_RUNTIME_IMAGE = "mcp_base_runtime_image"
+
 # Registry vulnerability scanning. When set to "harbor", the platform reads
 # Trivy scan overviews from the registry's REST API (using the registry
 # credentials above) and surfaces per-server vulnerability badges in the UI.

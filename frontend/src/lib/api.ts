@@ -751,6 +751,15 @@ export const api = {
       max_mcp_server_replicas: number;
       docker_swarm_mode: boolean;
     }>("/servers/limits"),
+  /** Effective base images for generated server builds and the build image's
+   * package ecosystem, so the OS-packages UI can say whether names must be
+   * Debian (apt-get) or Alpine (apk) packages. */
+  getServerBuildInfo: () =>
+    request<{
+      build_image: string;
+      runtime_image: string;
+      distro: "debian" | "alpine";
+    }>("/servers/build-info"),
   /** Node-label pairs available for Swarm placement selection (derived from
    * actual node labels, not free-form). `supported` is false off Swarm. */
   listNodeLabels: () =>
@@ -1207,6 +1216,15 @@ export const api = {
     /** Registry vulnerability scanner: "" (off) or "harbor". */
     registry_scanner: string;
     registry_scanner_api_url: string;
+    /** Base image registry (pull creds for generated servers' FROM images). */
+    base_registry: string;
+    base_registry_username: string;
+    base_registry_password_configured: boolean;
+    /** Base image overrides (blank = using the env default in *_effective). */
+    mcp_base_build_image: string;
+    mcp_base_runtime_image: string;
+    mcp_base_build_image_effective: string;
+    mcp_base_runtime_image_effective: string;
   }>("/settings"),
   updateRegistryScanner: (body: { scanner: string; api_url?: string }) =>
     request<{ registry_scanner: string; registry_scanner_api_url: string }>(
@@ -1242,6 +1260,29 @@ export const api = {
       docker_registry_username: string;
       docker_registry_password_configured: boolean;
     }>("/settings/docker-registry", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  updateBaseRegistry: (body: {
+    registry?: string;
+    username?: string;
+    password?: string;
+  }) =>
+    request<{
+      base_registry: string;
+      base_registry_username: string;
+      base_registry_password_configured: boolean;
+    }>("/settings/base-registry", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  updateBaseImages: (body: { build_image: string; runtime_image: string }) =>
+    request<{
+      mcp_base_build_image: string;
+      mcp_base_runtime_image: string;
+      mcp_base_build_image_effective: string;
+      mcp_base_runtime_image_effective: string;
+    }>("/settings/base-images", {
       method: "PUT",
       body: JSON.stringify(body),
     }),

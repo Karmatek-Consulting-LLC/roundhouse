@@ -69,6 +69,17 @@ def _encode_auth(auth: dict[str, str]) -> str:
     ).rstrip(b"=").decode("ascii")
 
 
+def _encode_registry_config(auth_map: dict[str, dict[str, str]]) -> str:
+    """Encode a {registry_host: {username,password}} map for the build endpoint's
+    X-Registry-Config header, so the daemon can authenticate base-image (`FROM`)
+    pulls from a private registry (e.g. dhi.io)."""
+    cfg = {
+        host: {"username": a["username"], "password": a["password"]}
+        for host, a in auth_map.items()
+    }
+    return base64.urlsafe_b64encode(json.dumps(cfg).encode("utf-8")).rstrip(b"=").decode("ascii")
+
+
 def _traefik_labels(server_name: str, route_port: int = DEFAULT_ROUTE_PORT) -> dict[str, str]:
     router = f"mcp-{server_name}"
     entrypoints = get_settings().mcp_traefik_entrypoints
@@ -286,15 +297,22 @@ class DockerClient:
         build_context: Path | str,
         registry_prefix: str | None = None,
         registry_auth: dict[str, str] | None = None,
+        base_registry_auth: dict[str, dict[str, str]] | None = None,
     ) -> str:
         tag = image_tag(server_name, registry_prefix)
         logger.info("Building image %s from %s", tag, build_context)
         tar_bytes = self._tar_bytes(Path(build_context))
+        headers = {"Content-Type": "application/x-tar"}
+        # Authenticate the base-image (`FROM`) pull from a private registry
+        # (e.g. dhi.io). Without this the daemon does an anonymous manifest HEAD
+        # and the build fails with 401 Unauthorized.
+        if base_registry_auth:
+            headers["X-Registry-Config"] = _encode_registry_config(base_registry_auth)
         frames = self._http.post_stream(
             "build",
             {"t": tag, "rm": "1"},
             tar_bytes,
-            {"Content-Type": "application/x-tar"},
+            headers,
         )
         for frame in frames:
             if "error" in frame:
@@ -346,6 +364,7 @@ class DockerClient:
         memory_limit_mb: int | None = None,
         route_port: int = DEFAULT_ROUTE_PORT,
         placement_constraints: list[dict] | None = None,
+        base_registry_auth: dict[str, dict[str, str]] | None = None,
     ) -> dict:
         env_vars = env_vars or {}
         # Guardrail: a multi-node Swarm distributes images via a registry. Without
@@ -360,7 +379,10 @@ class DockerClient:
                 "nodes (their tasks fail with 'No such image'). Configure a registry "
                 "under Platform Settings -> Docker registry, then redeploy."
             )
-        tag = self.build_image(server_name, build_context, registry_prefix, registry_auth)
+        tag = self.build_image(
+            server_name, build_context, registry_prefix, registry_auth,
+            base_registry_auth=base_registry_auth,
+        )
         if self.swarm_mode():
             return self._create_service(
                 server_name, tag, template_name, env_vars, replicas, registry_auth,

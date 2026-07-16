@@ -13,10 +13,15 @@ from app.db import get_db
 from app.deps import require_superadmin
 from app.models import User
 from app.platform_settings import (
+    SETTING_BASE_REGISTRY,
+    SETTING_BASE_REGISTRY_PASSWORD,
+    SETTING_BASE_REGISTRY_USERNAME,
     SETTING_CUSTOM_CA_CERT,
     SETTING_DOCKER_REGISTRY,
     SETTING_DOCKER_REGISTRY_PASSWORD,
     SETTING_DOCKER_REGISTRY_USERNAME,
+    SETTING_MCP_BASE_BUILD_IMAGE,
+    SETTING_MCP_BASE_RUNTIME_IMAGE,
     SETTING_REGISTRY_SCANNER,
     SETTING_REGISTRY_SCANNER_API_URL,
     get_setting,
@@ -48,6 +53,17 @@ def _password_configured(db: Session) -> bool:
     return bool((get_setting(db, SETTING_DOCKER_REGISTRY_PASSWORD, "") or "").strip())
 
 
+def _base_registry_password_configured(db: Session) -> bool:
+    return bool((get_setting(db, SETTING_BASE_REGISTRY_PASSWORD, "") or "").strip())
+
+
+def _effective_base_images(db: Session) -> tuple[str, str]:
+    cfg = get_settings()
+    build = (get_setting(db, SETTING_MCP_BASE_BUILD_IMAGE, "") or "").strip()
+    runtime = (get_setting(db, SETTING_MCP_BASE_RUNTIME_IMAGE, "") or "").strip()
+    return build or cfg.mcp_server_build_image, runtime or cfg.mcp_server_runtime_image
+
+
 @router.get("")
 def index(_: User = Depends(require_superadmin), db: Session = Depends(get_db)):
     cfg = get_settings()
@@ -71,6 +87,17 @@ def index(_: User = Depends(require_superadmin), db: Session = Depends(get_db)):
         "tls_cert": tls_cert.status(db),
         "registry_scanner": (get_setting(db, SETTING_REGISTRY_SCANNER, "") or "").strip(),
         "registry_scanner_api_url": (get_setting(db, SETTING_REGISTRY_SCANNER_API_URL, "") or "").strip(),
+        # Base image registry (pull creds for the generated servers' FROM images,
+        # e.g. dhi.io). Password never returned - only whether it is configured.
+        "base_registry": (get_setting(db, SETTING_BASE_REGISTRY, "") or "").strip(),
+        "base_registry_username": get_setting(db, SETTING_BASE_REGISTRY_USERNAME, "") or "",
+        "base_registry_password_configured": _base_registry_password_configured(db),
+        # Base images for generated MCP servers. `*_configured` is the operator
+        # override (blank = using the env default shown in `*_effective`).
+        "mcp_base_build_image": (get_setting(db, SETTING_MCP_BASE_BUILD_IMAGE, "") or "").strip(),
+        "mcp_base_runtime_image": (get_setting(db, SETTING_MCP_BASE_RUNTIME_IMAGE, "") or "").strip(),
+        "mcp_base_build_image_effective": _effective_base_images(db)[0],
+        "mcp_base_runtime_image_effective": _effective_base_images(db)[1],
     }
 
 
@@ -134,6 +161,83 @@ def update_docker_registry(
         "docker_registry_effective": _registry_prefix(db),
         "docker_registry_username": get_setting(db, SETTING_DOCKER_REGISTRY_USERNAME, "") or "",
         "docker_registry_password_configured": _password_configured(db),
+    }
+
+
+def _encrypt_secret(value: str) -> str:
+    """Encrypt a secret at rest with the app.crypto AES envelope (like the Entra
+    client secret / TLS key). Falls back to plaintext only when APP_KEY is unset
+    (dev), mirroring the other secret settings."""
+    from app.crypto import encrypt
+
+    app_key = get_settings().app_key
+    return encrypt(value, app_key) if app_key else value
+
+
+class BaseRegistryIn(BaseModel):
+    # Registry host to authenticate for base-image (FROM) pulls, e.g. "dhi.io".
+    # Blank derives the host from the configured base images.
+    registry: str = ""
+    username: str = ""
+    # None = leave unchanged; "" = clear; non-empty = set (stored encrypted).
+    password: str | None = None
+
+
+@router.put("/base-registry")
+def update_base_registry(
+    payload: BaseRegistryIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    """Credentials for pulling the generated servers' base images (Docker
+    Hardened Images at dhi.io) at build time. The password is encrypted at rest
+    and delivered to the build daemon as X-Registry-Config."""
+    put_setting(db, SETTING_BASE_REGISTRY, (payload.registry or "").strip())
+    put_setting(db, SETTING_BASE_REGISTRY_USERNAME, (payload.username or "").strip())
+    if payload.password is not None:
+        put_setting(
+            db,
+            SETTING_BASE_REGISTRY_PASSWORD,
+            _encrypt_secret(payload.password) if payload.password else "",
+        )
+    audit_record(db, me, "settings.base_registry.update", "settings", "base_registry", {
+        "registry": (payload.registry or "").strip(),
+        "username": (payload.username or "").strip(),
+        "password_changed": payload.password is not None,
+    })
+    return {
+        "base_registry": (get_setting(db, SETTING_BASE_REGISTRY, "") or "").strip(),
+        "base_registry_username": get_setting(db, SETTING_BASE_REGISTRY_USERNAME, "") or "",
+        "base_registry_password_configured": _base_registry_password_configured(db),
+    }
+
+
+class BaseImagesIn(BaseModel):
+    # Blank = fall back to the MCP_SERVER_*_IMAGE env default.
+    build_image: str = ""
+    runtime_image: str = ""
+
+
+@router.put("/base-images")
+def update_base_images(
+    payload: BaseImagesIn,
+    me: User = Depends(require_superadmin),
+    db: Session = Depends(get_db),
+):
+    """Override the base images for generated MCP servers (build + runtime
+    stages). Blank restores the env default."""
+    put_setting(db, SETTING_MCP_BASE_BUILD_IMAGE, (payload.build_image or "").strip())
+    put_setting(db, SETTING_MCP_BASE_RUNTIME_IMAGE, (payload.runtime_image or "").strip())
+    audit_record(db, me, "settings.base_images.update", "settings", "base_images", {
+        "build_image": (payload.build_image or "").strip(),
+        "runtime_image": (payload.runtime_image or "").strip(),
+    })
+    build_eff, runtime_eff = _effective_base_images(db)
+    return {
+        "mcp_base_build_image": (get_setting(db, SETTING_MCP_BASE_BUILD_IMAGE, "") or "").strip(),
+        "mcp_base_runtime_image": (get_setting(db, SETTING_MCP_BASE_RUNTIME_IMAGE, "") or "").strip(),
+        "mcp_base_build_image_effective": build_eff,
+        "mcp_base_runtime_image_effective": runtime_eff,
     }
 
 

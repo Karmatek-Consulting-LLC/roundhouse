@@ -112,6 +112,9 @@ class KubernetesClient:
         route_port: int = 8000,
         # Accepted for Orchestrator-protocol parity; K8s placement is not wired.
         placement_constraints: list[dict] | None = None,
+        # Accepted for parity; base-registry auth for the Kaniko/docker builder
+        # is configured on the builder itself, not passed per-build here.
+        base_registry_auth: dict[str, dict[str, str]] | None = None,
     ) -> dict:
         if not registry_prefix:
             raise DockerError(

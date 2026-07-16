@@ -20,7 +20,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.deps import current_user
 from app.models import ServerOwner, ServerScope, User
-from app.services import discovery, global_env, permissions
+from app.services import codegen, discovery, global_env, permissions
 from app.services.docker import DockerError, DockerNotFoundError, RegistryRequiredError, get_docker
 from app.services.git_manifest import parse_manifest
 from app.services.server_service import get_server_service
@@ -311,6 +311,22 @@ def limits(_: User = Depends(current_user)):
         "orchestrator": get_docker().mode(),
         "supports_scaling": get_docker().supports_scaling(),
         "docker_swarm_mode": get_docker().supports_scaling(),
+    }
+
+
+@router.get("/build-info")
+def build_info(_: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Effective base images for generated server builds (env default or the
+    Platform Settings override), plus the build image's package ecosystem
+    ("debian" -> apt-get, "alpine" -> apk) so the OS-packages UI can tell users
+    which distro's package names to use. Any authenticated user may read this -
+    image refs are not secrets, and non-admin server owners are the ones
+    entering package names."""
+    build_image, runtime_image = get_server_service().effective_base_images(db)
+    return {
+        "build_image": build_image,
+        "runtime_image": runtime_image,
+        "distro": codegen.base_image_distro(build_image),
     }
 
 
@@ -637,6 +653,7 @@ def store(
                     registry_prefix=service.registry_prefix(db),
                     registry_auth=service.registry_auth(db),
                     placement_constraints=spec.placement_constraints,
+                    base_registry_auth=service.base_registry_auth(db),
                 )
             finally:
                 shutil.rmtree(build_context, ignore_errors=True)

@@ -58,6 +58,25 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
   const [savingScanner, setSavingScanner] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Base image registry (pull creds for generated servers' FROM images, e.g. dhi.io)
+  const [baseRegistry, setBaseRegistry] = useState("");
+  const [savedBaseRegistry, setSavedBaseRegistry] = useState("");
+  const [baseUsername, setBaseUsername] = useState("");
+  const [savedBaseUsername, setSavedBaseUsername] = useState("");
+  const [basePassword, setBasePassword] = useState("");
+  const [basePasswordClearRequested, setBasePasswordClearRequested] = useState(false);
+  const [basePasswordConfigured, setBasePasswordConfigured] = useState(false);
+  const [savingBaseRegistry, setSavingBaseRegistry] = useState(false);
+
+  // Base images for generated MCP servers (build + runtime stages)
+  const [baseBuildImage, setBaseBuildImage] = useState("");
+  const [savedBaseBuildImage, setSavedBaseBuildImage] = useState("");
+  const [baseRuntimeImage, setBaseRuntimeImage] = useState("");
+  const [savedBaseRuntimeImage, setSavedBaseRuntimeImage] = useState("");
+  const [baseBuildEffective, setBaseBuildEffective] = useState("");
+  const [baseRuntimeEffective, setBaseRuntimeEffective] = useState("");
+  const [savingBaseImages, setSavingBaseImages] = useState(false);
+
   const refresh = useCallback(async () => {
     try {
       const data = await api.getSettings();
@@ -77,6 +96,19 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       setSavedRegistryScanner(data.registry_scanner ?? "");
       setScannerApiUrl(data.registry_scanner_api_url ?? "");
       setSavedScannerApiUrl(data.registry_scanner_api_url ?? "");
+      setBaseRegistry(data.base_registry ?? "");
+      setSavedBaseRegistry(data.base_registry ?? "");
+      setBaseUsername(data.base_registry_username ?? "");
+      setSavedBaseUsername(data.base_registry_username ?? "");
+      setBasePasswordConfigured(data.base_registry_password_configured ?? false);
+      setBasePassword("");
+      setBasePasswordClearRequested(false);
+      setBaseBuildImage(data.mcp_base_build_image ?? "");
+      setSavedBaseBuildImage(data.mcp_base_build_image ?? "");
+      setBaseRuntimeImage(data.mcp_base_runtime_image ?? "");
+      setSavedBaseRuntimeImage(data.mcp_base_runtime_image ?? "");
+      setBaseBuildEffective(data.mcp_base_build_image_effective ?? "");
+      setBaseRuntimeEffective(data.mcp_base_runtime_image_effective ?? "");
       setCustomCaConfigured(data.custom_ca_cert_configured);
       setCustomCaCount(data.custom_ca_cert_count ?? 0);
       setTlsCert(data.tls_cert ?? null);
@@ -129,6 +161,60 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
     dockerUsername !== savedDockerUsername ||
     registryPassword.length > 0 ||
     passwordClearRequested;
+
+  async function handleSaveBaseRegistry() {
+    setSavingBaseRegistry(true);
+    setError(null);
+    try {
+      const body: { registry: string; username: string; password?: string } = {
+        registry: baseRegistry,
+        username: baseUsername,
+      };
+      if (basePassword.length > 0) {
+        body.password = basePassword;
+      } else if (basePasswordClearRequested) {
+        body.password = "";
+      }
+      const data = await api.updateBaseRegistry(body);
+      setSavedBaseRegistry(data.base_registry);
+      setSavedBaseUsername(data.base_registry_username);
+      setBasePasswordConfigured(data.base_registry_password_configured);
+      setBasePassword("");
+      setBasePasswordClearRequested(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save base registry");
+    } finally {
+      setSavingBaseRegistry(false);
+    }
+  }
+
+  const baseRegistryDirty =
+    baseRegistry !== savedBaseRegistry ||
+    baseUsername !== savedBaseUsername ||
+    basePassword.length > 0 ||
+    basePasswordClearRequested;
+
+  async function handleSaveBaseImages() {
+    setSavingBaseImages(true);
+    setError(null);
+    try {
+      const data = await api.updateBaseImages({
+        build_image: baseBuildImage,
+        runtime_image: baseRuntimeImage,
+      });
+      setSavedBaseBuildImage(data.mcp_base_build_image);
+      setSavedBaseRuntimeImage(data.mcp_base_runtime_image);
+      setBaseBuildEffective(data.mcp_base_build_image_effective);
+      setBaseRuntimeEffective(data.mcp_base_runtime_image_effective);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save base images");
+    } finally {
+      setSavingBaseImages(false);
+    }
+  }
+
+  const baseImagesDirty =
+    baseBuildImage !== savedBaseBuildImage || baseRuntimeImage !== savedBaseRuntimeImage;
 
   const scannerDirty =
     registryScanner !== savedRegistryScanner || scannerApiUrl !== savedScannerApiUrl;
@@ -387,6 +473,149 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
               {savingScanner ? "Saving…" : "Save"}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5" />
+            Base image registry credentials
+          </CardTitle>
+          <CardDescription>
+            Credentials used to <strong>pull</strong> the base images that generated MCP
+            servers are built <code className="text-xs">FROM</code> (e.g. Docker Hardened
+            Images at <code className="text-xs">dhi.io</code>). Required when the base image
+            registry is private, or builds fail with{" "}
+            <code className="text-xs">401 Unauthorized</code>. The password is encrypted at
+            rest and delivered to the build daemon only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+            <div className="grid gap-2 min-w-0">
+              <Label htmlFor="base-registry">Registry host</Label>
+              <Input
+                id="base-registry"
+                placeholder="dhi.io"
+                value={baseRegistry}
+                onChange={(e) => setBaseRegistry(e.target.value)}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank to derive it from the configured base images.
+              </p>
+            </div>
+            <div className="grid gap-2 min-w-0">
+              <Label htmlFor="base-registry-user">Username</Label>
+              <Input
+                id="base-registry-user"
+                placeholder="Docker ID / org name"
+                value={baseUsername}
+                onChange={(e) => setBaseUsername(e.target.value)}
+                className="font-mono text-sm"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          <div className="grid gap-2 min-w-0">
+            <Label htmlFor="base-registry-pass">Password / access token</Label>
+            <Input
+              id="base-registry-pass"
+              type="password"
+              placeholder={
+                basePasswordConfigured
+                  ? "Leave blank to keep saved password"
+                  : "Personal or organization access token"
+              }
+              value={basePassword}
+              onChange={(e) => {
+                setBasePassword(e.target.value);
+                if (e.target.value.length > 0) setBasePasswordClearRequested(false);
+              }}
+              className="font-mono text-sm"
+              autoComplete="new-password"
+            />
+            {basePasswordConfigured && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-auto py-1 px-0 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => {
+                  setBasePasswordClearRequested(true);
+                  setBasePassword("");
+                }}
+              >
+                Clear saved password
+              </Button>
+            )}
+          </div>
+          <Button
+            onClick={handleSaveBaseRegistry}
+            disabled={savingBaseRegistry || !baseRegistryDirty}
+            size="sm"
+          >
+            <Save className="mr-1 h-4 w-4" />
+            {savingBaseRegistry ? "Saving…" : "Save"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Container className="h-5 w-5" />
+            MCP server base images
+          </CardTitle>
+          <CardDescription>
+            Base images for the generated servers&apos; multi-stage build. The{" "}
+            <strong>build</strong> image (needs pip + apt/apk) compiles dependencies; the{" "}
+            <strong>runtime</strong> image runs the server and may be a hardened,
+            distroless base (e.g.{" "}
+            <code className="text-xs">dhi.io/python:3.14-debian13</code>). Leave a field
+            blank to use the platform&apos;s environment default.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2 min-w-0">
+            <Label htmlFor="base-build-image">Build image</Label>
+            <Input
+              id="base-build-image"
+              placeholder={baseBuildEffective || "python:3.14-slim"}
+              value={baseBuildImage}
+              onChange={(e) => setBaseBuildImage(e.target.value)}
+              className="font-mono text-sm"
+            />
+          </div>
+          <div className="grid gap-2 min-w-0">
+            <Label htmlFor="base-runtime-image">Runtime image</Label>
+            <Input
+              id="base-runtime-image"
+              placeholder={baseRuntimeEffective || "python:3.14-slim"}
+              value={baseRuntimeImage}
+              onChange={(e) => setBaseRuntimeImage(e.target.value)}
+              className="font-mono text-sm"
+            />
+          </div>
+          <Button
+            onClick={handleSaveBaseImages}
+            disabled={savingBaseImages || !baseImagesDirty}
+            size="sm"
+          >
+            <Save className="mr-1 h-4 w-4" />
+            {savingBaseImages ? "Saving…" : "Save"}
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            Effective:{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono break-all">
+              {baseBuildEffective || "(unset)"}
+            </code>{" "}
+            →{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono break-all">
+              {baseRuntimeEffective || "(unset)"}
+            </code>
+          </p>
         </CardContent>
       </Card>
 
