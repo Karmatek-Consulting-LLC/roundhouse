@@ -77,6 +77,19 @@ SETTING_ENTRA_CLIENT_SECRET = "entra_client_secret"
 # links to it (adopts the user) instead of refusing. Opt-in; default off.
 SETTING_SSO_LINK_LOCAL = "sso_link_local_by_email"
 
+# OAuth 2.1 authorization server (Phase 2, MCP data path). The signing key is
+# an RSA private key in JWK JSON form, encrypted at rest with the app.crypto
+# AES envelope (keyed off APP_KEY) like the Entra client secret; the kid is
+# stored plain so /jwks.json can be served without decrypting. DCR defaults on
+# ("" == unset -> enabled); set "false" to close anonymous registration.
+# Assertion profiles is a JSON list configuring the jwt-bearer grant — see
+# app.services.oauth_assertions (docs/mcp-auth-id-jag.md §7 "pluggable
+# assertion profile").
+SETTING_OAUTH_SIGNING_KEY = "oauth_signing_key"
+SETTING_OAUTH_SIGNING_KID = "oauth_signing_kid"
+SETTING_OAUTH_DCR_ENABLED = "oauth_dcr_enabled"
+SETTING_OAUTH_ASSERTION_PROFILES = "oauth_assertion_profiles"
+
 # Per-context retention for the Logs console, days as a string (e.g.
 # "log_retention.auth" = "90"). "0" keeps forever. Unset falls back to the
 # RH_LOG_RETENTION_DAYS env var (default 90). See app.services.log_retention.

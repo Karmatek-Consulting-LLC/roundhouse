@@ -135,6 +135,138 @@ def _tokens_map(tokens: list[dict]) -> dict[str, dict]:
     return out
 
 
+def _oauth_verifier_src(spec: ServerSpec) -> str:
+    """Emit the Roundhouse OAuth JWT verifier + MultiAuth chain for a generated
+    server. Validation is stateless (docs/mcp-auth-id-jag.md §9): the platform's
+    JWKS is fetched once and cached; every request is then a local signature +
+    claims check with no callback to the platform. The audience gate is THIS
+    server's canonical URL — a token minted for a neighbour fails here, which
+    is the confused-deputy defence the MCP spec mandates.
+
+    Deliberately defensive about the fastmcp auth API surface (TokenVerifier /
+    AccessToken import points), so the emitted server degrades to duck-typed
+    equivalents rather than failing to boot on a point release."""
+    from app.config import get_settings
+
+    issuer = get_settings().mcp_base_url.rstrip("/")
+    audience = f"{issuer}/s/{spec.name}/mcp"
+    return "\n".join(
+        [
+            "# --- Roundhouse OAuth JWT verification (auto-generated) ---",
+            "import os as _rh_os",
+            "try:",
+            "    import httpx as _rh_httpx",
+            "except Exception:  # noqa: BLE001",
+            "    _rh_httpx = None",
+            "try:",
+            "    from fastmcp.server.auth import TokenVerifier as _RhVerifierBase",
+            "except Exception:  # noqa: BLE001",
+            "    _RhVerifierBase = object",
+            "try:",
+            "    from fastmcp.server.auth import AccessToken as _RhAccessToken",
+            "except Exception:  # noqa: BLE001",
+            "    try:",
+            "        from mcp.server.auth.provider import AccessToken as _RhAccessToken",
+            "    except Exception:  # noqa: BLE001",
+            "        _RhAccessToken = None",
+            "",
+            "_RH_OAUTH_ISSUER = " + _py_string(issuer),
+            "_RH_OAUTH_AUDIENCE = " + _py_string(audience),
+            "# In-cluster JWKS URL; the platform API stays off the hot path (the",
+            "# fetch happens once per TTL / on an unknown kid, never per request).",
+            "_RH_JWKS_URL = _rh_os.environ.get(",
+            "    'RH_JWKS_URL', 'http://platform-api:8000/.well-known/jwks.json')",
+            "_RH_JWKS_TTL_SECONDS = 3600.0",
+            "_rh_jwks_cache = {'raw': None, 'at': 0.0}",
+            "",
+            "",
+            "def _rh_jwks(force=False):",
+            "    import time as _time",
+            "    from authlib.jose import JsonWebKey as _JsonWebKey",
+            "    now = _time.monotonic()",
+            "    fresh = (now - _rh_jwks_cache['at']) < _RH_JWKS_TTL_SECONDS",
+            "    if not force and _rh_jwks_cache['raw'] is not None and fresh:",
+            "        return _JsonWebKey.import_key_set(_rh_jwks_cache['raw'])",
+            "    if _rh_httpx is None:",
+            "        raise RuntimeError('httpx unavailable; cannot fetch JWKS')",
+            "    resp = _rh_httpx.get(_RH_JWKS_URL, timeout=5.0)",
+            "    resp.raise_for_status()",
+            "    _rh_jwks_cache['raw'] = resp.json()",
+            "    _rh_jwks_cache['at'] = now",
+            "    return _JsonWebKey.import_key_set(_rh_jwks_cache['raw'])",
+            "",
+            "",
+            "def _rh_decode_jwt(token):",
+            "    from authlib.jose import JsonWebToken as _JsonWebToken",
+            "    jwt = _JsonWebToken(['RS256'])",
+            "    opts = {",
+            "        'iss': {'essential': True, 'value': _RH_OAUTH_ISSUER},",
+            "        'aud': {'essential': True, 'value': _RH_OAUTH_AUDIENCE},",
+            "        'exp': {'essential': True},",
+            "    }",
+            "    try:",
+            "        claims = jwt.decode(token, _rh_jwks(), claims_options=opts)",
+            "    except Exception:  # noqa: BLE001 - kid miss: one forced JWKS refresh",
+            "        claims = jwt.decode(token, _rh_jwks(force=True), claims_options=opts)",
+            "    claims.validate()",
+            "    return dict(claims)",
+            "",
+            "",
+            "def _rh_access_token(token, claims):",
+            "    # Attribution: prefer sub (the human) so request_events carries a",
+            "    # named user, upgrading the audit trail from 'someone with the key'.",
+            "    ident = str(claims.get('sub') or claims.get('client_id') or 'oauth')",
+            "    scopes = [s for s in str(claims.get('scope') or '').split() if s]",
+            "    exp = claims.get('exp')",
+            "    if _RhAccessToken is not None:",
+            "        try:",
+            "            return _RhAccessToken(token=token, client_id=ident,",
+            "                                  scopes=scopes, expires_at=exp)",
+            "        except Exception:  # noqa: BLE001 - model shape drift; duck-type",
+            "            pass",
+            "",
+            "    class _Tok:",
+            "        pass",
+            "",
+            "    t = _Tok()",
+            "    t.token, t.client_id, t.scopes, t.expires_at = token, ident, scopes, exp",
+            "    t.claims = claims",
+            "    return t",
+            "",
+            "",
+            "class _RhJwtVerifier(_RhVerifierBase):",
+            "    async def verify_token(self, token):",
+            "        if not isinstance(token, str) or token.count('.') != 2:",
+            "            return None  # not JWT-shaped; let the static verifier try",
+            "        try:",
+            "            claims = _rh_decode_jwt(token)",
+            "        except Exception:  # noqa: BLE001 - invalid == unauthenticated",
+            "            return None",
+            "        return _rh_access_token(token, claims)",
+            "",
+            "",
+            "class _RhMultiVerifier(_RhVerifierBase):",
+            "    '''MultiAuth: static mcps_ tokens and OAuth JWTs accepted side by",
+            "    side, so existing clients keep working while OAuth rolls out",
+            "    (no flag-day; docs/mcp-auth-id-jag.md §9).'''",
+            "",
+            "    def __init__(self, verifiers):",
+            "        self._verifiers = [v for v in verifiers if v is not None]",
+            "",
+            "    async def verify_token(self, token):",
+            "        for v in self._verifiers:",
+            "            try:",
+            "                result = await v.verify_token(token)",
+            "            except Exception:  # noqa: BLE001",
+            "                result = None",
+            "            if result is not None:",
+            "                return result",
+            "        return None",
+            "",
+        ]
+    )
+
+
 def _gen_tool(t: dict, auth_enabled: bool) -> str:
     sig = _param_signature(t.get("parameters", []))
     ret_py = "dict" if t.get("return_type") == "dict" else "str"
@@ -708,12 +840,21 @@ def generate_server_py(spec: ServerSpec, *, format_output: bool = True) -> str:
     import_lines.extend(spec.imports)
 
     mcp_args = [_py_string(spec.name)]
+    oauth_prelude = ""
     if auth_enabled:
-        mcp_args.append("auth=StaticTokenVerifier(tokens=" + _py_dict(_tokens_map(spec.tokens)) + ")")
+        # MultiAuth chain: static tokens (cheap dict lookup) first, then the
+        # Roundhouse OAuth JWT verifier. Both feed the same scope middleware.
+        oauth_prelude = _oauth_verifier_src(spec)
+        mcp_args.append(
+            "auth=_RhMultiVerifier([StaticTokenVerifier(tokens="
+            + _py_dict(_tokens_map(spec.tokens))
+            + "), _RhJwtVerifier()])"
+        )
 
     lines: list[str] = [
         *import_lines,
         "",
+        oauth_prelude,
         "mcp = FastMCP(" + ", ".join(mcp_args) + ")",
         mw_body,
         primitives_code,
@@ -870,11 +1011,17 @@ def generate_proxy_py(spec: ServerSpec, *, format_output: bool = True) -> str:
 
     extra_imports = list(mw_imports)
     auth_clause = ""
+    oauth_prelude = ""
     if auth_enabled:
         extra_imports.append(
             "from fastmcp.server.auth import StaticTokenVerifier as _StaticTokenVerifier"
         )
-        auth_clause = ", auth=_StaticTokenVerifier(tokens=" + _py_dict(_tokens_map(spec.tokens)) + ")"
+        oauth_prelude = _oauth_verifier_src(spec)
+        auth_clause = (
+            ", auth=_RhMultiVerifier([_StaticTokenVerifier(tokens="
+            + _py_dict(_tokens_map(spec.tokens))
+            + "), _RhJwtVerifier()])"
+        )
 
     if spec.is_remote_mode():
         construct = _remote_proxy_construct(spec, auth_clause)
@@ -893,6 +1040,7 @@ def generate_proxy_py(spec: ServerSpec, *, format_output: bool = True) -> str:
         '"""',
         *extra_imports,
         "",
+        oauth_prelude,
         *construct,
         mw_body,
         supervisor,
@@ -1000,6 +1148,10 @@ def generate_dockerfile(
     lines.append("RUN python -m venv --copies /opt/venv")
     lines.append('ENV PATH="/opt/venv/bin:$PATH"')
     pip_install = f"fastmcp=={FASTMCP_VERSION}"
+    if spec.tokens:
+        # The emitted OAuth JWT verifier needs a JOSE implementation; pin to
+        # the same major the platform itself uses (app.services.oidc).
+        pip_install += " 'authlib>=1.3,<2'"
     if spec.pip_packages:
         pip_install += " " + " ".join(spec.pip_packages)
     lines.append(f"RUN pip install --no-cache-dir {pip_install}")

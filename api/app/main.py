@@ -184,6 +184,8 @@ from app.routes import dashboard as dashboard_route  # noqa: E402
 from app.routes import ingest as ingest_route  # noqa: E402
 from app.routes import invoke as invoke_route  # noqa: E402
 from app.routes import logs as logs_route  # noqa: E402
+from app.routes import oauth as oauth_route  # noqa: E402
+from app.routes import oauth_admin as oauth_admin_route  # noqa: E402
 from app.routes import observability as observability_route  # noqa: E402
 from app.routes import oidc as oidc_route  # noqa: E402
 from app.routes import pypi as pypi_route  # noqa: E402
@@ -196,6 +198,7 @@ from app.routes import teams as teams_route  # noqa: E402
 from app.routes import templates as templates_route  # noqa: E402
 from app.routes import users as users_route  # noqa: E402
 from app.routes import vulnerabilities as vulnerabilities_route  # noqa: E402
+from app.routes import well_known as well_known_route  # noqa: E402
 
 app.include_router(audit_route.router)
 app.include_router(logs_route.router)
@@ -216,6 +219,11 @@ app.include_router(pypi_route.router)
 app.include_router(settings_route.router)
 app.include_router(backup_route.router)
 app.include_router(vulnerabilities_route.router)
+# OAuth AS: /.well-known/* and /oauth/* are root-level (spec-fixed paths) but
+# still routers, so they win over the SPA catch-all mounted below.
+app.include_router(well_known_route.router)
+app.include_router(oauth_route.router)
+app.include_router(oauth_admin_route.router)
 
 
 class SPAStaticFiles(StaticFiles):

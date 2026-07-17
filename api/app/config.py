@@ -30,6 +30,18 @@ class Settings(BaseSettings):
         default=1440, alias="AUTH_TOKEN_EXPIRATION_MINUTES"
     )
 
+    # OAuth 2.1 authorization server (MCP data path). Access tokens are the
+    # revocation unit — "revocation = short TTL" (docs/mcp-auth-id-jag.md §9) —
+    # so keep the TTL at or under an hour. Session TTL bounds how long the
+    # /oauth/authorize cookie lets a signed-in user mint new codes silently.
+    oauth_access_token_ttl_seconds: int = Field(
+        default=3600, alias="OAUTH_ACCESS_TOKEN_TTL_SECONDS"
+    )
+    oauth_refresh_token_ttl_days: int = Field(
+        default=30, alias="OAUTH_REFRESH_TOKEN_TTL_DAYS"
+    )
+    oauth_session_ttl_hours: int = Field(default=8, alias="OAUTH_SESSION_TTL_HOURS")
+
     # Entra ID SSO (OIDC) connection settings are NOT here — they're configured
     # in the dashboard and stored in platform_settings (see app.services.sso_config).
     # APP_KEY (above) still encrypts the stored client secret + the login cookie.
