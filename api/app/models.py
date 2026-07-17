@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -409,3 +410,120 @@ class ServerAsset(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class OAuthClient(Base):
+    """A registered OAuth client of the Roundhouse authorization server.
+
+    Three registration types (docs/mcp-auth-id-jag.md §7, field guide §05):
+      - manual: admin-created (e.g. Valkyrie). May be `trusted`.
+      - dcr:    self-registered via RFC 7591 /oauth/register. Never trusted.
+      - cimd:   client_id IS an https URL serving the client's metadata; the
+                row is a cache of the fetched document. Never trusted.
+
+    `trusted` gates the two privileged behaviours: consent is skipped, and the
+    jwt-bearer grant (acting for a user with no user present) is allowed."""
+
+    __tablename__ = "oauth_clients"
+
+    # CIMD client_ids are URLs, so allow generous length.
+    client_id: Mapped[str] = mapped_column(String(512), primary_key=True)
+    # sha256 hex of the client secret; NULL for public clients (auth method "none").
+    client_secret_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    client_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    token_endpoint_auth_method: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="none"
+    )  # none | client_secret_basic | client_secret_post
+    redirect_uris: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    grant_types: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    registration_type: Mapped[str] = mapped_column(String(16), nullable=False, default="dcr")
+    trusted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class OAuthAuthCode(Base):
+    """One-time authorization code (authorization_code + PKCE flow). The code
+    itself is never stored — only its sha256 — and it is single-use: consumed_at
+    marks redemption, and a second redemption attempt is an attack signal."""
+
+    __tablename__ = "oauth_auth_codes"
+    __table_args__ = (Index("oauth_auth_codes_expires_index", "expires_at"),)
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    client_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    user_id: Mapped[str] = mapped_column(PgUUID(as_uuid=False), nullable=False)
+    # RFC 8707 resource the token will be audience-bound to (canonical /s/{name}/mcp URL).
+    resource: Mapped[str] = mapped_column(String(1024), nullable=False)
+    scopes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    code_challenge: Mapped[str] = mapped_column(String(128), nullable=False)
+    code_challenge_method: Mapped[str] = mapped_column(String(8), nullable=False, default="S256")
+    redirect_uri: Mapped[str] = mapped_column(String(1024), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OAuthRefreshToken(Base):
+    """Rotating refresh token (OAuth 2.1 mandates rotation for public clients;
+    we rotate for everyone). Reuse of a rotated token is detected via
+    revoked_at + replaced_by and revokes the whole (user, client) family."""
+
+    __tablename__ = "oauth_refresh_tokens"
+    __table_args__ = (
+        Index("oauth_refresh_tokens_user_client_index", "user_id", "client_id"),
+        Index("oauth_refresh_tokens_expires_index", "expires_at"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    client_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    user_id: Mapped[str] = mapped_column(PgUUID(as_uuid=False), nullable=False)
+    resource: Mapped[str] = mapped_column(String(1024), nullable=False)
+    scopes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replaced_by: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class OAuthConsent(Base):
+    """Remembered per-(user, client) consent so the approval screen shows once,
+    not once per MCP server (field guide: 'consent skipped or remembered per
+    (user, client) — not re-shown per server')."""
+
+    __tablename__ = "oauth_consents"
+    __table_args__ = (
+        UniqueConstraint("user_id", "client_id", name="oauth_consents_user_client_uq"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    user_id: Mapped[str] = mapped_column(PgUUID(as_uuid=False), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class OAuthUsedJti(Base):
+    """Single-use assertion ids (ID-JAG `jti` replay defence). Only the id-jag
+    assertion profile writes here — the interim entra-id-token profile must NOT
+    (one Entra id_token is legitimately exchanged for many per-server tokens;
+    see docs/mcp-auth-id-jag.md §7). Rows are prunable once expired."""
+
+    __tablename__ = "oauth_used_jtis"
+    __table_args__ = (Index("oauth_used_jtis_expires_index", "expires_at"),)
+
+    jti: Mapped[str] = mapped_column(String(255), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
