@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Support &amp; Services — Roundhouse</title>
+<meta name="description" content="Commercial support and professional services for Roundhouse, the self-hosted MCP platform — from community support to an Enterprise / Federal tier for air-gapped and restricted networks." />
+<meta property="og:title" content="Roundhouse — Support &amp; Services" />
+<meta property="og:description" content="The platform is open source. The crew is for hire. Support tiers and professional services for self-hosted, air-gapped, and Federal MCP deployments." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://roundhousemcp.com/services/" />
+<meta property="og:image" content="https://roundhousemcp.com/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="canonical" href="https://roundhousemcp.com/services/" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 68' fill='none' stroke-width='6' stroke-linecap='round'%3E%3Cg stroke='%23ece7dd'%3E%3Cpath d='M 20 50 A 40 40 0 0 1 100 50'/%3E%3C/g%3E%3Cg stroke='%23c2693a'%3E%3Cline x1='60' y1='63' x2='60' y2='28'/%3E%3Ccircle cx='60' cy='50' r='6' fill='%23c2693a'/%3E%3C/g%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;600;700;800;900&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================
+   ROUNDHOUSE — support & services
+   shares the landing page's tokens and base components
+   ============================================================ */
+:root {
+  --iron:        #0d0e10;
+  --iron-2:      #131517;
+  --iron-3:      #1a1d20;
+  --iron-4:      #22262a;
+  --line:        #2a2e33;
+  --line-soft:   #1f2226;
+  --cream:       #ece7dd;
+  --smoke:       #9b968c;
+  --ash:         #6b675f;
+  --copper:      #c2693a;
+  --copper-hi:   #e08a55;
+  --copper-dim:  #8a4a28;
+  --amber:       #ffb454;
+  --signal:      #8fbf72;
+  --signal-dim:  #4e6e41;
+  --display: "Big Shoulders Display", sans-serif;
+  --serif: "Newsreader", Georgia, serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; overflow-x: clip; scroll-padding-top: 84px; }
+body {
+  background: var(--iron);
+  color: var(--cream);
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.65;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--copper); color: var(--iron); }
+::-webkit-scrollbar { width: 11px; }
+::-webkit-scrollbar-track { background: var(--iron); }
+::-webkit-scrollbar-thumb { background: var(--iron-4); border: 3px solid var(--iron); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--copper-dim); }
+
+a { color: inherit; }
+img, svg { display: block; }
+
+.grain {
+  position: fixed; inset: -100px; z-index: 999; pointer-events: none;
+  opacity: .055; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+@media (max-width: 560px) {
+  .wrap { padding: 0 22px; }
+  body { font-size: 16.5px; }
+}
+
+.tag {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .28em; text-transform: uppercase; color: var(--copper-hi);
+}
+.tag::before { content: "// "; color: var(--ash); letter-spacing: 0; }
+
+h1, h2, h3 { font-family: var(--display); text-transform: uppercase; }
+.copper { color: var(--copper-hi); }
+
+.hazard {
+  height: 8px;
+  background: repeating-linear-gradient(-45deg,
+    var(--copper) 0 14px, var(--iron) 14px 28px);
+  opacity: .85;
+}
+
+.reveal { opacity: 0; transform: translateY(26px); }
+.reveal.in { opacity: 1; transform: none; transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1); }
+.reveal.d1.in { transition-delay: .08s; } .reveal.d2.in { transition-delay: .16s; }
+.reveal.d3.in { transition-delay: .24s; } .reveal.d4.in { transition-delay: .32s; }
+
+/* ============ NAV ============ */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--iron) 82%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.nav-inner { display: flex; align-items: center; gap: 28px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; margin-right: auto; }
+.brand svg { width: 40px; height: auto; }
+.brand b {
+  font-family: var(--display); font-weight: 800; font-size: 22px;
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.brand b i { font-style: normal; color: var(--copper-hi); }
+.nav-links { display: flex; gap: 26px; }
+.nav-links a {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .16em;
+  text-transform: uppercase; text-decoration: none; color: var(--smoke);
+  transition: color .2s;
+}
+.nav-links a:hover { color: var(--cream); }
+.nav-links a.active { color: var(--copper-hi); }
+.nav-gh {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .1em;
+  text-decoration: none; color: var(--iron);
+  background: var(--cream); padding: 9px 16px; border-radius: 3px;
+  transition: background .2s, transform .2s;
+}
+.nav-gh:hover { background: var(--copper-hi); transform: translateY(-1px); }
+@media (max-width: 760px) { .nav-links { display: none; } }
+@media (max-width: 480px) {
+  .nav-inner { gap: 14px; }
+  .brand { gap: 9px; }
+  .brand svg { width: 32px; }
+  .brand b { font-size: 18px; }
+  .nav-gh { padding: 8px 12px; font-size: 11px; }
+}
+
+/* ============ CTAs ============ */
+.cta-row { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 40px; align-items: center; }
+.cta-main {
+  display: inline-flex; align-items: center; gap: 12px;
+  font-family: var(--mono); font-size: 14px; font-weight: 500;
+  background: var(--copper); color: var(--iron); text-decoration: none;
+  border: none; cursor: pointer;
+  padding: 16px 24px; border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--copper-dim), 0 14px 40px -12px rgba(194,105,58,.55);
+  transition: background .2s, transform .2s, box-shadow .2s;
+}
+.cta-main:hover { background: var(--copper-hi); transform: translateY(-2px); box-shadow: 0 0 0 1px var(--copper-dim), 0 20px 48px -12px rgba(224,138,85,.6); }
+.cta-ghost {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 13px; letter-spacing: .06em;
+  color: var(--cream); text-decoration: none;
+  padding: 15px 22px; border: 1px solid var(--line); border-radius: 3px;
+  transition: border-color .2s, background .2s;
+}
+.cta-ghost:hover { border-color: var(--copper); background: rgba(194,105,58,.08); }
+
+/* ============ PAGE HERO ============ */
+.p-hero {
+  position: relative; padding: 168px 0 104px;
+  background:
+    radial-gradient(1000px 560px at 82% 30%, rgba(194,105,58,.15), transparent 62%),
+    radial-gradient(700px 420px at 8% 100%, rgba(194,105,58,.05), transparent 60%);
+}
+.p-hero::after { /* blueprint floor grid */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(900px 600px at 78% 35%, rgba(0,0,0,.5), transparent 75%);
+  -webkit-mask-image: radial-gradient(900px 600px at 78% 35%, rgba(0,0,0,.5), transparent 75%);
+}
+.p-hero .wrap { position: relative; z-index: 2; }
+.p-hero h1 {
+  font-size: clamp(44px, 7.4vw, 96px);
+  font-weight: 900; line-height: .93; letter-spacing: .01em;
+  margin: 26px 0 30px;
+}
+.p-hero-sub { max-width: 58ch; font-size: 21px; color: var(--smoke); }
+.p-hero-sub em { color: var(--cream); font-style: italic; }
+.hero-status {
+  display: flex; align-items: center; gap: 10px; margin-top: 30px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .18em; color: var(--ash);
+  text-transform: uppercase;
+}
+.pip { width: 7px; height: 7px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 10px var(--signal); animation: pip 2.2s ease-in-out infinite; flex: none; }
+@keyframes pip { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* section heads */
+.sec-head { margin-bottom: 48px; }
+.sec-head h2 { font-size: clamp(40px, 5vw, 64px); font-weight: 800; line-height: 1; margin-top: 20px; letter-spacing: .02em; }
+.sec-head p { color: var(--smoke); font-weight: 300; max-width: 62ch; margin-top: 18px; font-size: 19px; }
+
+/* ============ TIERS ============ */
+.tiers { padding: 110px 0 60px; border-top: 1px solid var(--line-soft); }
+.tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: stretch; }
+.tier-grid > * { min-width: 0; }
+.tier {
+  position: relative; display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--iron-3), var(--iron-2));
+  border: 1px solid var(--line); border-radius: 5px;
+  padding: 32px 28px 30px;
+  overflow: hidden;
+}
+.tier::before { /* corner rivets */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(2.5px 2.5px at 13px 13px, var(--line) 98%, transparent),
+    radial-gradient(2.5px 2.5px at calc(100% - 13px) 13px, var(--line) 98%, transparent),
+    radial-gradient(2.5px 2.5px at 13px calc(100% - 13px), var(--line) 98%, transparent),
+    radial-gradient(2.5px 2.5px at calc(100% - 13px) calc(100% - 13px), var(--line) 98%, transparent);
+}
+.tier.feat {
+  border-color: var(--copper);
+  background:
+    radial-gradient(520px 260px at 50% 0%, rgba(194,105,58,.16), transparent 70%),
+    linear-gradient(180deg, var(--iron-3), var(--iron-2));
+  box-shadow: 0 30px 70px -30px rgba(194,105,58,.45);
+}
+.tier.feat .stripe { position: absolute; top: 0; left: 0; right: 0; height: 6px;
+  background: repeating-linear-gradient(-45deg, var(--copper) 0 12px, var(--iron) 12px 24px); }
+.tier .num {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .3em; color: var(--copper-hi);
+  display: flex; align-items: center; text-transform: uppercase;
+}
+.tier .num::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); margin-left: 16px; }
+.tier h3 { font-size: 34px; font-weight: 800; letter-spacing: .03em; line-height: 1; margin: 20px 0 10px; }
+.tier .for { font-size: 15.5px; color: var(--smoke); font-weight: 300; line-height: 1.55; min-height: 4.6em; }
+.tier .price {
+  margin: 22px 0 6px; padding-top: 20px; border-top: 1px solid var(--line-soft);
+  font-family: var(--display); font-weight: 800; font-size: 42px; line-height: 1;
+  letter-spacing: .03em; text-transform: uppercase;
+}
+.tier .price-note { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--ash); text-transform: uppercase; }
+.tier ul { list-style: none; margin: 24px 0 30px; display: grid; gap: 11px; }
+.tier li { position: relative; padding-left: 24px; font-size: 15.5px; line-height: 1.5; color: var(--cream); font-weight: 300; }
+.tier li::before {
+  content: ""; position: absolute; left: 2px; top: .55em;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--signal); box-shadow: 0 0 8px rgba(143,191,114,.5);
+}
+.tier li.plus { color: var(--smoke); font-family: var(--mono); font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; padding-left: 0; }
+.tier li.plus::before { display: none; }
+.tier .tier-cta { margin-top: auto; justify-content: center; text-align: center; }
+@media (max-width: 980px) {
+  .tier-grid { grid-template-columns: 1fr; max-width: 620px; }
+  .tier .for { min-height: 0; }
+}
+
+/* ============ COMPARE ============ */
+.compare { padding: 40px 0 120px; }
+.cmp-scroll {
+  overflow-x: auto; border: 1px solid var(--line); border-radius: 6px;
+  background: linear-gradient(180deg, #101214, #0b0c0e);
+  box-shadow: 0 30px 80px -30px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.cmp { width: 100%; min-width: 760px; border-collapse: collapse; }
+.cmp th, .cmp td { padding: 15px 20px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line-soft); }
+.cmp tr:last-child th, .cmp tr:last-child td { border-bottom: 0; }
+.cmp thead th {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: .26em;
+  text-transform: uppercase; color: var(--copper);
+}
+.cmp tbody th { font-family: var(--mono); font-size: 12px; font-weight: 400; letter-spacing: .06em; color: var(--smoke); width: 26%; }
+.cmp td { font-size: 15px; font-weight: 300; line-height: 1.45; }
+.cmp td.no { color: var(--ash); }
+.cmp td.yes { color: var(--signal); font-family: var(--mono); font-size: 12.5px; letter-spacing: .08em; }
+.cmp .col-feat { background: rgba(194,105,58,.06); }
+.cmp-foot { margin-top: 18px; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--ash); line-height: 1.8; }
+
+/* ============ SERVICES (bays) ============ */
+.svc { padding: 0 0 130px; }
+.bay-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.bay {
+  position: relative;
+  background: linear-gradient(180deg, var(--iron-3), var(--iron-2));
+  border: 1px solid var(--line); border-radius: 5px;
+  padding: 30px 26px 28px;
+  transition: transform .35s cubic-bezier(.2,.7,.2,1), border-color .35s, box-shadow .35s;
+  overflow: hidden;
+}
+.bay::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(2.5px 2.5px at 13px 13px, var(--line) 98%, transparent),
+    radial-gradient(2.5px 2.5px at calc(100% - 13px) 13px, var(--line) 98%, transparent),
+    radial-gradient(2.5px 2.5px at 13px calc(100% - 13px), var(--line) 98%, transparent),
+    radial-gradient(2.5px 2.5px at calc(100% - 13px) calc(100% - 13px), var(--line) 98%, transparent);
+}
+.bay:hover { transform: translateY(-5px); border-color: var(--copper-dim); box-shadow: 0 24px 50px -24px rgba(194,105,58,.35); }
+.bay .num {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .3em; color: var(--copper-hi);
+  display: flex; justify-content: space-between; align-items: center; text-transform: uppercase;
+}
+.bay .num::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); margin-left: 16px; }
+.bay h3 { font-size: 27px; font-weight: 800; letter-spacing: .03em; line-height: 1.05; margin: 18px 0 12px; }
+.bay p { font-size: 15.5px; color: var(--smoke); font-weight: 300; line-height: 1.6; }
+.bay p code { font-family: var(--mono); font-size: 12.5px; color: var(--copper-hi); background: rgba(194,105,58,.1); padding: 1px 6px; border-radius: 3px; }
+@media (max-width: 980px) { .bay-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .bay-grid { grid-template-columns: 1fr; } }
+
+/* ============ FEDERAL ============ */
+.fed { padding: 0 0 130px; }
+.fed-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: start; margin-top: 34px; }
+.fed-grid > * { min-width: 0; }
+.fed h2 { font-size: clamp(42px, 5.4vw, 72px); font-weight: 800; line-height: .98; margin-top: 22px; }
+.fed-copy p { color: var(--smoke); font-weight: 300; margin-bottom: 22px; font-size: 19px; }
+.fed-copy p strong { color: var(--cream); font-weight: 500; }
+.facts { list-style: none; margin-top: 8px; border-top: 1px solid var(--line-soft); }
+.facts li {
+  display: grid; grid-template-columns: 9ch 1fr; gap: 18px; align-items: baseline;
+  padding: 15px 0; border-bottom: 1px solid var(--line-soft);
+  font-size: 16px; font-weight: 300; line-height: 1.5; color: var(--cream);
+}
+.facts li b { font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: .24em; color: var(--copper-hi); text-transform: uppercase; }
+.facts code { font-family: var(--mono); font-size: 13px; color: var(--copper-hi); }
+.pull {
+  border-left: 3px solid var(--copper); padding: 6px 0 6px 26px; margin: 36px 0 10px;
+  font-size: 24px; line-height: 1.38; font-style: italic; font-weight: 400; color: var(--cream);
+}
+@media (max-width: 900px) { .fed-grid { grid-template-columns: 1fr; gap: 36px; } }
+
+/* ============ PROCESS (stations) ============ */
+.line-sec { padding: 0 0 110px; }
+.stations { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin: 64px 0 0; }
+.stations::before {
+  content: ""; position: absolute; left: 2%; right: 2%; top: 27px; height: 2px;
+  background: repeating-linear-gradient(90deg, var(--line) 0 14px, transparent 14px 24px);
+}
+.stations::after {
+  content: ""; position: absolute; top: 22px; left: 2%; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--copper-hi); box-shadow: 0 0 16px var(--copper);
+  opacity: 0;
+}
+.stations.in::after { animation: ride 3.2s cubic-bezier(.5,0,.4,1) .4s forwards; }
+@keyframes ride { 0% { left: 2%; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { left: calc(98% - 12px); opacity: 0; } }
+.station { position: relative; padding-top: 64px; }
+.station .dot {
+  position: absolute; top: 18px; left: 0; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--iron); border: 2px solid var(--copper);
+  box-shadow: 0 0 0 6px var(--iron);
+}
+.station .dot::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--copper-hi); opacity: 0; transition: opacity .5s; }
+.stations.in .station .dot::after { opacity: 1; }
+.stations.in .station:nth-child(1) .dot::after { transition-delay: .6s; }
+.stations.in .station:nth-child(2) .dot::after { transition-delay: 1.4s; }
+.stations.in .station:nth-child(3) .dot::after { transition-delay: 2.2s; }
+.stations.in .station:nth-child(4) .dot::after { transition-delay: 3.1s; }
+.station .s-num { font-family: var(--mono); font-size: 10px; letter-spacing: .3em; color: var(--ash); }
+.station h3 { font-size: 25px; font-weight: 800; letter-spacing: .04em; margin: 8px 0 10px; }
+.station p { font-size: 15px; color: var(--smoke); font-weight: 300; line-height: 1.6; }
+@media (max-width: 880px) {
+  .stations { grid-template-columns: 1fr 1fr; }
+  .stations::before, .stations::after { display: none; }
+  .station { padding-top: 44px; }
+}
+@media (max-width: 520px) { .stations { grid-template-columns: 1fr; } }
+
+/* ============ FAQ ============ */
+.faq { padding: 0 0 130px; }
+.faq-list { border-top: 1px solid var(--line); max-width: 900px; }
+.faq details { border-bottom: 1px solid var(--line); }
+.faq summary {
+  list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 18px;
+  padding: 22px 4px; font-family: var(--display); font-weight: 700; font-size: 24px;
+  letter-spacing: .04em; text-transform: uppercase; line-height: 1.15;
+  transition: color .2s;
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::before { content: "+"; font-family: var(--mono); font-weight: 400; font-size: 18px; color: var(--copper-hi); width: 1ch; flex: none; }
+.faq details[open] summary::before { content: "–"; }
+.faq summary:hover { color: var(--copper-hi); }
+.faq summary:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+.faq details p { padding: 0 4px 26px calc(1ch + 22px); color: var(--smoke); font-weight: 300; max-width: 70ch; }
+.faq details p a { color: var(--copper-hi); text-decoration: none; border-bottom: 1px solid var(--copper-dim); }
+
+/* ============ CONTACT ============ */
+.contact { padding: 0 0 130px; }
+.ticket {
+  position: relative; border: 1px solid var(--copper-dim); border-radius: 6px;
+  background:
+    radial-gradient(800px 360px at 85% 0%, rgba(194,105,58,.18), transparent 65%),
+    linear-gradient(180deg, var(--iron-3), var(--iron-2));
+  padding: 64px 56px 58px; overflow: hidden;
+  box-shadow: 0 50px 120px -50px rgba(194,105,58,.4);
+}
+.ticket h2 { font-size: clamp(42px, 5.6vw, 76px); font-weight: 900; line-height: .95; margin: 22px 0 22px; }
+.ticket > p { color: var(--smoke); font-weight: 300; max-width: 60ch; font-size: 19px; }
+.mail-line {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 30px;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .12em; color: var(--ash); text-transform: uppercase;
+}
+.mail-line code { font-family: var(--mono); font-size: 14px; letter-spacing: .02em; color: var(--cream); text-transform: none; }
+.copy-btn {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+  background: none; border: 1px solid var(--line); color: var(--smoke);
+  padding: 5px 12px; border-radius: 3px; cursor: pointer; text-transform: uppercase;
+  transition: border-color .2s, color .2s;
+}
+.copy-btn:hover { border-color: var(--copper); color: var(--copper-hi); }
+@media (max-width: 640px) { .ticket { padding: 44px 24px 40px; } }
+
+/* ============ FOOTER ============ */
+footer { border-top: 1px solid var(--line-soft); background: var(--iron-2); }
+.foot-inner { padding-top: 70px; padding-bottom: 40px; }
+.foot-mark {
+  font-family: var(--display); font-weight: 900; text-transform: uppercase;
+  font-size: clamp(64px, 12.5vw, 190px); line-height: .85; letter-spacing: .02em;
+  color: transparent; -webkit-text-stroke: 1.5px var(--iron-4);
+  user-select: none; text-align: center;
+  transition: -webkit-text-stroke-color .6s;
+}
+.foot-mark:hover { -webkit-text-stroke-color: var(--copper-dim); }
+.foot-row {
+  display: flex; flex-wrap: wrap; gap: 18px; align-items: center; justify-content: space-between;
+  margin-top: 54px; padding-top: 26px; border-top: 1px solid var(--line-soft);
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; color: var(--ash);
+  text-transform: uppercase;
+}
+.foot-row a { color: var(--smoke); text-decoration: none; transition: color .2s; }
+.foot-row a:hover { color: var(--copper-hi); }
+.foot-links { display: flex; flex-wrap: wrap; gap: 26px; }
+
+@media (max-width: 560px) {
+  .p-hero { padding: 128px 0 76px; }
+  .tiers { padding: 80px 0 40px; }
+  .compare { padding: 30px 0 90px; }
+  .svc, .fed, .faq, .contact { padding-bottom: 94px; }
+  .line-sec { padding-bottom: 84px; }
+  .faq summary { font-size: 20px; }
+  .foot-inner { padding-top: 52px; padding-bottom: 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="grain" aria-hidden="true"></div>
+
+<!-- ================= NAV ================= -->
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="Roundhouse home">
+      <svg viewBox="0 0 120 68" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <g stroke="#ece7dd">
+          <path d="M 20 50 A 40 40 0 0 1 100 50"/>
+          <path d="M 38 50 A 22 22 0 0 1 82 50"/>
+          <line x1="20" y1="50" x2="38" y2="50"/><line x1="82" y1="50" x2="100" y2="50"/>
+          <line x1="27.6" y1="26.5" x2="42.2" y2="37.1"/><line x1="47.6" y1="12" x2="53.2" y2="29.1"/>
+          <line x1="72.4" y1="12" x2="66.8" y2="29.1"/><line x1="92.4" y1="26.5" x2="77.8" y2="37.1"/>
+        </g>
+        <g stroke="#c2693a"><line x1="60" y1="63" x2="60" y2="28"/><circle cx="60" cy="50" r="5" fill="#c2693a"/></g>
+      </svg>
+      <b>Round<i>house</i></b>
+    </a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/#quickstart">Quick Start</a>
+      <a href="/docs/">Docs</a>
+      <a class="active" href="/services/">Services</a>
+    </div>
+    <a class="nav-gh" href="#contact">Talk to sales →</a>
+  </div>
+</nav>
+
+<!-- ================= HERO ================= -->
+<header class="p-hero" id="top">
+  <div class="wrap">
+    <span class="tag reveal in">Support &amp; services</span>
+    <h1 class="reveal in d1">The platform is free.<br/>The crew is <span class="copper">for hire.</span></h1>
+    <p class="p-hero-sub reveal in d2">
+      Roundhouse is Apache-2.0 open source, and the full platform runs without a
+      license key. When MCP servers become something your mission depends on,
+      you want the people who built the turntable <em>on call</em> — for answers,
+      for upgrades, and for the networks where nothing is simple.
+    </p>
+    <div class="cta-row reveal in d3">
+      <a class="cta-main" href="#contact">Talk to sales →</a>
+      <a class="cta-ghost" href="#tiers">Compare support tiers</a>
+    </div>
+    <div class="hero-status reveal in d4">
+      <span class="pip"></span> Supported by Karmatek · the team that builds Roundhouse
+    </div>
+  </div>
+</header>
+
+<!-- ================= TIERS ================= -->
+<section class="tiers" id="tiers">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="tag">Support tiers</span>
+      <h2>Pick your class<br/>of service</h2>
+      <p>Same software on every tier. What changes is who picks up when something's on fire, and how far into your environment we'll go with you.</p>
+    </div>
+
+    <div class="tier-grid">
+      <!-- Community -->
+      <div class="tier reveal">
+        <div class="num">Tier 01</div>
+        <h3>Community</h3>
+        <p class="for">For labs, pilots, and teams happy to run it themselves.</p>
+        <div class="price">Free</div>
+        <div class="price-note">Apache-2.0 · open source</div>
+        <ul>
+          <li>The complete platform — no feature gates, no license key</li>
+          <li>Field manual and architecture docs, online and bundled for offline use</li>
+          <li>GitHub issues and discussions, answered best-effort</li>
+          <li>Public releases and security fixes</li>
+        </ul>
+        <a class="cta-ghost tier-cta" href="/#quickstart">Get started</a>
+      </div>
+
+      <!-- Production -->
+      <div class="tier reveal d1">
+        <div class="num">Tier 02</div>
+        <h3>Production</h3>
+        <p class="for">For teams running Roundhouse in production who need a committed answer, not a best-effort one.</p>
+        <div class="price">Annual</div>
+        <div class="price-note">Per deployment · quoted</div>
+        <ul>
+          <li class="plus">Everything in Community, plus</li>
+          <li>Private support channel with ticket tracking</li>
+          <li>Next-business-day response target, US business hours</li>
+          <li>Upgrade, deployment, and configuration guidance</li>
+          <li>Direct notification of security advisories</li>
+          <li>Prioritized bug fixes</li>
+        </ul>
+        <a class="cta-ghost tier-cta" href="mailto:sales@karmatek.io?subject=Roundhouse%20Production%20support%20%E2%80%94%20quote%20request&amp;body=Organization%3A%0AEnvironment%20(Docker%20%2F%20Swarm%20%2F%20Kubernetes)%3A%0AApprox.%20MCP%20servers%20and%20users%3A%0AWhat%20you%20need%3A%0ATimeline%3A%0A">Request a quote</a>
+      </div>
+
+      <!-- Enterprise / Federal -->
+      <div class="tier feat reveal d2">
+        <div class="stripe" aria-hidden="true"></div>
+        <div class="num">Tier 03</div>
+        <h3>Enterprise <span class="copper">/ Federal</span></h3>
+        <p class="for">For agencies, integrators, and enterprises on air-gapped, disconnected, or otherwise restricted networks.</p>
+        <div class="price">Custom</div>
+        <div class="price-note">Scoped to your mission</div>
+        <ul>
+          <li class="plus">Everything in Production, plus</li>
+          <li>Severity-based response targets, written into your contract</li>
+          <li>A named engineer who knows your deployment</li>
+          <li>Air-gapped and restricted-network support — registry mirrors, custom CAs, offline builds</li>
+          <li>Hardened-image and non-root runtime guidance</li>
+          <li>Documentation support for your authorization (ATO) package</li>
+          <li>Architecture reviews and a voice in the roadmap</li>
+          <li>Procurement that fits your contracting office</li>
+        </ul>
+        <a class="cta-main tier-cta" href="#contact">Talk to sales →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= COMPARE ================= -->
+<section class="compare" id="compare">
+  <div class="wrap">
+    <div class="cmp-scroll reveal" tabindex="0" role="region" aria-label="Support tier comparison">
+      <table class="cmp">
+        <thead>
+          <tr><th scope="col"></th><th scope="col">Community</th><th scope="col">Production</th><th scope="col" class="col-feat">Enterprise / Federal</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Software</th><td>Full platform, Apache-2.0</td><td>Full platform, Apache-2.0</td><td class="col-feat">Full platform, Apache-2.0</td></tr>
+          <tr><th scope="row">Support channel</th><td>GitHub issues</td><td>Private ticketing</td><td class="col-feat">Private ticketing + named engineer</td></tr>
+          <tr><th scope="row">Response target</th><td class="no">Best effort</td><td>Next business day</td><td class="col-feat">Severity-based, set in contract</td></tr>
+          <tr><th scope="row">Coverage</th><td class="no">—</td><td>US business hours</td><td class="col-feat">US business hours; extended by arrangement</td></tr>
+          <tr><th scope="row">Upgrade &amp; deployment guidance</th><td class="no">—</td><td class="yes">Included</td><td class="yes col-feat">Included</td></tr>
+          <tr><th scope="row">Security advisories</th><td>Public releases</td><td>Direct notification</td><td class="col-feat">Direct notification + remediation guidance</td></tr>
+          <tr><th scope="row">Air-gapped / restricted networks</th><td class="no">Self-serve docs</td><td class="no">Self-serve docs</td><td class="yes col-feat">Supported</td></tr>
+          <tr><th scope="row">ATO documentation support</th><td class="no">—</td><td class="no">—</td><td class="yes col-feat">Included</td></tr>
+          <tr><th scope="row">Architecture review</th><td class="no">—</td><td>Add-on</td><td class="yes col-feat">Included</td></tr>
+          <tr><th scope="row">Roadmap input</th><td>GitHub</td><td>GitHub</td><td class="col-feat">Scheduled reviews</td></tr>
+          <tr><th scope="row">Purchasing</th><td class="no">—</td><td>Invoice / PO</td><td class="col-feat">PO, or through your preferred reseller or prime</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cmp-foot reveal d1">Response targets are for initial response, not resolution. Final terms live in your support agreement.</p>
+  </div>
+</section>
+
+<!-- ================= PROFESSIONAL SERVICES ================= -->
+<section class="svc" id="services">
+  <div class="hazard" style="margin-bottom: 110px;"></div>
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="tag">Professional services</span>
+      <h2>Work we'll do<br/>alongside you</h2>
+      <p>Fixed-scope engagements, available with any tier or on their own. Each one ends with something running in your environment and your team able to operate it.</p>
+    </div>
+    <div class="bay-grid">
+      <div class="bay reveal"><div class="num">Svc 01</div>
+        <h3>Deployment &amp; architecture</h3>
+        <p>Stand up Roundhouse on Docker, Swarm, or Kubernetes via the Helm chart — TLS, ingress, storage, and backup sorted, with a design your ops team has reviewed.</p>
+      </div>
+      <div class="bay reveal d1"><div class="num">Svc 02</div>
+        <h3>Air-gapped enablement</h3>
+        <p>Internal registry mirrors, hardened base images, custom CA bundles, and offline image builds — everything needed to run with no route to the internet.</p>
+      </div>
+      <div class="bay reveal d2"><div class="num">Svc 03</div>
+        <h3>Custom MCP servers</h3>
+        <p>We turn your scripts, APIs, and runbooks into production MCP tools — scoped, documented, and handed over as code your team owns.</p>
+      </div>
+      <div class="bay reveal"><div class="num">Svc 04</div>
+        <h3>Identity &amp; access</h3>
+        <p>Single sign-on with Entra ID or another OIDC provider, role mappings, tool-level scopes, and a token policy that will survive a security review.</p>
+      </div>
+      <div class="bay reveal d1"><div class="num">Svc 05</div>
+        <h3>Migration &amp; training</h3>
+        <p>Move the MCP servers living on laptops and jump boxes into managed stalls, then train your engineers to build and ship the next ones themselves.</p>
+      </div>
+      <div class="bay reveal d2"><div class="num">Svc 06</div>
+        <h3>Agent platform advisory</h3>
+        <p>Planning an on-prem agent stack? We help design what sits around the MCP layer — model gateways, agent hosting, identity, and governance.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FEDERAL ================= -->
+<section class="fed" id="federal">
+  <div class="wrap">
+    <span class="tag reveal">Federal &amp; restricted networks</span>
+    <div class="fed-grid">
+      <div>
+        <h2 class="reveal d1">Built for networks the cloud <span class="copper">can't reach.</span></h2>
+        <div class="pull reveal d2">
+          Roundhouse deploys inside your authorization boundary. Nothing about it needs to leave.
+        </div>
+      </div>
+      <div class="fed-copy">
+        <p class="reveal d1">
+          Hosted MCP platforms assume connectivity you don't have and data flows you
+          can't approve. Roundhouse was designed the other way around:
+          <strong>everything runs on your hardware</strong>, and the source is open for
+          your security team to read.
+        </p>
+        <ul class="facts reveal d2">
+          <li><b>Hosting</b><span>Fully self-hosted. No SaaS control plane, no license server, no phone-home.</span></li>
+          <li><b>Offline</b><span>Works air-gapped — internal registry mirrors, bundled docs, custom CA bundles for TLS-inspecting proxies.</span></li>
+          <li><b>Images</b><span>Supports hardened, non-root, distroless runtime bases for generated servers.</span></li>
+          <li><b>Builds</b><span>Rootless image builds on Kubernetes, RBAC-scoped, with no Docker socket exposed.</span></li>
+          <li><b>Access</b><span>OIDC single sign-on, role mappings, per-tool scopes, and tokens encrypted at rest.</span></li>
+          <li><b>Audit</b><span>Every state-changing action is recorded with the acting user, target, and detail.</span></li>
+          <li><b>Source</b><span>Apache-2.0 — inspect it, scan it, fork it.</span></li>
+        </ul>
+        <p class="reveal d3" style="margin-top: 26px; font-size: 16.5px;">
+          Straight talk: Roundhouse is software you run, not a cloud service, so it
+          inherits your environment's authorization rather than carrying its own.
+          We won't claim a certification we don't hold — we will give your ISSO the
+          architecture, data-flow, and configuration detail they need to assess it.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PROCESS ================= -->
+<section class="line-sec" id="process">
+  <div class="wrap">
+    <div class="sec-head reveal" style="margin-bottom: 0;">
+      <span class="tag">How it works</span>
+      <h2>From first call to<br/>on the line</h2>
+    </div>
+    <div class="stations" id="stations">
+      <div class="station">
+        <span class="dot"></span><span class="s-num">STOP 01</span>
+        <h3>Talk</h3>
+        <p>A working call with an engineer, not a pitch. Tell us about your environment, your constraints, and what's blocking you.</p>
+      </div>
+      <div class="station">
+        <span class="dot"></span><span class="s-num">STOP 02</span>
+        <h3>Scope</h3>
+        <p>We write down the support tier and any services in plain language: what's covered, what isn't, and what done looks like.</p>
+      </div>
+      <div class="station">
+        <span class="dot"></span><span class="s-num">STOP 03</span>
+        <h3>Procure</h3>
+        <p>A quote your contracting office can act on — direct, or through the reseller or prime you already work with.</p>
+      </div>
+      <div class="station">
+        <span class="dot"></span><span class="s-num">STOP 04</span>
+        <h3>Dispatch</h3>
+        <p>Kickoff, onboarding to your support channel, and an engineer who already knows your deployment by name.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FAQ ================= -->
+<section class="faq" id="faq">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="tag">Questions</span>
+      <h2>Asked at the<br/>ticket window</h2>
+    </div>
+    <div class="faq-list reveal d1">
+      <details>
+        <summary>Is Roundhouse still free and open source?</summary>
+        <p>Yes. The platform is Apache-2.0 and every tier runs the same software. Paid tiers buy you people and commitments, not features held hostage.</p>
+      </details>
+      <details>
+        <summary>Do you need access to our network?</summary>
+        <p>No. Most support happens over tickets and screen shares, and for air-gapped environments we work from sanitized logs and configuration you choose to send. On-site work is available by arrangement.</p>
+      </details>
+      <details>
+        <summary>How is pricing structured?</summary>
+        <p>Production support is an annual subscription per deployment. Enterprise / Federal and professional services are quoted against your scope. <a href="#contact">Tell us what you're running</a> and we'll come back with a number.</p>
+      </details>
+      <details>
+        <summary>Can we buy through an existing contract or reseller?</summary>
+        <p>Usually, yes. Tell us which vehicle, reseller, or prime contractor you prefer to work through and we'll sort out the path with your contracting office.</p>
+      </details>
+      <details>
+        <summary>We only need help once — do we need a subscription?</summary>
+        <p>No. Professional services are available standalone: a deployment, an air-gap enablement, or a batch of custom MCP servers can each be its own fixed-scope engagement.</p>
+      </details>
+      <details>
+        <summary>Who actually answers the ticket?</summary>
+        <p>An engineer from Karmatek, the team that designs and builds Roundhouse. There is no tier-one script between you and someone who can read the code.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CONTACT ================= -->
+<section class="contact" id="contact">
+  <div class="wrap">
+    <div class="ticket reveal">
+      <span class="tag">Talk to sales</span>
+      <h2>Tell us what you're<br/>running. <span class="copper">We'll take it from there.</span></h2>
+      <p>
+        A short note is enough — your environment, roughly how many servers and users,
+        and what you need help with. You'll hear back from an engineer within two
+        business days.
+      </p>
+      <div class="cta-row">
+        <a class="cta-main" href="mailto:sales@karmatek.io?subject=Roundhouse%20%E2%80%94%20Enterprise%20%2F%20Federal%20inquiry&amp;body=Organization%3A%0AEnvironment%20(Docker%20%2F%20Swarm%20%2F%20Kubernetes%3B%20air-gapped%3F)%3A%0AApprox.%20MCP%20servers%20and%20users%3A%0AWhat%20you%20need%20(support%20tier%2C%20services%2C%20both)%3A%0APreferred%20procurement%20path%3A%0ATimeline%3A%0A">Email sales →</a>
+        <a class="cta-ghost" href="/docs/">Read the field manual</a>
+      </div>
+      <div class="mail-line">
+        <span>Or write to</span> <code id="sales-addr">sales@karmatek.io</code>
+        <button class="copy-btn" id="copy-addr" type="button">Copy</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="hazard"></div>
+  <div class="wrap foot-inner">
+    <div class="foot-mark" aria-hidden="true">Roundhouse</div>
+    <div class="foot-row">
+      <span>© 2026 <a href="https://karmatek.io" target="_blank" rel="noopener">Karmatek</a> · forged with FastMCP</span>
+      <div class="foot-links">
+        <a href="/">Home</a>
+        <a href="/docs/">Docs</a>
+        <a href="https://github.com/Karmatek-Consulting-LLC/roundhouse" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP Spec</a>
+        <a href="#top">Back to the top ↑</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // reveals
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+  }, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
+  document.querySelectorAll(".reveal:not(.in), .stations").forEach(el => io.observe(el));
+
+  // copy the sales address
+  const btn = document.getElementById("copy-addr");
+  btn.addEventListener("click", () => {
+    navigator.clipboard.writeText(document.getElementById("sales-addr").textContent).then(() => {
+      const old = btn.textContent;
+      btn.textContent = "Copied ✓";
+      setTimeout(() => { btn.textContent = old; }, 1400);
+    });
+  });
+})();
+</script>
+</body>
+</html>
