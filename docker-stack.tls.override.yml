@@ -53,8 +53,10 @@ services:
       # start after upload.
       - --providers.file.filename=/run/secrets/roundhouse_tls_dynamic.yml
       - --providers.file.watch=true
-    # host mode preserves the real client IP and skips the routing mesh; it puts
-    # one Traefik per node, which is the right shape for a dedicated ingress.
+    # host mode preserves the real client IP and skips the routing mesh, but it
+    # only binds the port on nodes that actually run a task — so it MUST be
+    # paired with `mode: global` below, or just one node ever listens on 80/443
+    # and round-robin DNS across the nodes silently blackholes most requests.
     # For VIP-style replica scaling instead, drop `mode: host` (default ingress)
     # and add PROXY protocol if you still need client IPs.
     ports:
@@ -64,6 +66,10 @@ services:
       - target: 80
         published: 80
         mode: host
+    deploy:
+      # One Traefik per node, so every node in the DNS pool answers on 80/443.
+      # Requires 80/443 open in each node's host firewall.
+      mode: global
 
   platform-api:
     environment:
