@@ -549,9 +549,33 @@ its unencrypted private key, and save. Roundhouse validates the pair, stores it
 (the key encrypted at rest with `APP_KEY`), and delivers it to Traefik as Swarm
 secrets — the cert, the key, and Traefik's default-certificate config, all
 cluster-distributed via Raft, so no shared volume is needed and Traefik stays
-freely schedulable. Rotating the certificate is the same UI step
-again; it triggers a zero-downtime rolling reload (run Traefik at `replicas: 2+`
-across nodes if you want the rollout to be gapless).
+freely schedulable. Rotating the certificate is the same UI step again; it
+triggers a rolling reload of the Traefik tasks one node at a time, so with more
+than one node the rollout is gapless.
+
+**Traefik runs as one task per node in this mode.** The overlay publishes
+`:80`/`:443` in host mode (to keep the real client IP) and sets
+`deploy.mode: global`, so every node binds the ports and every A record in a
+round-robin DNS pool answers. The two go together: host-mode ports only bind on
+nodes that actually run a task, so a plain replicated service would leave the
+other nodes silently refusing connections.
+
+> **Upgrading an existing TLS deployment to the global Traefik?** Swarm cannot
+> switch a service between `replicated` and `global` in place — a stack deploy
+> fails on Traefik only, with `service mode change is not allowed`, and leaves
+> the old single-replica task running. Remove the service once and redeploy:
+>
+> ```bash
+> docker service rm roundhouse_traefik
+> docker stack deploy -c docker-stack.yml -c docker-stack.tls.override.yml roundhouse
+> ```
+>
+> Expect a brief ingress-only gap (roughly 10–30 s) while the new tasks start;
+> Postgres, the platform API and the MCP servers keep running. The recreated
+> service starts with Traefik's self-signed certificate; the app's reconcile
+> loop re-attaches your uploaded certificate within about two minutes, or
+> re-save it under **Platform Settings → HTTPS certificate** to push it
+> immediately. This is a one-time step; later deploys update in place.
 
 This trades a small widening of the API socket-proxy (the overlay grants it
 `SECRETS: 1` so the app can manage the cert secret) for dropping the entire
